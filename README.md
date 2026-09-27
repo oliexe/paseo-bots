@@ -5,7 +5,7 @@ Personal bots for [Paseo](https://paseo.sh). Give each bot instructions, a model
 ## Install
 
 ```bash
-paseo plugin install github:oliexe/paseo-bots
+paseo plugin install npm:paseo-bot
 ```
 
 Requires Paseo 0.9.2 or later.
@@ -14,6 +14,6 @@ Requires Paseo 0.9.2 or later.
 
 | Bots | Bot settings |
 | --- | --- |
-| ![Bots](docs/splash.png) | ![Bot settings](docs/bot.png) |
+| ![Bots](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/splash.png) | ![Bot settings](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/bot.png) |
 | **Skills** | **MCP servers** |
-| ![Skills](docs/skills.png) | ![MCP servers](docs/mcp.png) |
+| ![Skills](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/skills.png) | ![MCP servers](https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/mcp.png) |

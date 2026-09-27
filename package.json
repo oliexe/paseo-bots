@@ -1,6 +1,5 @@
 {
   "name": "paseo-bot",
-  "private": true,
   "version": "0.1.0",
   "files": [
     "paseo-plugin.json",
@@ -28,5 +27,23 @@
     "vitest": "^4.1.11",
     "zod": "^4.4.3"
   },
-  "description": "Personal bots for Paseo: instructions, agent, host, MCP tools and a generated avatar."
+  "description": "Personal bots for Paseo: instructions, a model, skills, MCP tools and connected apps.",
+  "license": "MIT",
+  "homepage": "https://github.com/oliexe/paseo-bots#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliexe/paseo-bots.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oliexe/paseo-bots/issues"
+  },
+  "author": "Ondrej Rehacek",
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "bots",
+    "agents",
+    "mcp",
+    "composio"
+  ]
 }
