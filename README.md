@@ -10,7 +10,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 
 | Feature | Description |
 | --- | --- |
-| **Bots with a job** | Instructions, provider and model, host, approval mode and an avatar: a pixel-art face, your own picture, or one OpenAI draws with your key. Start blank or from a role such as Email triage or Researcher. |
+| **Bots** | Instructions, provider and model, host, approval mode and an avatar: a pixel-art face, your own picture, or one OpenAI draws with your key. Start blank or from a role such as Email triage or Researcher. |
 | **A workspace per bot** | Every chat is a thread in that bot's workspace. Find words in a chat (⌘F) or copy it as a Markdown transcript. |
 | **Memory** | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. Every change to its memory can be undone, and bots can search their past chats. |
 | **Routines** | Runs on a schedule, such as every weekday at 9:00 or any cron expression, or when its webhook is called. Bots can propose them from a chat, results can post back to a chat, and each routine keeps its run history and upcoming runs. |
@@ -18,6 +18,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 | **Skills & Tools** | One library of skills and MCP servers, switched on per bot. Import skills from GitHub (they stay off until you review them) and MCP servers from Claude Code, Claude Desktop or Cursor (they stay off until a test connects to them and lists their tools). |
 | **Learning** | Send `/learn` after a task and the bot writes it up as a skill. Review it in the chat and save it. |
 | **Connected apps** | 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. Keep a bot to an app's read-only or chosen tools, or to one of its accounts. A bot that needs another app asks with a sign-in card in the chat. |
+| **Paseo tools** | Bots can start other agents, open workspaces, set up schedules and use the browser. |
 
 ## Install
 
