@@ -42,8 +42,35 @@ export function parseSkillFrontmatter(text: string): { name: string | null; desc
 }
 
 export function sanitizeSkillName(name: string): string {
-  const clean = name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  // No leading dots: "." and ".." would name a folder outside the library.
+  const clean = name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
   return clean || "skill";
+}
+
+/** SKILL.md with the frontmatter agents read: a name that matches the folder and a one-line description. */
+export function skillMarkdown(id: string, description: string, body: string): string {
+  const line = description.replace(/\s+/g, " ").trim();
+  return `---\nname: ${id}\ndescription: ${line}\n---\n\n${body.trim()}\n`;
+}
+
+/** SKILL.md without its frontmatter. */
+export function skillBody(text: string): string {
+  return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
+}
+
+/** /learn: the bot drafts a skill from the chat and proposes it with propose_skill. */
+export const LEARN_COMMAND = { name: "learn", description: "Save what the bot just did as a skill", argumentHint: "[what to focus on]" };
+
+export function learnPrompt(focus = ""): string {
+  const topic = focus.trim().replace(/[.!?]*$/, ".");
+  const about = focus.trim() ? ` Focus on: ${topic}` : "";
+  return `Turn what you just did into a reusable skill: the steps that worked, what to check, and what a good result looks like.${about} Then propose it with the propose_skill tool so I can review it. Don't write the skill file yourself.`;
+}
+
+/** The message /learn sends, or null when the text isn't /learn. */
+export function expandLearn(text: string): string | null {
+  const match = /^\/learn(?:\s+([\s\S]*))?$/.exec(text.trim());
+  return match ? learnPrompt(match[1] ?? "") : null;
 }
 
 /**

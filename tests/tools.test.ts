@@ -1,9 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildAgentConfig, EMPTY_LIBRARY } from "../shared/bot";
 import { botToolName, supportsToolGrants } from "../shared/bot-tools";
+import { withPluginCommands } from "../client/chat/composer/logic";
+import { skillProposalId } from "../shared/proposals";
+import { expandLearn, sanitizeSkillName } from "../shared/skills";
 import { newUuid } from "../shared/uuid";
 import { fakeHost, makeBot } from "./helpers";
 
@@ -26,6 +29,30 @@ describe("tool names and grants", () => {
     expect(claude.toolPolicy?.preapproved.map((grant) => grant.tool)).toEqual(["list_bots", "check_chat", "search_chats", "propose_skill", "propose_routine", "connect_app", "ask_bot"]);
     // Paseo refuses a chat whose provider can't take grants, so none are sent.
     expect(buildAgentConfig(makeBot({ provider: "gemini", alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "m", "", { tools })).not.toHaveProperty("toolPolicy");
+  });
+
+  it("expands /learn and lists it before provider commands", () => {
+    expect(expandLearn("/learn")).toContain("propose_skill");
+    expect(expandLearn("  /learn the invoice part ")).toContain("Focus on: the invoice part.");
+    expect(expandLearn("/learner")).toBeNull();
+    expect(expandLearn("please /learn")).toBeNull();
+    const learn = { name: "learn", description: "ours", argumentHint: "" };
+    const provider = [{ name: "learn", description: "theirs", argumentHint: "" }, { name: "compact", description: "", argumentHint: "" }];
+    expect(withPluginCommands([learn], provider).map((command) => command.description)).toEqual(["ours", ""]);
+  });
+
+  it("finds the proposal behind a finished propose_skill call", () => {
+    const output = [{ type: "text", text: "Proposal p-0123456789: the user sees..." }];
+    expect(skillProposalId({ name: "mcp__bots__propose_skill", status: "completed", detail: { type: "unknown", input: {}, output } })).toBe("p-0123456789");
+    expect(skillProposalId({ name: "bots.propose_skill", status: "completed", detail: { type: "unknown", input: {}, output: "Proposal p-abcdefabcd: x" } })).toBe("p-abcdefabcd");
+    expect(skillProposalId({ name: "mcp__bots__propose_skill", status: "running", detail: { type: "unknown", input: {}, output: null } })).toBeNull();
+    expect(skillProposalId({ name: "mcp__bots__list_bots", status: "completed", detail: { type: "unknown", input: {}, output } })).toBeNull();
+  });
+
+  it("keeps skill folder names inside the library", () => {
+    expect(sanitizeSkillName("..")).toBe("skill");
+    expect(sanitizeSkillName(".hidden.")).toBe("hidden");
+    expect(sanitizeSkillName("v1.2 notes")).toBe("v1.2-notes");
   });
 
   it("makes v4 UUIDs for agent ids", () => {
@@ -75,5 +102,32 @@ describe("the bots MCP server", () => {
     } finally {
       relay.stop();
     }
+  });
+
+  it("proposes a skill that the user saves or dismisses once", async () => {
+    const { proposeSkill } = await import("../server/tools/skills");
+    const { acceptProposal, dismissProposal, getProposal } = await import("../server/proposals");
+    const { librarySkillPath } = await import("../server/library");
+    const host = fakeHost([makeBot({ id: "bot-a" })]);
+    const caller = { bot: makeBot({ id: "bot-a" }), agentId: newUuid(), host };
+    const reply = await proposeSkill.run({ name: "Weekly Report!", description: "Use for the\nweekly report", instructions: "1. Collect PRs." }, caller);
+    const id = skillProposalId({ name: "bots.propose_skill", status: "completed", detail: { output: reply } })!;
+    expect(id).toMatch(/^p-[a-z0-9]{10}$/);
+
+    const proposal = await getProposal(id);
+    expect(proposal).toMatchObject({ botId: "bot-a", agentId: caller.agentId, kind: "skill", status: "pending", data: { name: "weekly-report", description: "Use for the weekly report" } });
+    expect(proposal!.data.text).toBe("---\nname: weekly-report\ndescription: Use for the weekly report\n---\n\n1. Collect PRs.\n");
+
+    const accepted = await acceptProposal(id);
+    expect(accepted.proposal.status).toBe("accepted");
+    expect(accepted.skill).toMatchObject({ id: "weekly-report", description: "Use for the weekly report" });
+    expect(await readFile(join(librarySkillPath("weekly-report"), "SKILL.md"), "utf8")).toBe(proposal!.data.text);
+    await expect(acceptProposal(id)).rejects.toThrow("already saved");
+    await expect(dismissProposal(id)).rejects.toThrow("already saved");
+
+    const other = skillProposalId({ name: "bots.propose_skill", status: "completed", detail: { output: await proposeSkill.run({ name: "x", description: "y", instructions: "z" }, caller) } })!;
+    expect((await dismissProposal(other)).status).toBe("dismissed");
+    await expect(acceptProposal(other)).rejects.toThrow("dismissed");
+    await expect(acceptProposal("p-0000000000")).rejects.toThrow("no longer available");
   });
 });

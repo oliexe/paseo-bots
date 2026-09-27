@@ -164,6 +164,41 @@ export function SecondaryButton({ colors, label, disabled, onPress }: { colors: 
   );
 }
 
+/** The buttons under a permission or proposal card (agent-stream/view.tsx PermissionRequestCard). */
+export function CardButton({ colors, label, icon, primary = false, busy = false, spinning = false, onPress }: { colors: Colors; label: string; icon: string; primary?: boolean; busy?: boolean; spinning?: boolean; onPress(): void }) {
+  const [hovered, setHovered] = useState(false);
+  const tint = primary ? colors.foreground : colors.foregroundMuted;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={busy}
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => ({
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 6,
+        alignItems: "center",
+        borderWidth: 1,
+        backgroundColor: hovered ? colors.surface2 : colors.surface1,
+        borderColor: nativeTokens(colors).borderAccent,
+        opacity: pressed ? 0.9 : 1,
+      })}
+    >
+      {spinning ? (
+        <Spinner color={tint} />
+      ) : (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Icon name={icon} size={14} color={tint} />
+          <Text style={{ fontSize: ui(14), color: tint }}>{label}</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
 // ---------------------------------------------------------------- expandable badge
 
 export interface ExpandableBadgeProps {

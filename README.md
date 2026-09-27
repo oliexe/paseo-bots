@@ -12,7 +12,8 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 - **A workspace per bot**: every chat is a thread in that bot's workspace.
 - **Memory**: each bot keeps a `MEMORY.md` it updates as it learns.
 - **Routines**: runs on a schedule, such as every weekday at 9:00 or any cron expression.
-- **Skills & Tools**: one library of skills and MCP servers, switched on per bot. Import skills from GitHub and test servers to see their tools.
+- **Skills & Tools**: one library of skills and MCP servers, switched on per bot. Import skills from GitHub (they stay off until you review them) and test servers to see their tools.
+- **Learning**: send `/learn` after a task and the bot writes it up as a skill. Review it in the chat and save it.
 - **Connected apps**: 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev).
 - **Paseo tools**: bots can start other agents, open workspaces, set up schedules and use the browser.
 

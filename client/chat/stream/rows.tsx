@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Image, Pressable, Text, View } from "react-native";
 import type { ComposerAttachment } from "../../../shared/attachments";
 import { capMessageForRender, formatDuration, formatMessageTimestamp, utf8ByteLength } from "../../../shared/markdown";
+import { skillProposalId } from "../../../shared/proposals";
 import { buildToolCallPresentation, type TaskActivity, type TaskEntry, type ToolCallDetail, type ToolCallStatus } from "../../../shared/tools";
 import { AttachmentPill } from "../../AttachmentPill";
 import { Markdown } from "../../Markdown";
@@ -12,6 +13,7 @@ import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
 import type { StreamRow, TurnFooterInfo } from "./model";
 import { PlanCard } from "./PlanCard";
+import { SkillProposalCard } from "./SkillProposalCard";
 import { CopyButton, ExpandableBadge, isWeb, Spinner } from "./ui";
 
 type Colors = PluginTheme["colors"];
@@ -43,8 +45,11 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
       return <AssistantMessage colors={colors} text={row.text} phase={row.phase} compactBottom={compactBottom} />;
     case "thought":
       return <ThoughtRow colors={colors} compact={context.compact} text={row.text} loading={row.loading} />;
-    case "tool":
+    case "tool": {
+      const proposalId = skillProposalId(row);
+      if (proposalId) return <SkillProposalCard colors={colors} compact={context.compact} proposalId={proposalId} />;
       return <ToolCallRow colors={colors} compact={context.compact} cwd={context.cwd} name={row.name} status={row.status} error={row.error} detail={row.detail} metadata={row.metadata} />;
+    }
     case "speak":
       return <SpeakMessage colors={colors} text={row.text} />;
     case "todo":

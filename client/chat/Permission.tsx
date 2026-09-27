@@ -1,15 +1,15 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent, PaseoAgentPermissionResponse, PaseoApi } from "@getpaseo/client";
-import { Icon, useToast } from "@getpaseo/plugin/client/react-native";
+import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { ToolCallDetail } from "../../shared/tools";
-import { errorText, nativeTokens } from "../native";
+import { errorText } from "../native";
 import { ui } from "../typography";
 import { ToolCallDetailsContent } from "./stream/details";
 import { PlanCard } from "./stream/PlanCard";
 import { QuestionFormCard } from "./stream/QuestionForm";
-import { Spinner } from "./stream/ui";
+import { CardButton } from "./stream/ui";
 
 type Colors = PluginTheme["colors"];
 type Permission = PaseoAgent["pendingPermissions"][number];
@@ -86,7 +86,16 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
       <Text style={{ fontSize: ui(14), marginVertical: 4, color: colors.foregroundMuted }}>How would you like to proceed?</Text>
       <View style={compact ? { gap: 8 } : { gap: 8, flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start", alignItems: "center", width: "100%" }}>
         {actions.map((action) => (
-          <ActionButton key={action.id} colors={colors} action={action} busy={responding} spinning={responding && respondingId === action.id} onPress={() => press(action)} />
+          <CardButton
+            key={action.id}
+            colors={colors}
+            label={action.label}
+            icon={action.behavior === "allow" ? "Check" : "X"}
+            primary={action.variant === "primary"}
+            busy={responding}
+            spinning={responding && respondingId === action.id}
+            onPress={() => press(action)}
+          />
         ))}
       </View>
     </>
@@ -104,40 +113,5 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
       {!isPlan ? <ToolCallDetailsContent colors={colors} detail={detail} maxHeight={200} /> : null}
       {footer}
     </View>
-  );
-}
-
-function ActionButton({ colors, action, busy, spinning, onPress }: { colors: Colors; action: Action; busy: boolean; spinning: boolean; onPress(): void }) {
-  const [hovered, setHovered] = useState(false);
-  const primary = action.variant === "primary";
-  const tint = primary ? colors.foreground : colors.foregroundMuted;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={action.label}
-      disabled={busy}
-      onPress={onPress}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      style={({ pressed }) => ({
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 6,
-        alignItems: "center",
-        borderWidth: 1,
-        backgroundColor: hovered ? colors.surface2 : colors.surface1,
-        borderColor: nativeTokens(colors).borderAccent,
-        opacity: pressed ? 0.9 : 1,
-      })}
-    >
-      {spinning ? (
-        <Spinner color={tint} />
-      ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Icon name={action.behavior === "allow" ? "Check" : "X"} size={14} color={tint} />
-          <Text style={{ fontSize: ui(14), color: tint }}>{action.label}</Text>
-        </View>
-      )}
-    </Pressable>
   );
 }

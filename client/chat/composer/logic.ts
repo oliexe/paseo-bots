@@ -277,6 +277,12 @@ export function commandQuery(text: string): string | null {
   return match ? match[1]!.toLowerCase() : null;
 }
 
+/** The plugin's own commands first; a provider command with the same name is hidden (Paseo's mergeSlashCommandSources). */
+export function withPluginCommands(plugin: readonly SlashCommand[], provider: readonly SlashCommand[]): SlashCommand[] {
+  const taken = new Set(plugin.map((command) => command.name));
+  return [...plugin, ...provider.filter((command) => !taken.has(command.name))];
+}
+
 /** Prefix matches first, then substring matches, each alphabetical. */
 export function filterCommands(commands: readonly SlashCommand[], query: string, limit = 50): SlashCommand[] {
   const q = query.toLowerCase();

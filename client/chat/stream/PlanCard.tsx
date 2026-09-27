@@ -32,7 +32,7 @@ export function PlanCard(props: PlanCardProps) {
 
 function PlanCardContent({ colors, title, description, text, outcome, footer, disableOuterSpacing = false }: PlanCardProps) {
   const [expanded, setExpanded] = useState(outcome !== "rejected" && outcome !== "canceled");
-  const resolvedTitle = !outcome || outcome === "pending" ? (title ?? "Plan") : TITLES[outcome];
+  const resolvedTitle = title ?? (!outcome || outcome === "pending" ? "Plan" : TITLES[outcome]);
   return (
     <View
       style={{

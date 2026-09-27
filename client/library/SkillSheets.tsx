@@ -5,7 +5,7 @@ import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { skillImportRpc, skillWriteRpc } from "../../shared/rpc";
-import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName, scanSkillText } from "../../shared/skills";
+import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName, scanSkillText, skillMarkdown } from "../../shared/skills";
 import { Alert, Button, FormTextArea, InputField, SheetActions, SheetFooter, TextAreaField } from "../panel/controls";
 import { code, codeLine, ui } from "../typography";
 import { errorText, MONO_FONT, MONO_PROPS } from "../native";
@@ -69,12 +69,6 @@ export function ImportSkillsSheet({ colors, onClose, onImported }: { colors: Col
       </Modal.Content>
     </Modal>
   );
-}
-
-/** SKILL.md with the frontmatter agents read: a name that matches the folder and a one-line description. */
-export function skillMarkdown(id: string, description: string, body: string): string {
-  const line = description.replace(/\s+/g, " ").trim();
-  return `---\nname: ${id}\ndescription: ${line}\n---\n\n${body.trim()}\n`;
 }
 
 /** Writes a new skill here: a name, when to use it, and its instructions. */

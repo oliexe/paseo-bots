@@ -9,6 +9,7 @@ import { probeMcpServer } from "./server/mcp-probe";
 import { accounts, catalog, connect, disconnect, removeKey, setKey, status as appsStatus } from "./server/composio";
 import { BotsHost } from "./server/host";
 import { Relay } from "./server/relay";
+import { acceptProposal, dismissProposal, getProposal } from "./server/proposals";
 import { BOT_TOOLS } from "./server/tools";
 import { saveUpload } from "./server/uploads";
 import { botSettings, EMPTY_LIBRARY } from "./shared/bot";
@@ -23,6 +24,9 @@ import {
   memoryWriteRpc,
   mountRpc,
   mcpProbeRpc,
+  proposalAcceptRpc,
+  proposalDismissRpc,
+  proposalGetRpc,
   appsAccountsRpc,
   appsCatalogRpc,
   appsConnectRpc,
@@ -92,6 +96,9 @@ export default function contribute(server: PluginServerContext) {
     const bot = await host.bot(botId);
     return { tools: await relay.mountTools(botId, agentId), apps: bot?.apps.length ? await relay.mountApps(botId) : null };
   });
+  server.handle(proposalGetRpc, async ({ id }) => ({ proposal: await getProposal(id) }));
+  server.handle(proposalAcceptRpc, ({ id }) => acceptProposal(id));
+  server.handle(proposalDismissRpc, async ({ id }) => ({ proposal: await dismissProposal(id) }));
   server.handle(routineStatusRpc, (_input, context) => {
     attach(context);
     return scheduler.status();

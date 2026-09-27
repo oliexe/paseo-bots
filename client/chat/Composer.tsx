@@ -8,6 +8,7 @@ import { ActivityIndicator, Platform, Pressable, Text, View, useWindowDimensions
 import { newAttachmentId, normalizeMimeType, preflightFile, toWire, type ComposerAttachment } from "../../shared/attachments";
 import type { Bot } from "../../shared/bot";
 import { uploadRpc } from "../../shared/rpc";
+import { expandLearn, LEARN_COMMAND } from "../../shared/skills";
 import { AttachmentPill, PendingAttachmentPill } from "../AttachmentPill";
 import type { BotHost } from "../data";
 import { homeIndicatorInset } from "../keyboard";
@@ -44,6 +45,7 @@ import {
   type QueuedMessage,
   type SendAction,
   type SlashCommand,
+  withPluginCommands,
 } from "./composer/logic";
 import { useSendBehavior } from "./composer/storage";
 
@@ -74,6 +76,8 @@ export function Composer(props: ComposerProps) {
   const draftKey = composerDraftKey(props.host.key, props.bot.id, props.agentId);
   return <ChatComposer key={draftKey} draftKey={draftKey} {...props} />;
 }
+
+const PLUGIN_COMMANDS: SlashCommand[] = [{ ...LEARN_COMMAND, kind: "command" }];
 
 // Commands are listed per live session; cache them per agent for the session.
 const commandCache = new Map<string, Promise<{ commands: SlashCommand[]; error: string | null }>>();
@@ -254,7 +258,9 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   // ------------------------------------------------------------ sending
 
   const deliver = async (message: { text: string; attachments: ComposerAttachment[] }) => {
-    const outgoing = message.text.trim() || "See the attached files.";
+    const typed = message.text.trim();
+    // /learn only works where the plugin's tools are mounted (bots on this host).
+    const outgoing = (agentId && host.isLocal ? expandLearn(typed) : null) ?? (typed || "See the attached files.");
     const messageId = newMessageId();
     const wire = toWire(message.attachments);
     rememberSent(messageId, outgoing, message.attachments);
@@ -411,7 +417,8 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
       alive = false;
     };
   }, [commandsVisible, agentId, host.api]);
-  const commandList = commandsVisible && commandState?.agentId === agentId ? filterCommands(commandState.commands, query ?? "") : [];
+  const providerCommands = commandState?.agentId === agentId ? commandState.commands : [];
+  const commandList = commandsVisible ? filterCommands(withPluginCommands(host.isLocal ? PLUGIN_COMMANDS : [], providerCommands), query ?? "") : [];
   const selectCommand = (command: SlashCommand) => {
     updateText(applyCommand(command));
     setCommandsDismissed(true);

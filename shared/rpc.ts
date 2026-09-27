@@ -1,6 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import { BotMcpServerSchema, BotSchema, McpServerConfigSchema, McpToolSchema } from "./bot";
+import { ProposalSchema } from "./proposals";
 
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 /** "MEMORY.md" or a topic file such as "projects.md" (stored under memory/). */
@@ -195,4 +196,28 @@ export const mountRpc = defineRpc({
   name: "bots.mount",
   input: z.object({ botId: BotId, agentId: z.uuid() }),
   output: z.object({ tools: McpServerConfigSchema, apps: McpServerConfigSchema.nullable() }),
+});
+
+// ---------------------------------------------------------------- proposals
+
+const ProposalId = z.string().regex(/^p-[a-z0-9]+$/);
+
+/** A proposal a bot made in a chat; null once it's gone. */
+export const proposalGetRpc = defineRpc({
+  name: "bots.proposals.get",
+  input: z.object({ id: ProposalId }),
+  output: z.object({ proposal: ProposalSchema.nullable() }),
+});
+
+/** Saves a proposed skill to the library; the app then turns it on for the bot. */
+export const proposalAcceptRpc = defineRpc({
+  name: "bots.proposals.accept",
+  input: z.object({ id: ProposalId }),
+  output: z.object({ proposal: ProposalSchema, skill: z.object({ id: SkillName, description: z.string(), sha: z.string() }) }),
+});
+
+export const proposalDismissRpc = defineRpc({
+  name: "bots.proposals.dismiss",
+  input: z.object({ id: ProposalId }),
+  output: z.object({ proposal: ProposalSchema }),
 });
