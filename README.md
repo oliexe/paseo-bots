@@ -8,25 +8,22 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 
 ## Features
 
-| Area | Feature | What you get |
-| --- | --- | --- |
-| **Bots** | Bots with a job | Instructions, a provider and model, a host and an approval mode. Start blank or from a role such as Email triage or Researcher. |
-| | Avatars | A pixel-art face, your own picture, or one OpenAI draws with your key. |
-| | Voice | Read a reply aloud, or have the bot read each one as it finishes, in a voice of its own from the computer's voices. |
-| | Presets and team files | Save a bot as a preset for new ones, set defaults for new bots, and share several bots in one file (Settings → Plugins → paseo-bots → Bots). |
-| **Chats** | A workspace per bot | Every chat is a thread in that bot's workspace. |
-| | Find and transcripts | Find words in a chat (⌘F), or copy it as a Markdown transcript. |
-| | Approvals | Allow a command once, or always for that bot, exactly as it ran. Each bot's Overview lists what it won't do. |
-| **Knowledge** | Memory | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. Every change to its memory can be undone, and bots can search their past chats. |
-| | Skills | One library of skills in Skills & Tools, switched on per bot. Skills imported from GitHub stay off until you review them. |
-| | Learning | Send `/learn` after a task and the bot writes it up as a skill. Review it in the chat and save it. |
-| | Playbooks | Step-by-step guidance a chat gets when its first message mentions the playbook's trigger words. |
-| **Teamwork** | Teams | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. The Team map shows each team and what every bot is doing. |
-| | Bots working together | A bot can ask another bot for help. The request starts a chat under that bot and the answer comes back; each bot asks you first, asks freely or never. |
-| **Automation** | Routines | Run on a schedule, such as every weekday at 9:00 or any cron expression, or when a webhook is called. Bots can propose them from a chat, results can post back to a chat, and each routine keeps its run history and upcoming runs. |
-| **Tools and apps** | MCP servers | MCP servers join the same library, switched on per bot. Import them from Claude Code, Claude Desktop or Cursor; they stay off until a test connects to them and lists their tools. |
-| | Connected apps | 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. Keep a bot to an app's read-only or chosen tools, or to one of its accounts. A bot that needs another app asks with a sign-in card in the chat. |
-| | Paseo tools | Bots can start other agents, open workspaces, set up schedules and use the browser. |
+| Feature | Description |
+| --- | --- |
+| **Bots with a job** | Instructions, provider and model, host, approval mode and an avatar: a pixel-art face, your own picture, or one OpenAI draws with your key. Start blank or from a role such as Email triage or Researcher. |
+| **Presets and team files** | Save a bot as a preset for new ones, set defaults for new bots, and share several bots in one file (Settings → Plugins → paseo-bots → Bots). |
+| **A workspace per bot** | Every chat is a thread in that bot's workspace. Find words in a chat (⌘F) or copy it as a Markdown transcript. |
+| **Voice** | Read a reply aloud, or have a bot read each one as it finishes, in a voice of its own from the computer's voices. |
+| **Approvals** | Allow a command once or always for a bot, exactly as it ran. Each bot's Overview lists what it won't do. |
+| **Memory** | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. Every change to its memory can be undone, and bots can search their past chats. |
+| **Routines** | Runs on a schedule, such as every weekday at 9:00 or any cron expression, or when its webhook is called. Bots can propose them from a chat, results can post back to a chat, and each routine keeps its run history and upcoming runs. |
+| **Teams** | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. The Team map shows each team and what every bot is doing. |
+| **Bots working together** | A bot can ask another bot for help. The request starts a chat under that bot and the answer comes back; each bot asks you first, asks freely or never. |
+| **Skills & Tools** | One library of skills and MCP servers, switched on per bot. Import skills from GitHub (they stay off until you review them) and MCP servers from Claude Code, Claude Desktop or Cursor (they stay off until a test connects to them and lists their tools). |
+| **Playbooks** | Step-by-step guidance a chat gets when its first message mentions the playbook's trigger words. |
+| **Learning** | Send `/learn` after a task and the bot writes it up as a skill. Review it in the chat and save it. |
+| **Connected apps** | 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. Keep a bot to an app's read-only or chosen tools, or to one of its accounts. A bot that needs another app asks with a sign-in card in the chat. |
+| **Paseo tools** | Bots can start other agents, open workspaces, set up schedules and use the browser. |
 
 ## Install
 
