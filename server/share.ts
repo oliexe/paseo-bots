@@ -22,6 +22,7 @@ const BotFields = BotSchema.pick({
   modeId: true,
   thinkingOptionId: true,
   routines: true,
+  playbooks: true,
 });
 
 const SharedSkillSchema = z.object({ id: z.string(), description: z.string().default(""), source: z.string().default("") });
@@ -104,6 +105,7 @@ export async function exportBot({ bot, includeMemory }: { bot: Bot; includeMemor
       // Routines arrive paused, as in OpenMausBot's team files.
       // Results chats only exist on this host.
       routines: bot.routines.map((routine) => ({ ...routine, enabled: false, resultsChatId: null })),
+      playbooks: bot.playbooks,
     },
     skills: skills.map((skill) => ({ id: skill.id, description: skill.description, source: skill.source })),
     mcpServers: redact(botMcpServers(bot, library).map((server) => ({ name: server.name, enabled: true, config: server.config }))),

@@ -22,6 +22,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     skillIds: [],
     apps: [],
     contactBots: "ask",
+    playbooks: [],
     routines: [],
     pinned: false,
     archived: false,
@@ -96,6 +97,7 @@ describe("promptSections", () => {
       memory: "likes tea",
       memoryPath: "/m/MEMORY.md",
       recentWork: ['- today 09:05 · "Inbox" · you said: "Done."'],
+      playbooks: [],
       skills: [{ name: "pdf", description: "PDFs.", path: "/m/skills/pdf/SKILL.md" }],
       paseoTools: true,
       botTools: true,
@@ -112,7 +114,7 @@ describe("promptSections", () => {
   });
 
   it("leaves out memory and skills when the bot has no local folder", () => {
-    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
+    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
   });
 });
 

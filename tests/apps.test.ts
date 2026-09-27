@@ -27,6 +27,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     skillIds: [],
     apps: [],
     contactBots: "ask",
+    playbooks: [],
     routines: [],
     cwd: null,
     pinned: false,
@@ -91,7 +92,7 @@ describe("agent config and prompt", () => {
   });
 
   it("describes the meta-tools when the bot has apps", () => {
-    const sections = promptSections(bot(), { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools: false, botTools: false, apps: ["Gmail", "Slack"] });
+    const sections = promptSections(bot(), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps: ["Gmail", "Slack"] });
     expect(sections.map((section) => section.title)).toEqual(["Persona", "Connected apps"]);
     expect(sections[1]!.text).toBe(appsPrompt(["Gmail", "Slack"]));
     expect(sections[1]!.text).toContain("You may use: Gmail, Slack.");

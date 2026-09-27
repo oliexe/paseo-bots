@@ -9,13 +9,13 @@ import { ui } from "../typography";
 import { AccessSection, ModelSection, PermissionsSection } from "./AgentSections";
 import { Alert, SearchField, useCompact } from "./controls";
 import { IdentitySection } from "./IdentitySection";
-import { MemorySection, SkillsSection, SoulSection } from "./KnowledgeSections";
+import { MemorySection, PlaybooksSection, SkillsSection, SoulSection } from "./KnowledgeSections";
 import { HistorySection, OverviewSection, UsageSection } from "./OverviewSections";
 import { RoutinesSection } from "./RoutinesSection";
 
 type Colors = PluginTheme["colors"];
 
-export type SectionId = "overview" | "identity" | "soul" | "skills" | "memory" | "routines" | "access" | "model" | "permissions" | "history" | "usage";
+export type SectionId = "overview" | "identity" | "soul" | "skills" | "playbooks" | "memory" | "routines" | "access" | "model" | "permissions" | "history" | "usage";
 
 interface SectionEntry {
   id: SectionId;
@@ -41,6 +41,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
     label: "Knowledge",
     sections: [
       { id: "skills", label: "Skills", icon: "Puzzle", rows: ["Library skills"], keywords: "skill github SKILL.md library" },
+      { id: "playbooks", label: "Playbooks", icon: "BookOpenCheck", rows: ["New playbook", "Trigger words", "Steps"], keywords: "playbook process guidance triggers steps procedure" },
       { id: "memory", label: "Memory", icon: "Brain", rows: ["MEMORY.md", "Topic files", "Changes", "Daily log", "New topic file"], keywords: "memory notes remember undo journal log" },
     ],
   },
@@ -166,6 +167,8 @@ function renderSection(id: SectionId, props: PanelProps): ReactNode {
       return <SoulSection {...props} />;
     case "skills":
       return <SkillsSection {...props} />;
+    case "playbooks":
+      return <PlaybooksSection {...props} />;
     case "memory":
       return <MemorySection {...props} />;
     case "routines":

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { PaseoApi } from "@getpaseo/client";
 import { recentWork } from "../shared/activity";
+import { selectPlaybooks } from "../shared/playbooks";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 import { catalog, connectedSlugs, readState } from "./composio";
 import { botSkills, composeSystemPrompt, promptSections, type Bot, type Library, type PromptContext } from "../shared/bot";
@@ -21,9 +22,11 @@ async function botAppNames(bot: Bot): Promise<string[]> {
   return slugs.map((slug) => names.get(slug) ?? slug);
 }
 
-export async function promptContext(bot: Bot, local: boolean, library: Library, paseoTools: boolean): Promise<PromptContext> {
+export async function promptContext(bot: Bot, local: boolean, library: Library, paseoTools: boolean, message = ""): Promise<PromptContext> {
+  // Playbooks live in the settings, so they travel with the bot to any host.
+  const playbooks = selectPlaybooks(message, bot.playbooks);
   // Connected apps go through this host's relay, so bots on other hosts can't reach them.
-  if (!local) return { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools, botTools: false, apps: [] };
+  if (!local) return { memory: "", memoryPath: null, recentWork: [], playbooks, skills: [], paseoTools, botTools: false, apps: [] };
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
   for (const skill of botSkills(bot, library)) {
@@ -37,6 +40,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     memory: await injectedMemory(bot.id),
     memoryPath: join(memoryFolder(bot.id), MAIN_MEMORY),
     recentWork: recentWork(await recentLogEntries(bot.id, 3), new Date()),
+    playbooks,
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
     botTools: true,
@@ -55,8 +59,9 @@ export async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Pr
   }
 }
 
-export async function systemPrompt({ bot, local }: { bot: Bot; local: boolean }, library: Library, paseo: PaseoApi | null) {
+/** The system prompt for a new chat; `message` is its first message, which picks the playbooks. */
+export async function systemPrompt({ bot, local, message }: { bot: Bot; local: boolean; message?: string }, library: Library, paseo: PaseoApi | null) {
   // Another host's config isn't readable from here; Paseo gives agents its tools by default.
-  const context = await promptContext(bot, local, library, local ? await paseoToolsOn(paseo, bot.provider) : true);
+  const context = await promptContext(bot, local, library, local ? await paseoToolsOn(paseo, bot.provider) : true, message);
   return { systemPrompt: composeSystemPrompt(bot, context), sections: promptSections(bot, context) };
 }

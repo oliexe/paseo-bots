@@ -64,6 +64,7 @@ function blankBot(provider: string, template?: BotTemplate): Bot {
     apps: [],
     contactBots: "ask",
     routines: [],
+    playbooks: [],
     cwd: null,
     pinned: false,
     archived: false,
@@ -654,7 +655,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
     // The bot's folder holds its memory and skills even when it works elsewhere.
     const home = await ensureHome({ botId: bot.id });
     const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
-    const { systemPrompt } = await compose({ bot, local: host.isLocal });
+    const { systemPrompt } = await compose({ bot, local: host.isLocal, message: message.text });
     // The plugin's tools and connected apps go through this host's relay, so only bots here get them.
     const agentId = newUuid();
     const plugin = host.isLocal ? await mountServers({ botId: bot.id, agentId }) : {};

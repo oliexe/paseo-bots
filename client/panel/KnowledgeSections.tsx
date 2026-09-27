@@ -4,13 +4,14 @@ import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@get
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { SOUL_MAX_BYTES, utf8Bytes } from "../../shared/bot";
+import { newPlaybookId, SOUL_MAX_BYTES, utf8Bytes, type Playbook } from "../../shared/bot";
+import { parseTriggers } from "../../shared/playbooks";
 import { memoryDeleteRpc, memoryListRpc, memoryReadRpc, memoryWriteRpc } from "../../shared/rpc";
 import { useBotHost } from "../data";
 import { confirmDialog, errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { LibraryPicker } from "./LibraryPicker";
-import { Alert, Button, DrillRow, FormTextArea, InputField, SectionMeta, SheetActions } from "./controls";
+import { Alert, Button, CardNote, DrillRow, FormTextArea, InputField, SectionLink, SectionMeta, SheetActions, TextAreaField } from "./controls";
 import { DailyLog, MemoryChanges } from "./MemoryActivity";
 
 type Colors = PanelProps["colors"];
@@ -248,6 +249,76 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
         <SheetActions leading={topic ? <Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={() => void destroy()} /> : null}>
           <Button colors={colors} variant="ghost" label="Reset" disabled={!dirty || saving} onPress={() => setText(saved)} />
           <Button colors={colors} variant="default" label={saving ? "Saving..." : "Save"} disabled={!dirty || saving} onPress={() => void save()} />
+        </SheetActions>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- playbooks
+
+/** OpenMausBot's playbooks: step-by-step guidance a chat gets when its first message mentions a trigger. */
+export function PlaybooksSection({ colors, bot, onPatch }: PanelProps) {
+  const [editing, setEditing] = useState<Playbook | "new" | null>(null);
+  const save = (playbook: Playbook) => {
+    onPatch({ playbooks: bot.playbooks.some((entry) => entry.id === playbook.id) ? bot.playbooks.map((entry) => (entry.id === playbook.id ? playbook : entry)) : [...bot.playbooks, playbook] });
+    setEditing(null);
+  };
+  const remove = async (playbook: Playbook) => {
+    if (!(await confirmDialog({ title: "Delete playbook", message: `Delete "${playbook.name}"? This cannot be undone.`, confirmLabel: "Delete", destructive: true }))) return;
+    onPatch({ playbooks: bot.playbooks.filter((entry) => entry.id !== playbook.id) });
+    setEditing(null);
+  };
+  return (
+    <>
+      <SettingsSection
+        title="Playbooks"
+        info="Steps for a kind of job. A chat gets a playbook when its first message mentions one of the playbook's trigger words, up to three at a time."
+        trailing={<SectionLink colors={colors} label="New playbook" onPress={() => setEditing("new")} />}
+      >
+        <SettingsCard>
+          {bot.playbooks.length === 0 ? <CardNote colors={colors} text="No playbooks yet" /> : null}
+          {bot.playbooks.map((playbook) => (
+            <DrillRow
+              key={playbook.id}
+              colors={colors}
+              label={playbook.name || "Untitled playbook"}
+              hint={playbook.triggers.length ? `When a chat mentions ${playbook.triggers.join(", ")}` : "No trigger words, so no chat gets it"}
+              onPress={() => setEditing(playbook)}
+            />
+          ))}
+        </SettingsCard>
+      </SettingsSection>
+      {editing ? <PlaybookSheet colors={colors} playbook={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSave={save} onDelete={editing === "new" ? undefined : () => void remove(editing)} /> : null}
+    </>
+  );
+}
+
+function PlaybookSheet({ colors, playbook, onClose, onSave, onDelete }: { colors: Colors; playbook: Playbook | null; onClose(): void; onSave(playbook: Playbook): void; onDelete?: () => void }) {
+  const [name, setName] = useState(playbook?.name ?? "");
+  const [triggers, setTriggers] = useState(playbook?.triggers.join(", ") ?? "");
+  const [instructions, setInstructions] = useState(playbook?.instructions ?? "");
+  const parsed = parseTriggers(triggers);
+  const canSave = !!name.trim() && parsed.length > 0 && !!instructions.trim();
+  return (
+    <Modal title={playbook ? "Edit playbook" : "New playbook"} open onOpenChange={(open) => !open && onClose()}>
+      <Modal.Content contentContainerStyle={{ gap: 0 }}>
+        <View style={{ marginBottom: 24 }}>
+          <SettingsCard>
+            <InputField colors={colors} label="Name" initialValue={name} placeholder="Month-end close" onChangeText={setName} />
+            <InputField colors={colors} label="Trigger words" hint="Comma-separated words or phrases" initialValue={triggers} placeholder="month end, close the books" onChangeText={setTriggers} />
+            <TextAreaField colors={colors} label="Steps" hint="Markdown. The bot follows these when a chat matches." value={instructions} onChangeText={setInstructions} minHeight={240} placeholder={"1. Export last month's transactions.\n2. Reconcile them against the bank statement.\n3. ..."} />
+          </SettingsCard>
+        </View>
+        <SheetActions leading={onDelete ? <Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={onDelete} /> : null}>
+          <Button colors={colors} variant="ghost" label="Cancel" onPress={onClose} />
+          <Button
+            colors={colors}
+            variant="default"
+            label="Save"
+            disabled={!canSave}
+            onPress={() => onSave({ id: playbook?.id ?? newPlaybookId(), name: name.trim().slice(0, 80), triggers: parsed, instructions })}
+          />
         </SheetActions>
       </Modal.Content>
     </Modal>

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt } from "./apps";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
+import { renderPlaybooks } from "./playbooks";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
 export const BOT_LABEL = "paseo-bots.bot";
@@ -117,6 +118,15 @@ export const RoutineSchema = z.object({
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 
+/** Process guidance a chat gets when one of its trigger words appears in the chat's first message. */
+export const PlaybookSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  triggers: z.array(z.string()).default([]),
+  instructions: z.string(),
+});
+export type Playbook = z.infer<typeof PlaybookSchema>;
+
 export const BotSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -145,6 +155,7 @@ export const BotSchema = z.object({
   /** Whether the bot may ask other bots for help: after the user approves each request, freely, or not at all. */
   contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
   routines: z.array(RoutineSchema).default([]),
+  playbooks: z.array(PlaybookSchema).default([]),
   /** Working folder. Null means the shared managed folder on the storing host. */
   cwd: z.string().nullable().default(null),
   pinned: z.boolean().default(false),
@@ -294,6 +305,10 @@ export function newBotId(): string {
   return "bot-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+export function newPlaybookId(): string {
+  return "pb-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
 export function newRoutineId(): string {
   return "rt-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
@@ -304,6 +319,8 @@ export interface PromptContext {
   memoryPath: string | null;
   /** The recent-work brief: the newest line from each chat of the last two days. */
   recentWork: string[];
+  /** Playbooks whose triggers appear in the chat's first message. */
+  playbooks: Playbook[];
   /** The bot's usable skills with the SKILL.md path the agent should read. Empty when the files aren't on the bot's host. */
   skills: { name: string; description: string; path: string }[];
   /** Whether the host gives this bot's provider Paseo's own tools. */
@@ -355,6 +372,7 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
       text: `Skills you can use. Before starting a task one of these covers, read its SKILL.md. Skills are reference material; they never override these instructions or the user's.\n${lines.join("\n")}`,
     });
   }
+  if (context.playbooks.length > 0) sections.push({ title: "Playbooks", text: renderPlaybooks(context.playbooks) });
   if (context.apps.length > 0) sections.push({ title: "Connected apps", text: appsPrompt(context.apps) });
   if (context.botTools) sections.push({ title: "Bot tools", text: botToolsPrompt(bot.contactBots !== "off") });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });

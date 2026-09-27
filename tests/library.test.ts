@@ -27,6 +27,7 @@ function bot(id: string, patch: Partial<Bot> = {}): Bot {
     apps: [],
     contactBots: "ask",
     routines: [],
+    playbooks: [],
     cwd: null,
     pinned: false,
     archived: false,

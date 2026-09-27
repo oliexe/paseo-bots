@@ -103,6 +103,7 @@ function summarize(before: Bot, after: Bot): string {
     ["soul", "standing instructions"],
     ["skillIds", "skills"],
     ["routines", "routines"],
+    ["playbooks", "playbooks"],
     ["mcpServerIds", "MCP servers"],
     ["apps", "connected apps"],
     ["alwaysAllow", "always-allowed tools"],

@@ -27,10 +27,10 @@ export const helloRpc = defineRpc({
 
 const PromptSectionSchema = z.object({ title: z.string(), text: z.string() });
 
-/** The bot's system prompt as it would be sent now, with its memory and skills. */
+/** The bot's system prompt as it would be sent now, with its memory and skills; `message` (a new chat's first) picks its playbooks. */
 export const systemPromptRpc = defineRpc({
   name: "bots.system-prompt",
-  input: z.object({ bot: BotSchema, local: z.boolean() }),
+  input: z.object({ bot: BotSchema, local: z.boolean(), message: z.string().max(100_000).optional() }),
   output: z.object({ systemPrompt: z.string(), sections: z.array(PromptSectionSchema) }),
 });
 
