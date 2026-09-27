@@ -1,12 +1,16 @@
-import { useHosts } from "@getpaseo/plugin/client";
+import { useHosts, useRpc } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { APPS_MCP_NAME } from "../../shared/apps";
 import { botMcpServers, toolGrants } from "../../shared/bot";
 import { TOOLS_MCP_NAME } from "../../shared/bot-tools";
+import { commandListRpc, commandRemoveRpc } from "../../shared/rpc";
 import { useAgentProfiles, useBotHost, useHostWorkspaces, usePaseoTools, useProviders } from "../data";
+import { errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
-import { InputField, SectionMeta, StatusBadge, TextAreaField } from "./controls";
+import { CardNote, InputField, SectionMeta, StatusBadge, TextAreaField } from "./controls";
 import { AppsPicker } from "./AppsPicker";
 import { LibraryPicker } from "./LibraryPicker";
 
@@ -221,7 +225,7 @@ export function ModelSection({ bot, localHost, onPatch }: PanelProps) {
 
 // ---------------------------------------------------------------- permissions
 
-export function PermissionsSection({ bot, localHost, onPatch }: PanelProps) {
+export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelProps) {
   const host = useBotHost(bot.hostId, localHost);
   const providers = useProviders(host);
   const provider = providers.data?.find((entry) => entry.provider === bot.provider);
@@ -258,6 +262,38 @@ export function PermissionsSection({ bot, localHost, onPatch }: PanelProps) {
           </SettingsCard>
         </SettingsSection>
       ) : null}
+      {host.isLocal ? <AllowedCommands colors={colors} bot={bot} /> : null}
     </>
+  );
+}
+
+/** OpenMausBot's saved commands: each is one exact command in one folder, added from its approval card. */
+function AllowedCommands({ colors, bot }: Pick<PanelProps, "colors" | "bot">) {
+  const list = useRpc(commandListRpc);
+  const remove = useRpc(commandRemoveRpc);
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const key = ["paseo-bots", "commands", bot.id];
+  const rules = useQuery({ queryKey: key, queryFn: () => list({ botId: bot.id }) });
+  const items = rules.data?.rules ?? [];
+  return (
+    <SettingsSection title="Allowed commands" info="Commands this bot runs without asking you: the exact command, in the exact folder. Add one with Always allow on the command's approval card.">
+      <SettingsCard>
+        {items.length === 0 ? <CardNote colors={colors} text={rules.isLoading ? "Loading..." : "None yet"} loading={rules.isLoading} /> : null}
+        {items.map((rule) => (
+          <SettingsAction
+            key={rule.id}
+            label={rule.command}
+            hint={rule.cwd}
+            actionLabel="Remove"
+            onPress={() =>
+              void remove({ botId: bot.id, id: rule.id })
+                .then(() => queryClient.invalidateQueries({ queryKey: key }))
+                .catch((error: unknown) => toast.error(errorText(error)))
+            }
+          />
+        ))}
+      </SettingsCard>
+    </SettingsSection>
   );
 }

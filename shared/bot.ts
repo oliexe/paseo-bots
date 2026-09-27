@@ -367,6 +367,23 @@ export function composeSystemPrompt(bot: Bot, context: PromptContext): string {
     .join("\n\n");
 }
 
+/**
+ * What a bot won't do, from its settings, for the Overview (OpenMausBot's
+ * wontLines). `local` is whether it runs on this host, where the plugin's tools
+ * and connected apps reach it.
+ */
+export function botLimits(bot: Bot, facts: { local: boolean; appsConfigured: boolean }): string[] {
+  const lines: string[] = [];
+  // Modes that skip approvals: Claude's bypassPermissions, Codex's full-access and the like.
+  if (!/bypass|full|yolo|dangerous/i.test(bot.modeId ?? "")) lines.push("Asks before running commands and tools it isn't allowed to use.");
+  if (!facts.local || bot.contactBots === "off") lines.push("Can't contact other bots.");
+  else if (bot.contactBots === "ask") lines.push("Asks before contacting other bots.");
+  if (!facts.local || !facts.appsConfigured || bot.apps.length === 0) lines.push("Has no connected apps.");
+  if (!bot.routines.some((routine) => routine.enabled)) lines.push("Won't act on a schedule.");
+  if (facts.local) lines.push("Keeps skills and routines only after you confirm them.");
+  return lines;
+}
+
 /** Rough token estimate (≈4 characters per token), as shown in the prompt preview. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);

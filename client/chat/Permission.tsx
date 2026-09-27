@@ -1,9 +1,12 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent, PaseoAgentPermissionResponse, PaseoApi } from "@getpaseo/client";
+import { useRpc } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { botToolName } from "../../shared/bot-tools";
+import { shellCommand } from "../../shared/commands";
+import { commandAllowRpc } from "../../shared/rpc";
 import { humanizeToolName, type ToolCallDetail } from "../../shared/tools";
 import { errorText } from "../native";
 import { ui } from "../typography";
@@ -23,11 +26,16 @@ interface PermissionCardProps {
   agentId: string | null;
   /** Phones stack the buttons. */
   compact?: boolean;
+  /** The bot and folder of the chat, when it can save commands to run without asking (bots on this host). */
+  botId?: string;
+  cwd?: string | null;
 }
 
 /** Paseo's PermissionRequestCard (agent-stream/view.tsx): plan, question and tool requests. */
-export function PermissionCard({ colors, permission, api, agentId, compact = false }: PermissionCardProps) {
+export function PermissionCard({ colors, permission, api, agentId, compact = false, botId, cwd }: PermissionCardProps) {
   const toast = useToast();
+  const allowCommand = useRpc(commandAllowRpc);
+  const shell = botId && cwd && permission.kind === "tool" ? shellCommand(permission, cwd) : null;
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [responding, setResponding] = useState(false);
   const isPlan = permission.kind === "plan";
@@ -74,6 +82,20 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     return <QuestionFormCard colors={colors} input={permission.input} compact={compact} isResponding={responding} onRespond={(response) => void respond(response)} />;
   }
 
+  // OpenMausBot's "Always allow": this exact command in this folder won't ask again for this bot.
+  const always = async () => {
+    if (!shell || !botId) return;
+    setRespondingId("always");
+    try {
+      await allowCommand({ botId, command: shell.command, cwd: shell.cwd });
+    } catch (error) {
+      setRespondingId(null);
+      toast.error(`Couldn't save the command: ${errorText(error)}`);
+      return;
+    }
+    await respond({ behavior: "allow" });
+  };
+
   const press = (action: Action) => {
     setRespondingId(action.id);
     void respond(action.behavior === "allow" ? { behavior: "allow", selectedActionId: action.id } : { behavior: "deny", selectedActionId: action.id, message: "Denied by user" });
@@ -98,6 +120,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
             onPress={() => press(action)}
           />
         ))}
+        {shell ? <CardButton colors={colors} label="Always allow" icon="CheckCheck" busy={responding || respondingId === "always"} spinning={respondingId === "always"} onPress={() => void always()} /> : null}
       </View>
     </>
   );

@@ -10,6 +10,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 
 - **Bots with a job**: instructions, provider and model, host, approval mode and a pixel-art avatar. Start blank or from a role such as Email triage or Researcher.
 - **A workspace per bot**: every chat is a thread in that bot's workspace.
+- **Approvals**: allow a command once or always for a bot, exactly as it ran. Each bot's Overview lists what it won't do.
 - **Memory**: each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. Every change to its memory can be undone, and bots can search their past chats.
 - **Routines**: runs on a schedule, such as every weekday at 9:00 or any cron expression, or when its webhook is called. Bots can propose them from a chat, results can post back to a chat, and each routine keeps its run history and upcoming runs.
 - **Bots working together**: a bot can ask another bot for help. The request starts a chat under that bot and the answer comes back; each bot asks you first, asks freely or never.

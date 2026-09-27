@@ -293,3 +293,26 @@ export const proposalDismissRpc = defineRpc({
   input: z.object({ id: ProposalId }),
   output: z.object({ proposal: ProposalSchema }),
 });
+
+// ---------------------------------------------------------------- allowed commands
+
+const CommandRuleSchema = z.object({ id: z.string(), command: z.string(), cwd: z.string() });
+
+/** Commands a bot runs without asking: exact command, exact folder. */
+export const commandListRpc = defineRpc({
+  name: "bots.commands.list",
+  input: z.object({ botId: BotId }),
+  output: z.object({ rules: z.array(CommandRuleSchema) }),
+});
+
+export const commandAllowRpc = defineRpc({
+  name: "bots.commands.allow",
+  input: z.object({ botId: BotId, command: z.string().min(1).max(16_384), cwd: z.string().min(1).max(4_096) }),
+  output: z.object({ rule: CommandRuleSchema }),
+});
+
+export const commandRemoveRpc = defineRpc({
+  name: "bots.commands.remove",
+  input: z.object({ botId: BotId, id: z.string() }),
+  output: z.object({ ok: z.boolean() }),
+});

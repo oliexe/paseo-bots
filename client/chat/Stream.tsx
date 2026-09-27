@@ -47,6 +47,8 @@ export interface ChatStreamProps {
   /** Bumps when Paseo's font sizes change, so rows re-render. */
   typeVersion: number;
   onOpenChat?(chatId: string): void;
+  /** Set for bots on this host, whose approval cards can save commands. */
+  botId?: string;
 }
 
 /** Whether a turn is running, as the stream shows it. */
@@ -54,7 +56,7 @@ export function isTurnRunning(chat: ChatState): boolean {
   return chat.agent?.status === "running" || chat.agent?.status === "initializing";
 }
 
-export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat }: ChatStreamProps) {
+export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId }: ChatStreamProps) {
   const running = isTurnRunning(chat);
   const inverted = platform !== "web";
   const list = useRef<NativeFlatList<StreamLayoutItem>>(null);
@@ -173,7 +175,7 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
           <View style={{ gap: 12 }}>
             <View style={{ gap: 8 }}>
               {permissions.map((permission) => (
-                <PermissionCard key={permission.id} colors={colors} permission={permission} api={api} agentId={agentId} compact={compact} />
+                <PermissionCard key={permission.id} colors={colors} permission={permission} api={api} agentId={agentId} compact={compact} botId={botId} cwd={cwd} />
               ))}
             </View>
           </View>

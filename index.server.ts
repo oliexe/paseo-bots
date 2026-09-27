@@ -1,6 +1,7 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
+import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
@@ -15,7 +16,11 @@ import { acceptProposal, dismissProposal, getProposal } from "./server/proposals
 import { BOT_TOOLS } from "./server/tools";
 import { saveUpload } from "./server/uploads";
 import { botSettings, EMPTY_LIBRARY } from "./shared/bot";
+import { shellCommand } from "./shared/commands";
 import {
+  commandAllowRpc,
+  commandListRpc,
+  commandRemoveRpc,
   ensureBotHomeRpc,
   exportBotRpc,
   helloRpc,
@@ -72,6 +77,7 @@ export default function contribute(server: PluginServerContext) {
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
   const scheduler = new RoutineScheduler(host, relay);
   const journal = new MemoryJournal();
+  const commands = new CommandAllowlist();
   // Every handler and hook receives the plugin's Paseo API; features that start chats need it.
   const attach = ({ paseo }: PluginHandlerContext) => host.attach(paseo);
 
@@ -131,12 +137,27 @@ export default function contribute(server: PluginServerContext) {
     return scheduler.runNow(botId, routineId);
   });
   server.handle(routineWebhookRpc, ({ routineId, rotate }) => scheduler.webhookUrl(routineId, rotate));
+  server.handle(commandListRpc, async ({ botId }) => ({ rules: await commands.list(botId) }));
+  server.handle(commandAllowRpc, async ({ botId, command, cwd }) => ({ rule: await commands.add(botId, command, cwd) }));
+  server.handle(commandRemoveRpc, async ({ botId, id }) => ({ ok: await commands.remove(botId, id) }));
   server.handle(exportBotRpc, async (input) => exportBot(input, await library()));
   server.handle(importBotRpc, importBot);
   server.handle(uploadRpc, saveUpload);
   server.on("agent.turn_started", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
+  });
+  // A bot's saved commands (exact command, exact folder) are approved here instead of asking.
+  server.on("agent.permission_requested", async ({ agent, request }, context) => {
+    host.attach(context.paseo);
+    const shell = shellCommand(request, agent.cwd);
+    if (!shell) return;
+    const chat = await host.chatOf(agent.id);
+    if (!chat || !(await commands.matches(chat.botId, shell.command, shell.cwd))) return;
+    await context.paseo.agents
+      .ref(agent.id)
+      .respondToPermission({ requestId: request.id, response: { behavior: "allow" } })
+      .catch((error: unknown) => console.error("paseo-bots: couldn't approve an allowed command", error));
   });
   server.on("agent.turn_ended", async (event, context) => {
     host.attach(context.paseo);

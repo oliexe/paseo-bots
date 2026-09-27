@@ -4,7 +4,7 @@ import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@get
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
-import { botMcpServers, botSkills, estimateTokens, utf8Bytes, type Bot } from "../../shared/bot";
+import { botLimits, botMcpServers, botSkills, estimateTokens, utf8Bytes, type Bot } from "../../shared/bot";
 import { describeSchedule } from "../../shared/routines";
 import { systemPromptRpc } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
@@ -64,6 +64,7 @@ export function OverviewSection({ colors, bot, library, localHost, onSetup }: Pa
           <SettingsRow label="Does" hint={bot.title || bot.description || "No title yet. Add one under Identity."} />
           <SettingsRow label="Can reach" hint={tools.length ? tools.join(", ") : "Only its provider's built-in tools and Paseo's tools"} />
           <SettingsRow label="Runs" hint={bot.routines.length ? bot.routines.map((routine) => `${routine.name}: ${describeSchedule(routine.schedule)}${routine.enabled ? "" : " (paused)"}`).join("\n") : "Only when you message it"} />
+          <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal, appsConfigured: !!appsStatus.data?.configured }).join("\n")} />
         </SettingsCard>
       </SettingsSection>
       <SettingsSection
@@ -105,6 +106,7 @@ function summarize(before: Bot, after: Bot): string {
     ["mcpServerIds", "MCP servers"],
     ["apps", "connected apps"],
     ["alwaysAllow", "always-allowed tools"],
+    ["contactBots", "contact with other bots"],
     ["cwd", "folder"],
     ["hostId", "host"],
     ["provider", "provider"],
