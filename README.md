@@ -4,7 +4,7 @@
 
 # paseo-bots
 
-Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give each bot instructions, a model, skills and MCP tools, then chat with it in its own workspace.
+Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
 
 ## Features
 

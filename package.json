@@ -1,6 +1,6 @@
 {
   "name": "@oliexe/paseo-bots",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "files": [
     "paseo-plugin.json",
     "index.client.ts",
@@ -26,7 +26,7 @@
     "vitest": "^4.1.11",
     "zod": "^4.4.3"
   },
-  "description": "Personal bots for Paseo: instructions, a model, skills, MCP tools and connected apps.",
+  "description": "Personal bots for Paseo: instructions, a model, memory, routines, teams, skills, MCP tools and connected apps.",
   "license": "MIT",
   "homepage": "https://github.com/oliexe/paseo-bots#readme",
   "repository": {
