@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import type { PaseoApi } from "@getpaseo/client";
+import { recentWork } from "../shared/activity";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 import { catalog, connectedSlugs, readState } from "./composio";
 import { botSkills, composeSystemPrompt, promptSections, type Bot, type Library, type PromptContext } from "../shared/bot";
 import { linkBotSkills, skillSha } from "./library";
-import { injectedMemory, MAIN_MEMORY, memoryFolder } from "./memory";
+import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
 
 /**
  * Memory and skills live on this host, so only bots running here get them:
@@ -22,7 +23,7 @@ async function botAppNames(bot: Bot): Promise<string[]> {
 
 export async function promptContext(bot: Bot, local: boolean, library: Library, paseoTools: boolean): Promise<PromptContext> {
   // Connected apps go through this host's relay, so bots on other hosts can't reach them.
-  if (!local) return { memory: "", memoryPath: null, skills: [], paseoTools, apps: [] };
+  if (!local) return { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools, apps: [] };
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
   for (const skill of botSkills(bot, library)) {
@@ -35,6 +36,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
   return {
     memory: await injectedMemory(bot.id),
     memoryPath: join(memoryFolder(bot.id), MAIN_MEMORY),
+    recentWork: recentWork(await recentLogEntries(bot.id, 3), new Date()),
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
     apps: await botAppNames(bot),

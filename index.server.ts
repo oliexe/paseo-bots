@@ -1,6 +1,8 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
-import { deleteMemory, listMemory, readMemory, writeMemory } from "./server/memory";
+import { turnEnded, turnStarted } from "./server/activity";
+import { MemoryJournal } from "./server/journal";
+import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
 import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, importBot } from "./server/share";
@@ -19,8 +21,12 @@ import {
   helloRpc,
   importBotRpc,
   memoryDeleteRpc,
+  memoryJournalRpc,
   memoryListRpc,
+  memoryLogDeleteRpc,
+  memoryLogRpc,
   memoryReadRpc,
+  memoryUndoRpc,
   memoryWriteRpc,
   mountRpc,
   mcpProbeRpc,
@@ -64,6 +70,7 @@ export default function contribute(server: PluginServerContext) {
   const relay = new Relay(host, BOT_TOOLS);
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
   const scheduler = new RoutineScheduler(host, relay);
+  const journal = new MemoryJournal();
   // Every handler and hook receives the plugin's Paseo API; features that start chats need it.
   const attach = ({ paseo }: PluginHandlerContext) => host.attach(paseo);
 
@@ -78,8 +85,23 @@ export default function contribute(server: PluginServerContext) {
   server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
   server.handle(memoryReadRpc, ({ botId, name }) => readMemory(botId, name));
-  server.handle(memoryWriteRpc, ({ botId, name, text }) => writeMemory(botId, name, text));
-  server.handle(memoryDeleteRpc, ({ botId, name }) => deleteMemory(botId, name));
+  server.handle(memoryWriteRpc, async ({ botId, name, text }) => {
+    await journal.write(botId, name, text);
+    return { ok: true };
+  });
+  server.handle(memoryDeleteRpc, async ({ botId, name }) => {
+    await journal.write(botId, name, null);
+    return { ok: true };
+  });
+  server.handle(memoryJournalRpc, async ({ botId }) => ({
+    entries: (await journal.list(botId)).map(({ before, ...entry }) => ({ ...entry, canUndo: entry.kind === "created" || before !== null })),
+  }));
+  server.handle(memoryUndoRpc, async ({ botId, id }) => {
+    await journal.undo(botId, id);
+    return { ok: true };
+  });
+  server.handle(memoryLogRpc, async ({ botId, day }) => ({ ...(await listLogDays(botId)), text: day ? (await readLogDay(botId, day)).text : null }));
+  server.handle(memoryLogDeleteRpc, ({ botId, day }) => deleteLogDay(botId, day));
   server.handle(skillImportRpc, importSkills);
   server.handle(skillReadRpc, readSkill);
   server.handle(skillWriteRpc, writeSkill);
@@ -110,7 +132,14 @@ export default function contribute(server: PluginServerContext) {
   server.handle(exportBotRpc, async (input) => exportBot(input, await library()));
   server.handle(importBotRpc, importBot);
   server.handle(uploadRpc, saveUpload);
-  server.on("agent.turn_ended", (_event, context) => host.attach(context.paseo));
+  server.on("agent.turn_started", async (event, context) => {
+    host.attach(context.paseo);
+    await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
+  });
+  server.on("agent.turn_ended", async (event, context) => {
+    host.attach(context.paseo);
+    await turnEnded(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
+  });
 
   return () => {
     scheduler.stop();

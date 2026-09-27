@@ -11,6 +11,7 @@ import { confirmDialog, errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { LibraryPicker } from "./LibraryPicker";
 import { Alert, Button, DrillRow, FormTextArea, InputField, SectionMeta, SheetActions } from "./controls";
+import { DailyLog, MemoryChanges } from "./MemoryActivity";
 
 type Colors = PanelProps["colors"];
 
@@ -113,7 +114,8 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
   const [topic, setTopic] = useState("");
   const [topicKey, setTopicKey] = useState(0);
   const files = useQuery({ queryKey: ["paseo-bots", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory", bot.id] });
+  const refresh = () =>
+    Promise.all([queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory", bot.id] }), queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory-journal", bot.id] })]);
 
   const data = files.data;
   const over = data ? data.injectedLines > MEMORY_LINES || data.injectedBytes > MEMORY_BYTES : false;
@@ -142,6 +144,8 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
           {data ? <SettingsRow label="Folder" hint={data.folder} /> : null}
         </SettingsCard>
       </SettingsSection>
+      <MemoryChanges colors={colors} bot={bot} onUndone={() => void refresh()} />
+      <DailyLog colors={colors} bot={bot} />
       <SettingsSection title="New topic file">
         <SettingsCard>
           <InputField colors={colors} key={topicKey} label="Name" hint="Letters, numbers, spaces, dots and dashes" error={topicError} initialValue="" placeholder="projects" onChangeText={setTopic} />

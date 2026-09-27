@@ -1,5 +1,6 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { localDay, parseLog, type LogEntry } from "../shared/activity";
 import { botDataPath } from "./bot-home";
 
 /** OpenMausBot's budget: the first 200 lines or 24 KB of MEMORY.md go into every chat. */
@@ -66,14 +67,61 @@ export async function readMemory(botId: string, name: string) {
   return { text: await readText(memoryFilePath(botId, name)) };
 }
 
-export async function writeMemory(botId: string, name: string, text: string) {
-  const path = memoryFilePath(botId, name);
-  await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, text, "utf8");
+// ---------------------------------------------------------------- daily log
+
+const LOG_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function logFolder(botId: string): string {
+  return join(botDataPath(botId), "memory", "log");
+}
+
+function logPath(botId: string, day: string): string {
+  if (!LOG_DAY.test(day)) throw new Error(`Not a log day: ${day}`);
+  return join(logFolder(botId), `${day}.md`);
+}
+
+/** Adds a line to today's log, memory/log/YYYY-MM-DD.md. */
+export async function appendDailyLog(botId: string, line: string, at = new Date()): Promise<void> {
+  await mkdir(logFolder(botId), { recursive: true });
+  await appendFile(logPath(botId, localDay(at)), `${line}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+/** The log's days, newest first, with how many lines each has. */
+export async function listLogDays(botId: string) {
+  const names = await readdir(logFolder(botId)).catch(() => [] as string[]);
+  const days = names.filter((name) => LOG_DAY.test(name.replace(/\.md$/, "")) && name.endsWith(".md")).map((name) => name.replace(/\.md$/, ""));
+  const out: { day: string; lines: number }[] = [];
+  for (const day of days.sort().reverse()) {
+    const text = await readText(logPath(botId, day));
+    out.push({ day, lines: text.split("\n").filter((line) => line.trim()).length });
+  }
+  return { days: out };
+}
+
+export async function readLogDay(botId: string, day: string) {
+  return { text: await readText(logPath(botId, day)) };
+}
+
+export async function deleteLogDay(botId: string, day: string) {
+  await rm(logPath(botId, day), { force: true });
   return { ok: true };
 }
 
-export async function deleteMemory(botId: string, name: string) {
-  await rm(memoryFilePath(botId, name), { force: true });
-  return { ok: true };
+/** Log entries from the last `days` days (today included), oldest first. */
+export async function recentLogEntries(botId: string, days: number, now = new Date()): Promise<LogEntry[]> {
+  const entries: LogEntry[] = [];
+  for (let back = days - 1; back >= 0; back--) {
+    const day = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back));
+    entries.push(...parseLog(day, await readText(logPath(botId, day))));
+  }
+  return entries;
+}
+
+/** Every memory file with its text, as the bot sees the paths: MEMORY.md, memory/<topic>.md and memory/log/<day>.md. */
+export async function memoryTexts(botId: string): Promise<{ path: string; text: string }[]> {
+  const files = [{ path: MAIN_MEMORY, text: await readText(memoryFilePath(botId, MAIN_MEMORY)) }];
+  const topics = await readdir(join(botDataPath(botId), "memory")).catch(() => [] as string[]);
+  for (const name of topics.filter((entry) => entry.endsWith(".md")).sort()) files.push({ path: `memory/${name}`, text: await readText(memoryFilePath(botId, name)) });
+  for (const { day } of (await listLogDays(botId)).days) files.push({ path: `memory/log/${day}.md`, text: await readText(logPath(botId, day)) });
+  return files.filter((file) => file.text);
 }

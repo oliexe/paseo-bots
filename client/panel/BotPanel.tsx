@@ -41,7 +41,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
     label: "Knowledge",
     sections: [
       { id: "skills", label: "Skills", icon: "Puzzle", rows: ["Library skills"], keywords: "skill github SKILL.md library" },
-      { id: "memory", label: "Memory", icon: "Brain", rows: ["MEMORY.md", "Topic files", "New topic file"], keywords: "memory notes remember" },
+      { id: "memory", label: "Memory", icon: "Brain", rows: ["MEMORY.md", "Topic files", "Changes", "Daily log", "New topic file"], keywords: "memory notes remember undo journal log" },
     ],
   },
   {

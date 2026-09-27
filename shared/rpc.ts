@@ -60,6 +60,50 @@ export const memoryDeleteRpc = defineRpc({
   output: z.object({ ok: z.boolean() }),
 });
 
+const LogDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** The daily log: its days, and one day's text when `day` is given. */
+export const memoryLogRpc = defineRpc({
+  name: "bots.memory.log",
+  input: z.object({ botId: BotId, day: LogDay.optional() }),
+  output: z.object({ days: z.array(z.object({ day: z.string(), lines: z.number() })), text: z.string().nullable() }),
+});
+
+export const memoryLogDeleteRpc = defineRpc({
+  name: "bots.memory.log-delete",
+  input: z.object({ botId: BotId, day: LogDay }),
+  output: z.object({ ok: z.boolean() }),
+});
+
+export const JournalEntrySchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  file: z.string(),
+  actor: z.enum(["bot", "you"]),
+  via: z.enum(["chat", "app", "disk", "undo"]),
+  chat: z.object({ id: z.string(), title: z.string() }).nullable(),
+  kind: z.enum(["created", "edited", "deleted"]),
+  diff: z.string(),
+  added: z.number(),
+  removed: z.number(),
+  canUndo: z.boolean(),
+});
+export type JournalRow = z.infer<typeof JournalEntrySchema>;
+
+/** Recent changes to a bot's memory files, newest first. */
+export const memoryJournalRpc = defineRpc({
+  name: "bots.memory.journal",
+  input: z.object({ botId: BotId }),
+  output: z.object({ entries: z.array(JournalEntrySchema) }),
+});
+
+/** Puts a memory file back the way it was before a change. */
+export const memoryUndoRpc = defineRpc({
+  name: "bots.memory.undo",
+  input: z.object({ botId: BotId, id: z.string().regex(/^j-[a-z0-9]+$/) }),
+  output: z.object({ ok: z.boolean() }),
+});
+
 const ImportedSkillSchema = z.object({ id: SkillName, description: z.string(), source: z.string() });
 
 /** Imports skills into the library from "owner/repo", "owner/repo/path", a GitHub URL or a raw SKILL.md URL. */

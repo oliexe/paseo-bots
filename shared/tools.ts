@@ -1,3 +1,5 @@
+import { botToolName } from "./bot-tools";
+
 // Tool call presentation, ported from Paseo: labels and summaries from
 // protocol/src/tool-call-display.ts (buildToolCallDisplayModel), icons from
 // app/src/utils/tool-call-icon-name.ts, detail state from
@@ -74,7 +76,8 @@ function paseoLeafName(name: string): string | null {
 function humanizeToolName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return name;
-  const leaf = paseoLeafName(trimmed);
+  // Paseo's own tools and this plugin's read as plain names ("Create agent", "Search chats").
+  const leaf = paseoLeafName(trimmed) ?? botToolName(trimmed);
   if (leaf) return humanizeToolName(leaf);
   if (/[:./]/.test(trimmed) || trimmed.includes("__")) return trimmed;
   return trimmed
@@ -371,7 +374,8 @@ function splitWords(text: string): string[] {
   return text.match(/\w+|[^\w]+/g) ?? [];
 }
 
-function lcsTable<T>(a: readonly T[], b: readonly T[]): number[][] {
+/** Longest-common-subsequence lengths: table[i][j] covers a[i..] and b[j..]. */
+export function lcsTable<T>(a: readonly T[], b: readonly T[]): number[][] {
   const table: number[][] = Array.from({ length: a.length + 1 }, () => Array<number>(b.length + 1).fill(0));
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {

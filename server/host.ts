@@ -1,6 +1,6 @@
 import type { PaseoApi } from "@getpaseo/client";
 import type { PluginSettings } from "@getpaseo/plugin/server";
-import { EMPTY_LIBRARY, type Bot, type BotSettingsValues, type botSettings, type Library } from "../shared/bot";
+import { BOT_LABEL, EMPTY_LIBRARY, type Bot, type BotSettingsValues, type botSettings, type Library } from "../shared/bot";
 
 // What every server feature needs: the saved settings (read-only on the
 // server), and the plugin's Paseo API. The SDK only hands the API out inside
@@ -51,5 +51,24 @@ export class BotsHost {
 
   async bot(botId: string): Promise<Bot | null> {
     return (await this.bots()).find((bot) => bot.id === botId) ?? null;
+  }
+
+  private readonly chatBots = new Map<string, string | null>();
+
+  /** A bot chat's bot and its current title (Paseo names chats after their first message); null for other agents. */
+  async chatOf(agentId: string): Promise<{ botId: string; title: string | null } | null> {
+    if (this.chatBots.get(agentId) === null) return null;
+    const snapshot = await this.paseo?.agents.ref(agentId).refresh().catch(() => null);
+    if (!snapshot) return null;
+    const botId = snapshot.agent.labels?.[BOT_LABEL] ?? null;
+    if (this.chatBots.size > 500) this.chatBots.clear();
+    this.chatBots.set(agentId, botId);
+    return botId ? { botId, title: snapshot.agent.title ?? null } : null;
+  }
+
+  /** The bot a chat belongs to, from the label it was created with; null for other agents. */
+  async botIdOf(agentId: string): Promise<string | null> {
+    const known = this.chatBots.get(agentId);
+    return known !== undefined ? known : ((await this.chatOf(agentId))?.botId ?? null);
   }
 }

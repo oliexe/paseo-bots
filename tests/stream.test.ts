@@ -189,6 +189,8 @@ describe("tool display model", () => {
     expect(buildToolCallDisplayModel({ name: "Grep", status: "completed", error: null, detail: { type: "search", query: "foo" } })).toEqual({ displayName: "Search", summary: "foo" });
     expect(buildToolCallDisplayModel({ name: "Task", status: "running", error: null, detail: { type: "sub_agent", subAgentType: "Explore", description: "Find it", log: "" } })).toEqual({ displayName: "Explore", summary: "Find it" });
     expect(buildToolCallDisplayModel({ name: "mcp__paseo__list_workspaces", status: "completed", error: null, detail: { type: "unknown", input: null, output: null } }).displayName).toBe("List workspaces");
+    expect(buildToolCallDisplayModel({ name: "mcp__bots__search_chats", status: "completed", error: null, detail: { type: "unknown", input: null, output: null } }).displayName).toBe("Search chats");
+    expect(buildToolCallDisplayModel({ name: "mcp__other__search_chats", status: "completed", error: null, detail: { type: "unknown", input: null, output: null } }).displayName).toBe("mcp__other__search_chats");
     expect(buildToolCallDisplayModel({ name: "thinking", status: "completed", error: null, detail: { type: "unknown", input: "x", output: null } }).displayName).toBe("Thinking");
     expect(buildToolCallDisplayModel({ name: "Bash", status: "failed", error: { content: "exit 1" }, detail: { type: "shell", command: "false" } }).errorText).toBe("exit 1");
   });
