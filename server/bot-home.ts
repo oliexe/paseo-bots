@@ -1,6 +1,5 @@
 import { lstatSync, renameSync, symlinkSync } from "node:fs";
 import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
-import { avatarSvg, spriteAvatar } from "../shared/avatar";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -85,8 +84,13 @@ export function botDataPath(botId: string): string {
   return join(botsHomePath(), botId);
 }
 
-/** Paseo shows an icon.svg in a project's folder as the project icon. */
-const PROJECT_ICON = avatarSvg(spriteAvatar("robot", 3, 5));
+/**
+ * Paseo shows an icon.svg in a project's folder as the project icon. The Bots project gets
+ * the plugin's sidebar glyph (Lucide's Bot) in white on a tile shaped and coloured like the
+ * project icons Paseo draws itself (project-icon-view.tsx: 25% corners, the muted identity
+ * blue), so it reads on light and dark themes alike.
+ */
+const PROJECT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#5179b0"/><g transform="translate(12.8 12.8) scale(1.6)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></g></svg>`;
 
 export async function ensureBotsHome() {
   await migrateLegacyHome();

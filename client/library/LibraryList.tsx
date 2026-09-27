@@ -53,12 +53,9 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 + bottomInset }}>
-      {onBack ? (
-        <View style={{ paddingHorizontal: 8, paddingTop: 8 }}>
-          <NavRow colors={colors} icon="ArrowLeft" label="Back to bots" selected={false} touch={touch} onPress={onBack} />
-        </View>
-      ) : null}
-      <View style={{ padding: 8 }}>
+      {/* Paseo's sidebar header group: its rows over a full-width divider (left-sidebar.tsx sidebarHeaderGroup). */}
+      <View style={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: 8, gap: 2, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        {onBack ? <NavRow colors={colors} icon="ArrowLeft" label="Back to bots" selected={false} touch={touch} onPress={onBack} /> : null}
         <SearchField colors={colors} value={query} onChangeText={onQuery} placeholder="Search skills and tools" />
       </View>
 
@@ -77,6 +74,7 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
         ))}
         {skills.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching skills" : "No skills yet"} /> : null}
       </Group>
+      <Divider colors={colors} />
 
       <Group colors={colors} label="MCP servers" addLabel="Add MCP server" onAdd={onAddServer}>
         {servers.map((server) => (
@@ -93,6 +91,7 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
         ))}
         {servers.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching servers" : "No MCP servers yet"} /> : null}
       </Group>
+      <Divider colors={colors} />
 
       <Group colors={colors} label="Connected apps" addLabel={configured ? "Connect an app" : "Set up connected apps"} onAdd={() => onSelect({ kind: "apps" })}>
         {apps.map((app) => (
@@ -126,6 +125,11 @@ function Group({ colors, label, addLabel, onAdd, children }: { colors: Colors; l
       {children}
     </View>
   );
+}
+
+/** The full-width line Paseo's sidebar draws between its sections. */
+function Divider({ colors }: { colors: Colors }) {
+  return <View style={{ height: 1, backgroundColor: colors.border }} />;
 }
 
 function GroupNote({ colors, text }: { colors: Colors; text: string }) {

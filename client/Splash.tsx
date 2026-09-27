@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useMemo } from "react";
+import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { Text, View } from "react-native";
 import { grayscaleAvatar, SPLASH_LINEUP, spriteAvatar } from "../shared/avatar";
 import { PLUGIN_VERSION } from "../shared/version";
@@ -10,8 +11,9 @@ import { ui } from "./typography";
 type Colors = PluginTheme["colors"];
 
 const AVATAR_SIZE = 48;
+const REPOSITORY_URL = "https://github.com/oliexe/paseo-bots";
 
-/** Shown in the chat pane before a bot is picked: six generated bots in grayscale over a small name and version footnote. */
+/** Shown in the chat pane before a bot is picked: six generated bots in grayscale over a small name and version footnote, and the repository at the bottom. */
 export function Splash({ colors, background }: { colors: Colors; background?: string }) {
   const dark = nativeTokens(colors).dark;
   const lineup = useMemo(
@@ -32,6 +34,11 @@ export function Splash({ colors, background }: { colors: Colors; background?: st
       <View style={{ alignItems: "center", gap: 2 }}>
         <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>paseo-bots</Text>
         <Text style={{ fontSize: ui(11), color: colors.foregroundMuted, opacity: 0.7 }}>v{PLUGIN_VERSION}</Text>
+      </View>
+      <View style={{ position: "absolute", left: 0, right: 0, bottom: 16, alignItems: "center" }}>
+        <ExternalLink href={REPOSITORY_URL} accessibilityLabel="paseo-bots on GitHub">
+          GitHub
+        </ExternalLink>
       </View>
     </View>
   );
