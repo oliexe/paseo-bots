@@ -12,7 +12,7 @@ import { DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, pushHistory, type Bot, ty
 import { addMcpServers, upsertSkills } from "../shared/library";
 import { startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
-import { appsMountRpc, ensureBotHomeRpc, exportBotRpc, importBotRpc, systemPromptRpc } from "../shared/rpc";
+import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, systemPromptRpc } from "../shared/rpc";
 import type { BotTemplate } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
@@ -32,6 +32,7 @@ import { newMessageId } from "./sent-attachments";
 import { BotPanel, type SectionId } from "./panel/BotPanel";
 import { useBotSettings } from "./useBotSettings";
 import { useChat } from "./useChat";
+import { newUuid } from "../shared/uuid";
 import { ui, useTypeScale } from "./typography";
 
 type Colors = PluginTheme["colors"];
@@ -638,7 +639,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
   const chat = useChat(host.api, selection.chatId);
   const ensureHome = useRpc(ensureBotHomeRpc);
   const compose = useRpc(systemPromptRpc);
-  const mountApps = useRpc(appsMountRpc);
+  const mountServers = useRpc(mountRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -648,12 +649,14 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
     const home = await ensureHome({ botId: bot.id });
     const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
     const { systemPrompt } = await compose({ bot, local: host.isLocal });
-    // Connected apps go through this host's relay, so only bots here get them.
-    const apps = host.isLocal && bot.apps.length ? (await mountApps({ botId: bot.id })).server : null;
+    // The plugin's tools and connected apps go through this host's relay, so only bots here get them.
+    const agentId = newUuid();
+    const plugin = host.isLocal ? await mountServers({ botId: bot.id, agentId }) : {};
     const id = await startBotChat(host.api, {
       bot,
       library,
-      apps,
+      ...(host.isLocal ? { agentId } : {}),
+      plugin,
       placement,
       prompt: message.text,
       systemPrompt,

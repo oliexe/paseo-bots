@@ -1,6 +1,7 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt } from "./apps";
+import { QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
@@ -380,11 +381,24 @@ export function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name"
  * The `config` half of `paseo.agents.create()` for a bot. The SDK needs an
  * explicit model, so bots on "provider default" pass the resolved default in.
  */
-export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string, apps: McpServerConfig | null = null) {
-  const mcpServers: Record<string, McpServerConfig> = { ...mcpServersRecord(botMcpServers(bot, library)), ...(apps ? { [APPS_MCP_NAME]: apps } : {}) };
+/** Servers the plugin itself adds to a local bot's chat: its tools and, when set up, connected apps. */
+export interface PluginServers {
+  apps?: McpServerConfig | null;
+  tools?: McpServerConfig | null;
+}
+
+export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string, plugin: PluginServers = {}) {
+  const mcpServers: Record<string, McpServerConfig> = {
+    ...mcpServersRecord(botMcpServers(bot, library)),
+    ...(plugin.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
+    ...(plugin.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
+  };
+  // The plugin's quiet tools (reading, or proposing what the user confirms) run without prompts.
+  const quiet = plugin.tools ? QUIET_TOOLS.map((tool) => `${TOOLS_MCP_NAME}/${tool}`) : [];
   // Paseo rejects the whole request when a grant names a server it doesn't carry
-  // (a server switched off for the bot, or Paseo's own, which is added later).
-  const preapproved = toolGrants(bot.alwaysAllow).filter((grant) => grant.server in mcpServers);
+  // (a server switched off for the bot, or Paseo's own, which is added later),
+  // and when the provider can't take exact grants at all.
+  const preapproved = supportsToolGrants(bot.provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers) : [];
   return {
     provider: `${bot.provider}/${model}`,
     ...(bot.modeId ? { modeId: bot.modeId } : {}),
@@ -420,7 +434,7 @@ export function botProblems(bot: Bot, isLocalHost: boolean): string[] {
 }
 
 /** MCP server names bots get from elsewhere, which library servers can't take. */
-export const RESERVED_MCP_NAMES: readonly string[] = [PASEO_MCP_NAME, APPS_MCP_NAME];
+export const RESERVED_MCP_NAMES: readonly string[] = [PASEO_MCP_NAME, APPS_MCP_NAME, TOOLS_MCP_NAME];
 
 /** Names agents accept as an MCP server key (it prefixes every tool name). */
 export const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;

@@ -3,22 +3,32 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { appCallRefusal } from "../shared/apps";
 import type { McpServerConfig } from "../shared/bot";
 import { connectedSlugs, deadline, readState, session, writeState } from "./composio";
+import type { BotsHost } from "./host";
+import { answerMcp, type BotTool } from "./tools/mcp";
 
-// Bots reach connected apps through this loopback relay, the way Paseo gives
-// agents its own tools: an http MCP server on 127.0.0.1 with a bearer token.
-// Each bot's token is signed with a secret only this process knows, the
-// Composio key never leaves this process, and every tool call is checked
-// against the bot's allowed apps before it is forwarded.
+// Bots reach the plugin through this loopback relay, the way Paseo gives agents
+// its own tools: http MCP servers on 127.0.0.1 with a bearer token each chat
+// gets in its config. Tokens are signed with a secret only this process knows.
+//
+//   /mcp/<botId>              connected apps: forwards to Composio with the key
+//                             added, after checking the bot may use the app
+//   /bots/<botId>/<agentId>   the plugin's own tools for one chat
 
 const MAX_BODY = 5 * 1024 * 1024;
 const MAX_RESPONSE = 20 * 1024 * 1024;
-const BOT_ID = /^[a-z0-9-]+$/;
+const ID = /^[a-z0-9-]+$/;
 
-/** The apps a bot may use, or null when it may not use connected apps at all. */
-export type AllowedApps = (botId: string) => Promise<string[] | null>;
+function sign(secret: string, subject: string): string {
+  return createHmac("sha256", secret).update(subject).digest("hex");
+}
 
+/** Connected-apps token; unchanged from the first release so running chats keep working. */
 export function botToken(secret: string, botId: string): string {
-  return createHmac("sha256", secret).update(botId).digest("hex");
+  return sign(secret, botId);
+}
+
+export function toolsToken(secret: string, botId: string, agentId: string): string {
+  return sign(secret, `tools:${botId}:${agentId}`);
 }
 
 function tokenMatches(expected: string, header: string | undefined): boolean {
@@ -28,13 +38,13 @@ function tokenMatches(expected: string, header: string | undefined): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function readBody(request: IncomingMessage): Promise<string> {
+export function readBody(request: IncomingMessage, limit = MAX_BODY): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(new Error("Request too large"));
         request.destroy();
       } else chunks.push(chunk);
@@ -48,13 +58,24 @@ function json(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
 
-export class AppsRelay {
+/** Extra routes other features add (webhooks). Return true when handled. */
+export type RelayRoute = (request: IncomingMessage, response: ServerResponse, path: string) => Promise<boolean>;
+
+export class Relay {
   private server: Server | null = null;
   private listening: Promise<number> | null = null;
+  private readonly routes: RelayRoute[] = [];
 
-  constructor(private readonly allowedApps: AllowedApps) {}
+  constructor(
+    private readonly host: BotsHost,
+    private readonly tools: readonly BotTool[],
+  ) {}
 
-  /** Starts listening, on the previous port when it's free so running chats keep their URL. */
+  addRoute(route: RelayRoute): void {
+    this.routes.push(route);
+  }
+
+  /** Starts listening, on the previous port when it's free so running chats keep their URLs. */
   start(): Promise<number> {
     this.listening ??= (async () => {
       const state = await readState();
@@ -86,45 +107,86 @@ export class AppsRelay {
     this.listening = null;
   }
 
-  /** The MCP server entry for a bot's chats, or null when connected apps aren't set up. */
-  async mount(botId: string): Promise<McpServerConfig | null> {
+  /** The connected-apps server for a bot's chats, or null when connected apps aren't set up. */
+  async mountApps(botId: string): Promise<McpServerConfig | null> {
     const state = await readState();
     if (!state.apiKey) return null;
     const port = await this.start();
     return { type: "http", url: `http://127.0.0.1:${port}/mcp/${botId}`, headers: { Authorization: `Bearer ${botToken(state.secret, botId)}` } };
   }
 
+  /** The plugin's tools for one chat. */
+  async mountTools(botId: string, agentId: string): Promise<McpServerConfig> {
+    const state = await readState();
+    const port = await this.start();
+    return { type: "http", url: `http://127.0.0.1:${port}/bots/${botId}/${agentId}`, headers: { Authorization: `Bearer ${toolsToken(state.secret, botId, agentId)}` } };
+  }
+
   private async handle(request: IncomingMessage, response: ServerResponse) {
     try {
-      const botId = /^\/mcp\/([^/?]+)/.exec(request.url ?? "")?.[1];
-      const state = await readState();
-      if (!botId || !BOT_ID.test(botId) || !tokenMatches(botToken(state.secret, botId), request.headers.authorization)) {
-        return json(response, 401, { error: "unauthorized" });
-      }
-      // Streamable HTTP lets a server decline the optional GET stream; sessions end on their own.
-      if (request.method === "GET") return response.writeHead(405, { allow: "POST" }).end();
-      if (request.method === "DELETE") return response.writeHead(204).end();
-      if (request.method !== "POST") return response.writeHead(405, { allow: "POST" }).end();
-
-      const body = await readBody(request);
-      let message: unknown;
-      try {
-        message = JSON.parse(body);
-      } catch {
-        return json(response, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
-      }
-      const allowed = await this.allowedApps(botId);
-      const id = (message as { id?: unknown }).id ?? null;
-      if (!allowed || allowed.length === 0) {
-        return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "Connected apps are off for this bot. Turn them on under its Access settings in Paseo." } });
-      }
-      const refusal = appCallRefusal(message, allowed, await connectedSlugs());
-      if (refusal) return json(response, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: refusal }], isError: true } });
-
-      await this.forward(request, response, body);
+      const path = (request.url ?? "").split("?")[0] ?? "";
+      const apps = /^\/mcp\/([^/]+)$/.exec(path);
+      if (apps) return await this.handleApps(request, response, apps[1]!);
+      const tools = /^\/bots\/([^/]+)\/([^/]+)$/.exec(path);
+      if (tools) return await this.handleTools(request, response, tools[1]!, tools[2]!);
+      for (const route of this.routes) if (await route(request, response, path)) return;
+      json(response, 404, { error: "not found" });
     } catch (error) {
       if (!response.headersSent) json(response, 502, { jsonrpc: "2.0", id: null, error: { code: -32002, message: error instanceof Error ? error.message : String(error) } });
     }
+  }
+
+  /** Streamable HTTP lets a server decline the optional GET stream; sessions end on their own. */
+  private refuseNonPost(request: IncomingMessage, response: ServerResponse): boolean {
+    if (request.method === "POST") return false;
+    if (request.method === "DELETE") response.writeHead(204).end();
+    else response.writeHead(405, { allow: "POST" }).end();
+    return true;
+  }
+
+  private async parse(request: IncomingMessage, response: ServerResponse): Promise<{ body: string; message: Record<string, unknown> } | null> {
+    const body = await readBody(request);
+    try {
+      return { body, message: JSON.parse(body) as Record<string, unknown> };
+    } catch {
+      json(response, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+      return null;
+    }
+  }
+
+  private async handleTools(request: IncomingMessage, response: ServerResponse, botId: string, agentId: string) {
+    const state = await readState();
+    if (!ID.test(botId) || !ID.test(agentId) || !tokenMatches(toolsToken(state.secret, botId, agentId), request.headers.authorization)) {
+      return json(response, 401, { error: "unauthorized" });
+    }
+    if (this.refuseNonPost(request, response)) return;
+    const parsed = await this.parse(request, response);
+    if (!parsed) return;
+    const bot = await this.host.bot(botId);
+    const id = (parsed.message.id as string | number | undefined) ?? null;
+    if (!bot || bot.archived) return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "This bot no longer exists." } });
+    const answer = await answerMcp(parsed.message, this.tools, { bot, agentId, host: this.host });
+    if (!answer) return response.writeHead(202).end();
+    json(response, 200, answer);
+  }
+
+  private async handleApps(request: IncomingMessage, response: ServerResponse, botId: string) {
+    const state = await readState();
+    if (!ID.test(botId) || !tokenMatches(botToken(state.secret, botId), request.headers.authorization)) {
+      return json(response, 401, { error: "unauthorized" });
+    }
+    if (this.refuseNonPost(request, response)) return;
+    const parsed = await this.parse(request, response);
+    if (!parsed) return;
+    const bot = await this.host.bot(botId);
+    const allowed = bot && !bot.archived && !bot.hostId ? bot.apps : null;
+    const id = (parsed.message.id as string | number | undefined) ?? null;
+    if (!allowed || allowed.length === 0) {
+      return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "Connected apps are off for this bot. Turn them on under its Access settings in Paseo." } });
+    }
+    const refusal = appCallRefusal(parsed.message, allowed, await connectedSlugs());
+    if (refusal) return json(response, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: refusal }], isError: true } });
+    await this.forward(request, response, parsed.body);
   }
 
   private async forward(request: IncomingMessage, response: ServerResponse, body: string) {

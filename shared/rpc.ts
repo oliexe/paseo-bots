@@ -186,9 +186,13 @@ export const appsDisconnectRpc = defineRpc({
   output: z.object({ ok: z.boolean() }),
 });
 
-/** The relay's MCP server entry for a bot's new chat, or null when connected apps aren't set up. */
-export const appsMountRpc = defineRpc({
-  name: "bots.apps.mount",
-  input: z.object({ botId: BotId }),
-  output: z.object({ server: McpServerConfigSchema.nullable() }),
+/**
+ * The plugin's MCP servers for a new chat of a local bot: its tools, and
+ * connected apps when the bot uses them. `agentId` is the chat's id, picked
+ * before the chat is created.
+ */
+export const mountRpc = defineRpc({
+  name: "bots.mount",
+  input: z.object({ botId: BotId, agentId: z.uuid() }),
+  output: z.object({ tools: McpServerConfigSchema, apps: McpServerConfigSchema.nullable() }),
 });

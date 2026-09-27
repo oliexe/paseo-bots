@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appCallRefusal, appDomain, appForTool, appsPrompt, appStatus, canonicalSlug, executedTools, faviconUrl, isComposioUrl } from "../shared/apps";
 import { buildAgentConfig, EMPTY_LIBRARY, promptSections, type Bot } from "../shared/bot";
+import { fakeHost, makeBot } from "./helpers";
 
 const NOW = "2026-09-27T00:00:00.000Z";
 
@@ -78,7 +79,7 @@ describe("agent config and prompt", () => {
   const relay = { type: "http" as const, url: "http://127.0.0.1:1/mcp/bot-1", headers: { Authorization: "Bearer t" } };
 
   it("adds the relay as composio and lets its tools be always allowed", () => {
-    const config = buildAgentConfig(bot({ alwaysAllow: ["composio/COMPOSIO_SEARCH_TOOLS"] }), EMPTY_LIBRARY, "m", "", relay);
+    const config = buildAgentConfig(bot({ alwaysAllow: ["composio/COMPOSIO_SEARCH_TOOLS"] }), EMPTY_LIBRARY, "m", "", { apps: relay });
     expect(config.mcpServers).toEqual({ composio: relay });
     expect(config.toolPolicy).toEqual({ preapproved: [{ kind: "mcp", server: "composio", tool: "COMPOSIO_SEARCH_TOOLS" }] });
   });
@@ -185,11 +186,10 @@ describe("Composio client and relay", () => {
   });
 
   it("relays a bot's MCP traffic with the key added, and refuses what it may not do", async () => {
-    const { AppsRelay } = await import("../server/relay");
-    const allowed: Record<string, string[]> = { "bot-1": ["gmail"], "bot-2": [] };
-    const relay = new AppsRelay(async (botId) => allowed[botId] ?? null);
+    const { Relay } = await import("../server/relay");
+    const relay = new Relay(fakeHost([makeBot({ id: "bot-1", apps: ["gmail"] }), makeBot({ id: "bot-2", apps: [] })]), []);
     try {
-      const mount = await relay.mount("bot-1");
+      const mount = await relay.mountApps("bot-1");
       expect(mount?.type).toBe("http");
       const url = (mount as { url: string }).url;
       const auth = (mount as { headers: Record<string, string> }).headers.Authorization!;
@@ -208,7 +208,7 @@ describe("Composio client and relay", () => {
 
       expect((await post(url, "Bearer nope", { jsonrpc: "2.0", id: 3, method: "tools/list" })).status).toBe(401);
       expect((await post(url.replace("bot-1", "bot-2"), auth, { jsonrpc: "2.0", id: 4, method: "tools/list" })).status).toBe(401);
-      const other = await relay.mount("bot-2");
+      const other = await relay.mountApps("bot-2");
       const off = await post((other as { url: string }).url, (other as { headers: Record<string, string> }).headers.Authorization!, { jsonrpc: "2.0", id: 5, method: "tools/list" });
       expect(off.status).toBe(403);
     } finally {
@@ -220,10 +220,10 @@ describe("Composio client and relay", () => {
     accountsList = [...accountsList, { id: "ca_3", status: "ACTIVE", toolkit: { slug: "slack" } }];
     const composio = await import("../server/composio");
     await composio.accounts({ fresh: true });
-    const { AppsRelay } = await import("../server/relay");
-    const relay = new AppsRelay(async () => ["gmail"]);
+    const { Relay } = await import("../server/relay");
+    const relay = new Relay(fakeHost([makeBot({ id: "bot-1", apps: ["gmail"] })]), []);
     try {
-      const mount = (await relay.mount("bot-1")) as { url: string; headers: Record<string, string> };
+      const mount = (await relay.mountApps("bot-1")) as { url: string; headers: Record<string, string> };
       const response = await fetch(mount.url, {
         method: "POST",
         headers: { authorization: mount.headers.Authorization!, "content-type": "application/json" },

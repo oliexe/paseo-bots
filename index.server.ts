@@ -7,7 +7,9 @@ import { exportBot, importBot } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
 import { accounts, catalog, connect, disconnect, removeKey, setKey, status as appsStatus } from "./server/composio";
-import { AppsRelay } from "./server/relay";
+import { BotsHost } from "./server/host";
+import { Relay } from "./server/relay";
+import { BOT_TOOLS } from "./server/tools";
 import { saveUpload } from "./server/uploads";
 import { botSettings, EMPTY_LIBRARY } from "./shared/bot";
 import {
@@ -19,12 +21,12 @@ import {
   memoryListRpc,
   memoryReadRpc,
   memoryWriteRpc,
+  mountRpc,
   mcpProbeRpc,
   appsAccountsRpc,
   appsCatalogRpc,
   appsConnectRpc,
   appsDisconnectRpc,
-  appsMountRpc,
   appsRemoveKeyRpc,
   appsSetKeyRpc,
   appsStatusRpc,
@@ -53,16 +55,13 @@ export default function contribute(server: PluginServerContext) {
     const state = await settings.read();
     return state.status === "ready" ? (state.values.library ?? EMPTY_LIBRARY) : EMPTY_LIBRARY;
   };
-  // Connected apps: the relay checks each bot's allowed apps against the saved settings on every call.
-  const relay = new AppsRelay(async (botId) => {
-    const state = await settings.read();
-    const bot = state.status === "ready" ? state.values.bots.find((entry) => entry.id === botId) : undefined;
-    return bot && !bot.archived && !bot.hostId ? bot.apps : null;
-  });
-  void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the connected-apps relay", error));
-  const scheduler = new RoutineScheduler(settings, relay);
-  // Every handler and hook receives the plugin's Paseo API; the scheduler needs it to start chats.
-  const attach = ({ paseo }: PluginHandlerContext) => scheduler.attach(paseo);
+  const host = new BotsHost(settings);
+  // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
+  const relay = new Relay(host, BOT_TOOLS);
+  void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
+  const scheduler = new RoutineScheduler(host, relay);
+  // Every handler and hook receives the plugin's Paseo API; features that start chats need it.
+  const attach = ({ paseo }: PluginHandlerContext) => host.attach(paseo);
 
   server.handle(helloRpc, (_input, context) => {
     attach(context);
@@ -89,7 +88,10 @@ export default function contribute(server: PluginServerContext) {
   server.handle(appsAccountsRpc, accounts);
   server.handle(appsConnectRpc, connect);
   server.handle(appsDisconnectRpc, disconnect);
-  server.handle(appsMountRpc, async ({ botId }) => ({ server: await relay.mount(botId) }));
+  server.handle(mountRpc, async ({ botId, agentId }) => {
+    const bot = await host.bot(botId);
+    return { tools: await relay.mountTools(botId, agentId), apps: bot?.apps.length ? await relay.mountApps(botId) : null };
+  });
   server.handle(routineStatusRpc, (_input, context) => {
     attach(context);
     return scheduler.status();
@@ -101,7 +103,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(exportBotRpc, async (input) => exportBot(input, await library()));
   server.handle(importBotRpc, importBot);
   server.handle(uploadRpc, saveUpload);
-  server.on("agent.turn_ended", (_event, context) => scheduler.attach(context.paseo));
+  server.on("agent.turn_ended", (_event, context) => host.attach(context.paseo));
 
   return () => {
     scheduler.stop();

@@ -1,15 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { PaseoApi } from "@getpaseo/client";
-import type { PluginSettings } from "@getpaseo/plugin/server";
 import { EMPTY_LIBRARY, type Bot, type Library, type Routine } from "../shared/bot";
-import type { botSettings } from "../shared/bot";
 import { ROUTINE_LABEL, startBotChat } from "../shared/chat";
 import type { RoutineRunState } from "../shared/rpc";
 import { decide } from "../shared/routines";
 import { ensureBotHome, pluginDataPath } from "./bot-home";
 import { systemPrompt } from "./prompt";
-import type { AppsRelay } from "./relay";
+import type { BotsHost } from "./host";
+import type { Relay } from "./relay";
+import { newUuid } from "../shared/uuid";
 
 const TICK_MS = 30_000;
 type Runs = Record<string, RoutineRunState>;
@@ -38,22 +38,22 @@ async function writeRuns(runs: Runs): Promise<void> {
  * those has run (the app calls `bots.hello` when it starts).
  */
 export class RoutineScheduler {
-  private paseo: PaseoApi | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
 
   constructor(
-    private readonly settings: PluginSettings<typeof botSettings.schema>,
-    private readonly relay: AppsRelay,
-  ) {}
-
-  attach(paseo: PaseoApi): void {
-    if (this.paseo === paseo) return;
-    this.paseo = paseo;
-    if (!this.timer) {
+    private readonly host: BotsHost,
+    private readonly relay: Relay,
+  ) {
+    host.onAttach(() => {
+      if (this.timer) return;
       this.timer = setInterval(() => void this.tick(), TICK_MS);
       void this.tick();
-    }
+    });
+  }
+
+  private get paseo(): PaseoApi | null {
+    return this.host.paseo;
   }
 
   get running(): boolean {
@@ -63,7 +63,6 @@ export class RoutineScheduler {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    this.paseo = null;
   }
 
   async status() {
@@ -80,7 +79,7 @@ export class RoutineScheduler {
   }
 
   private async find(botId: string, routineId: string): Promise<{ bot: Bot; routine: Routine; library: Library }> {
-    const state = await this.settings.read();
+    const state = await this.host.settings.read();
     if (state.status !== "ready") throw new Error("Bot settings are unreadable.");
     const bot = state.values.bots.find((entry) => entry.id === botId);
     const routine = bot?.routines.find((entry) => entry.id === routineId);
@@ -93,10 +92,12 @@ export class RoutineScheduler {
     if (bot.hostId) throw new Error("Routines run on the host that stores the bot; this bot runs on another host.");
     const home = await ensureBotHome({ botId: bot.id });
     const { systemPrompt: prompt } = await systemPrompt({ bot, local: true }, library, this.paseo);
+    const agentId = newUuid();
     return startBotChat(this.paseo, {
       bot,
       library,
-      apps: bot.apps.length ? await this.relay.mount(bot.id) : null,
+      agentId,
+      plugin: { tools: await this.relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await this.relay.mountApps(bot.id) : null },
       placement: bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root },
       prompt: routine.prompt,
       systemPrompt: prompt,
@@ -120,7 +121,7 @@ export class RoutineScheduler {
     if (this.ticking || !this.paseo) return;
     this.ticking = true;
     try {
-      const state = await this.settings.read();
+      const state = await this.host.settings.read();
       if (state.status !== "ready") return;
       const runs = await readRuns();
       let changed = false;

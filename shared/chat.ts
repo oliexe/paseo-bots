@@ -1,5 +1,5 @@
 import type { PaseoApi } from "@getpaseo/client";
-import { BOT_LABEL, buildAgentConfig, defaultModelId, type Bot, type Library, type McpServerConfig } from "./bot";
+import { BOT_LABEL, buildAgentConfig, defaultModelId, type Bot, type Library, type PluginServers } from "./bot";
 
 /** Label on chats started by a routine, carrying the routine id. */
 export const ROUTINE_LABEL = "paseo-bots.routine";
@@ -71,8 +71,10 @@ export interface StartChatInput {
   bot: Bot;
   /** Resolves the bot's MCP servers. */
   library: Library;
-  /** The connected-apps relay entry, when the bot uses connected apps. */
-  apps?: McpServerConfig | null;
+  /** The chat's agent id, picked in advance so its tools URL can name it. */
+  agentId?: string;
+  /** The plugin's servers for this chat (tools, connected apps), from the relay on the bot's host. */
+  plugin?: PluginServers;
   placement: BotPlacement;
   prompt: string;
   systemPrompt: string;
@@ -93,7 +95,8 @@ export async function startBotChat(api: PaseoApi, input: StartChatInput): Promis
   const model = bot.model ?? (await resolveDefaultModel(api, bot.provider));
   const workspace = await ensureBotWorkspace(api, bot, input.placement);
   const agent = await workspace.agents.create({
-    config: buildAgentConfig(bot, input.library, model, input.systemPrompt, input.apps ?? null),
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+    config: buildAgentConfig(bot, input.library, model, input.systemPrompt, input.plugin),
     labels: { [BOT_LABEL]: bot.id, ...input.labels },
     prompt: input.prompt,
     ...(input.title ? { title: input.title.slice(0, MAX_TITLE_CHARS) } : {}),
