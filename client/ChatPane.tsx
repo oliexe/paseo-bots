@@ -33,6 +33,8 @@ export interface ChatPaneProps {
   onTogglePanel(): void;
   /** Creates the chat with its first message. */
   onStart(message: OutgoingMessage): Promise<void>;
+  /** Shows another chat of this bot (a routine run's own chat). */
+  onOpenChat(chatId: string): void;
 }
 
 export interface OutgoingMessage {
@@ -42,7 +44,7 @@ export interface OutgoingMessage {
   attachments: ReturnType<typeof toWire>["attachments"];
 }
 
-export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStart }: ChatPaneProps) {
+export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStart, onOpenChat }: ChatPaneProps) {
   const running = chat.agent?.status === "running" || chat.agent?.status === "initializing";
   const empty = chat.entries.length === 0 && !chat.loading && !chat.error && (chat.agent?.pendingPermissions.length ?? 0) === 0;
   const title = chatId ? displayTitle(chat.agent?.title) : "New chat";
@@ -69,7 +71,7 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
           ) : null}
         </View>
       ) : (
-        <ChatStream key={chatId} colors={colors} chat={chat} api={host.api} agentId={chatId} compact={layout.compact} platform={layout.platform} typeVersion={typeVersion} />
+        <ChatStream key={chatId} colors={colors} chat={chat} api={host.api} agentId={chatId} compact={layout.compact} platform={layout.platform} typeVersion={typeVersion} onOpenChat={onOpenChat} />
       )}
       <Composer colors={colors} bot={bot} host={host} agentId={chatId} agent={chat.agent} running={running} layout={layout} keyboardOpen={keyboardOpen} onStart={onStart} />
     </View>

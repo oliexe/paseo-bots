@@ -42,6 +42,7 @@ import {
   appsStatusRpc,
   routineRunNowRpc,
   routineStatusRpc,
+  routineWebhookRpc,
   skillDeleteRpc,
   skillImportRpc,
   skillReadRpc,
@@ -129,6 +130,7 @@ export default function contribute(server: PluginServerContext) {
     attach(context);
     return scheduler.runNow(botId, routineId);
   });
+  server.handle(routineWebhookRpc, ({ routineId, rotate }) => scheduler.webhookUrl(routineId, rotate));
   server.handle(exportBotRpc, async (input) => exportBot(input, await library()));
   server.handle(importBotRpc, importBot);
   server.handle(uploadRpc, saveUpload);
@@ -138,7 +140,7 @@ export default function contribute(server: PluginServerContext) {
   });
   server.on("agent.turn_ended", async (event, context) => {
     host.attach(context.paseo);
-    await turnEnded(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
+    await turnEnded(host, journal, scheduler, event).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
   });
 
   return () => {

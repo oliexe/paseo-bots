@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RoutineScheduleSchema } from "./bot";
 import { botToolName } from "./bot-tools";
 
 // What a bot proposes in a chat (a skill it learned, a routine) waits as a
@@ -17,7 +18,13 @@ const ProposalBase = z.object({
 /** A new or updated library skill: its folder name and full SKILL.md. */
 export const SkillProposalSchema = z.object({ name: z.string(), description: z.string(), text: z.string() });
 
-export const ProposalSchema = z.discriminatedUnion("kind", [ProposalBase.extend({ kind: z.literal("skill"), data: SkillProposalSchema })]);
+/** A new routine for the bot; its runs report back to the chat it was proposed in. */
+export const RoutineProposalSchema = z.object({ name: z.string(), prompt: z.string(), schedule: RoutineScheduleSchema, resultsChatId: z.string().nullable() });
+
+export const ProposalSchema = z.discriminatedUnion("kind", [
+  ProposalBase.extend({ kind: z.literal("skill"), data: SkillProposalSchema }),
+  ProposalBase.extend({ kind: z.literal("routine"), data: RoutineProposalSchema }),
+]);
 export type Proposal = z.infer<typeof ProposalSchema>;
 export type ProposalKind = Proposal["kind"];
 
@@ -34,9 +41,10 @@ export function proposalIdIn(output: unknown): string | null {
   return PROPOSAL_ID.exec(text)?.[1] ?? null;
 }
 
-/** The skill proposal behind a finished propose_skill tool call, if the call is one. */
-export function skillProposalId(call: { name: string; status: string; detail: unknown }): string | null {
-  if (call.status !== "completed" || botToolName(call.name) !== "propose_skill") return null;
+/** The proposal behind a finished propose_skill or propose_routine tool call, if the call is one. */
+export function proposalIdOf(call: { name: string; status: string; detail: unknown }): string | null {
+  const tool = botToolName(call.name);
+  if (call.status !== "completed" || (tool !== "propose_skill" && tool !== "propose_routine")) return null;
   const detail = call.detail as { output?: unknown } | null;
   return proposalIdIn(detail && typeof detail === "object" && "output" in detail ? detail.output : null);
 }

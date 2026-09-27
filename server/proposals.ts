@@ -67,6 +67,7 @@ export async function acceptProposal(id: string) {
   const proposal = await getProposal(id);
   if (!proposal) throw new Error("This proposal is no longer available.");
   if (proposal.status !== "pending") throw new Error(proposal.status === "accepted" ? "It's already saved." : "It was dismissed.");
+  if (proposal.kind === "routine") return { proposal: await resolve(id, "accepted") };
   const saved = await writeSkill({ id: proposal.data.name, text: proposal.data.text });
   const accepted = await resolve(id, "accepted");
   return { proposal: accepted, skill: { id: proposal.data.name, description: saved.description, sha: saved.sha } };

@@ -140,7 +140,8 @@ describe("memory journal, daily log and search_chats", () => {
     const { listLogDays, recentLogEntries } = await import("../server/memory");
     const { searchChats } = await import("../server/tools/chats");
     const host = fakeHost([makeBot({ id: "bot-s", name: "Scout" })]);
-    host.chatOf = async (agentId: string) => (agentId === "other-agent" ? null : { botId: "bot-s", title: "Invoices" });
+    host.chatOf = async (agentId: string) => (agentId === "other-agent" ? null : { botId: "bot-s", title: "Invoices", routineId: null });
+    const scheduler = { finished: async () => {} };
     const journal = new MemoryJournal();
     const agent = { id: newUuid(), workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/", title: null };
 
@@ -149,9 +150,9 @@ describe("memory journal, daily log and search_chats", () => {
       { type: "tool_call", name: "mcp__apps__GMAIL_SEND", callId: "1", status: "completed", detail: { type: "unknown", input: null, output: null }, error: null },
       { type: "assistant_message", text: "Sent the three Q3 invoices to Acme." },
     ] as never;
-    await turnEnded(host, journal, { agent, turnId: "t1", outcome: { kind: "completed" }, timeline });
-    await turnEnded(host, journal, { agent: { ...agent, id: "other-agent" }, turnId: "t2", outcome: { kind: "completed" }, timeline });
-    await turnEnded(host, journal, { agent, turnId: "t3", outcome: { kind: "canceled", reason: "stopped" }, timeline });
+    await turnEnded(host, journal, scheduler, { agent, turnId: "t1", outcome: { kind: "completed" }, timeline });
+    await turnEnded(host, journal, scheduler, { agent: { ...agent, id: "other-agent" }, turnId: "t2", outcome: { kind: "completed" }, timeline });
+    await turnEnded(host, journal, scheduler, { agent, turnId: "t3", outcome: { kind: "canceled", reason: "stopped" }, timeline });
     expect((await listLogDays("bot-s")).days).toEqual([{ day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), lines: 1 }]);
     const [entry] = await recentLogEntries("bot-s", 1);
     expect(entry).toMatchObject({ chat: "Invoices", text: "Sent the three Q3 invoices to Acme. [tools: apps/GMAIL_SEND]" });

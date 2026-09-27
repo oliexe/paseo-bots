@@ -534,6 +534,11 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           toast.show("Restored. Undo it from History if needed.", { variant: "success" });
         }}
         onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: SETUP_PROMPT })}
+        onOpenChat={(chatId) => {
+          select({ botId: selectedBot.id, chatId });
+          // On phones the panel covers the chat.
+          if (layout.compact) setPanel({ open: false, section: panel.section });
+        }}
       />
     ) : null;
 
@@ -705,6 +710,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
       onBotMenu={onBotMenu}
       onTogglePanel={onTogglePanel}
       onStart={start}
+      onOpenChat={onStarted}
     />
   );
 }

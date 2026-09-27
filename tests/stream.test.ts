@@ -144,6 +144,24 @@ describe("turn footers", () => {
     expect(layout.items[1]!.compactBottom).toBe(true);
   });
 
+  it("shows this plugin's routine run cards apart from the turn before them", () => {
+    const card = { routineName: "Inbox", trigger: "manual", scheduledFor: new Date(60_000).toISOString(), status: "running", agentId: "a", output: null, error: null };
+    const rows = buildRows(
+      [
+        user("q", 0),
+        assistant("done", 8000),
+        entry({ type: "plugin", pluginId: "paseo-bots", id: "run-1", kind: "routine-run", version: 1, data: card }, { at: 60_000 }),
+        entry({ type: "plugin", pluginId: "other", id: "x", kind: "routine-run", version: 1, data: card }, { at: 61_000 }),
+      ],
+      false,
+    );
+    expect(rows.map((row) => row.kind)).toEqual(["user", "assistant", "routine-run"]);
+    expect(rows[2]!.key).toBe("plugin:run-1");
+    const layout = layoutStream(rows, false);
+    expect(layout.auxiliaryFooter).toBeNull();
+    expect(layout.items[1]!.footer).toMatchObject({ copy: "done", durationMs: 8000 });
+  });
+
   it("uses canonical turn ids when present", () => {
     const rows: StreamRow[] = [
       { key: "a", kind: "user", text: "q", turnId: "t1", timestamp: 0 },

@@ -16,6 +16,8 @@ function atLocalTime(day: Date, time: string): Date {
  */
 export function latestDue(schedule: RoutineSchedule, since: Date, now: Date): Date | null {
   switch (schedule.kind) {
+    case "webhook":
+      return null;
     case "once": {
       const at = new Date(schedule.at);
       return at > since && at <= now ? at : null;
@@ -47,6 +49,8 @@ export function latestDue(schedule: RoutineSchedule, since: Date, now: Date): Da
 /** The next time the routine will fire after `now`, for display. */
 export function nextRun(schedule: RoutineSchedule, since: Date, now: Date): Date | null {
   switch (schedule.kind) {
+    case "webhook":
+      return null;
     case "once": {
       const at = new Date(schedule.at);
       return at > since && at > now ? at : null;
@@ -73,6 +77,37 @@ export function nextRun(schedule: RoutineSchedule, since: Date, now: Date): Date
   }
 }
 
+/** The next `count` times the schedule fires after `now` (an interval that's already due starts with `now`). */
+export function upcomingRuns(schedule: RoutineSchedule, since: Date, now: Date, count: number): Date[] {
+  const runs: Date[] = [];
+  let from = since;
+  let after = now;
+  while (runs.length < count) {
+    const next = nextRun(schedule, from, after);
+    if (!next || (runs.length > 0 && next <= runs[runs.length - 1]!)) break;
+    runs.push(next);
+    from = next;
+    after = next;
+  }
+  return runs;
+}
+
+/** "2026-09-27 09:00" in local time, the format the "At" field edits. */
+export function formatLocalDateTime(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Reads "YYYY-MM-DD HH:MM" (or with a T) as local time; null when it isn't a real date. */
+export function parseLocalDateTime(text: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$/.exec(text.trim());
+  if (!match) return null;
+  const [year, month, day, hour, minute] = match.slice(1).map(Number) as [number, number, number, number, number];
+  const date = new Date(year, month - 1, day, hour, minute);
+  const valid = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && date.getHours() === hour && date.getMinutes() === minute;
+  return valid ? date : null;
+}
+
 export type RoutineDecision = { action: "run"; due: Date } | { action: "skip-missed"; due: Date } | { action: "wait" };
 
 export function decide(routine: Routine, lastRunAt: string | null, now: Date): RoutineDecision {
@@ -87,6 +122,8 @@ const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function describeSchedule(schedule: RoutineSchedule): string {
   switch (schedule.kind) {
+    case "webhook":
+      return "When its webhook is called";
     case "cron":
       return describeCron(schedule.expression) ?? schedule.expression.trim();
     case "once":
@@ -286,6 +323,7 @@ export function scheduleToCron(schedule: RoutineSchedule): string | null {
     case "cron":
       return schedule.expression;
     case "once":
+    case "webhook":
       return null;
     case "daily": {
       const [hours = "9", minutes = "0"] = schedule.time.split(":");

@@ -79,6 +79,8 @@ export interface PanelProps {
   flush(): Promise<void>;
   onRestore(snapshot: Bot): void;
   onSetup(): void;
+  /** Shows one of the bot's chats (a routine run). */
+  onOpenChat(chatId: string): void;
 }
 
 interface BotPanelProps extends PanelProps {

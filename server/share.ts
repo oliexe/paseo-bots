@@ -102,7 +102,8 @@ export async function exportBot({ bot, includeMemory }: { bot: Bot; includeMemor
       modeId: bot.modeId,
       thinkingOptionId: bot.thinkingOptionId,
       // Routines arrive paused, as in OpenMausBot's team files.
-      routines: bot.routines.map((routine) => ({ ...routine, enabled: false })),
+      // Results chats only exist on this host.
+      routines: bot.routines.map((routine) => ({ ...routine, enabled: false, resultsChatId: null })),
     },
     skills: skills.map((skill) => ({ id: skill.id, description: skill.description, source: skill.source })),
     mcpServers: redact(botMcpServers(bot, library).map((server) => ({ name: server.name, enabled: true, config: server.config }))),
@@ -172,7 +173,7 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     skillIds: skills.map((skill) => skill.id),
     mcpServerIds: [],
     apps: [],
-    routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, createdAt: now })),
+    routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, resultsChatId: null, createdAt: now })),
     pinned: false,
     archived: false,
     createdAt: now,

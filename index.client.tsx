@@ -1,11 +1,12 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { z } from "zod";
 import { BotsSurface } from "./client/BotsSurface";
-import { SkillProposalCard } from "./client/chat/stream/SkillProposalCard";
+import { ProposalCard } from "./client/chat/stream/ProposalCard";
+import { RoutineRunCard } from "./client/chat/stream/RoutineRunCard";
 import { requestIntent } from "./client/intent";
 import { BOT_LABEL } from "./shared/bot";
-import { skillProposalId } from "./shared/proposals";
-import { helloRpc } from "./shared/rpc";
+import { proposalIdOf } from "./shared/proposals";
+import { helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
 import { LEARN_COMMAND, learnPrompt } from "./shared/skills";
 
 export default function contribute(client: PluginClientContext) {
@@ -44,18 +45,24 @@ export default function contribute(client: PluginClientContext) {
     },
   });
   client.addTimelineTransformer({
-    id: "skill-proposals",
+    id: "proposals",
     query: { itemType: "tool_call" },
     transform({ item }) {
-      const proposalId = skillProposalId(item);
-      return proposalId ? { items: [{ type: "plugin", kind: "skill-proposal", version: 1, data: { proposalId } }] } : undefined;
+      const proposalId = proposalIdOf(item);
+      return proposalId ? { items: [{ type: "plugin", kind: "proposal", version: 1, data: { proposalId } }] } : undefined;
     },
   });
   client.addTimelineRenderer({
-    kind: "skill-proposal",
+    kind: "proposal",
     version: 1,
     schema: z.object({ proposalId: z.string() }),
-    Component: ({ item, theme, layout }) => <SkillProposalCard colors={theme.colors} compact={layout.compact} proposalId={item.data.proposalId} />,
+    Component: ({ item, theme, layout }) => <ProposalCard colors={theme.colors} compact={layout.compact} proposalId={item.data.proposalId} />,
+  });
+  // A routine's results chat opened in Paseo's view shows its run cards too (no navigation there).
+  client.addTimelineRenderer({
+    ...ROUTINE_RUN_CARD,
+    schema: RoutineRunCardSchema,
+    Component: ({ item, theme }) => <RoutineRunCard colors={theme.colors} card={item.data} />,
   });
   return () => {};
 }

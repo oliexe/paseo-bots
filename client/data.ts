@@ -113,12 +113,14 @@ export function useBotChats(host: BotHost, botId: string) {
   });
 }
 
-/** Refetches chat lists shortly after any agent update the app already receives. */
+/** Refetches chat lists shortly after any agent update, so chats routines start show up too. */
 export function useChatInvalidation() {
   const paseo = usePaseo();
   const queryClient = useQueryClient();
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+    let subscription: { release(): Promise<void> } | null = null;
     const unsubscribe = paseo.agents.subscribe(() => {
       if (timer) return;
       timer = setTimeout(() => {
@@ -126,9 +128,19 @@ export function useChatInvalidation() {
         void queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats"] });
       }, 500);
     });
+    // The daemon only sends agent updates to sessions that subscribed through a list request.
+    void paseo.agents
+      .list({ page: { limit: 1 }, subscribe: {} })
+      .then((result) => {
+        if (closed) void result.subscription.release();
+        else subscription = result.subscription;
+      })
+      .catch(() => {});
     return () => {
+      closed = true;
       if (timer) clearTimeout(timer);
       unsubscribe();
+      void subscription?.release();
     };
   }, [paseo, queryClient]);
 }

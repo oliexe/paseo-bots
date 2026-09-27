@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Image, Pressable, Text, View } from "react-native";
 import type { ComposerAttachment } from "../../../shared/attachments";
 import { capMessageForRender, formatDuration, formatMessageTimestamp, utf8ByteLength } from "../../../shared/markdown";
-import { skillProposalId } from "../../../shared/proposals";
+import { proposalIdOf } from "../../../shared/proposals";
 import { buildToolCallPresentation, type TaskActivity, type TaskEntry, type ToolCallDetail, type ToolCallStatus } from "../../../shared/tools";
 import { AttachmentPill } from "../../AttachmentPill";
 import { Markdown } from "../../Markdown";
@@ -13,7 +13,8 @@ import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
 import type { StreamRow, TurnFooterInfo } from "./model";
 import { PlanCard } from "./PlanCard";
-import { SkillProposalCard } from "./SkillProposalCard";
+import { ProposalCard } from "./ProposalCard";
+import { RoutineRunCard } from "./RoutineRunCard";
 import { CopyButton, ExpandableBadge, isWeb, Spinner } from "./ui";
 
 type Colors = PluginTheme["colors"];
@@ -29,6 +30,8 @@ export interface RowContext {
   compact: boolean;
   cwd?: string;
   attachmentsFor(row: Extract<StreamRow, { kind: "user" }>): ComposerAttachment[];
+  /** Opens another chat of the same bot (a routine run's own chat). */
+  openChat?(agentId: string): void;
 }
 
 /** One stream item, laid out like Paseo's StreamItemWrapper (820 wide, 8 inset). */
@@ -46,8 +49,8 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
     case "thought":
       return <ThoughtRow colors={colors} compact={context.compact} text={row.text} loading={row.loading} />;
     case "tool": {
-      const proposalId = skillProposalId(row);
-      if (proposalId) return <SkillProposalCard colors={colors} compact={context.compact} proposalId={proposalId} />;
+      const proposalId = proposalIdOf(row);
+      if (proposalId) return <ProposalCard colors={colors} compact={context.compact} proposalId={proposalId} />;
       return <ToolCallRow colors={colors} compact={context.compact} cwd={context.cwd} name={row.name} status={row.status} error={row.error} detail={row.detail} metadata={row.metadata} />;
     }
     case "speak":
@@ -58,6 +61,8 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
       return <Notification colors={colors} level={row.level} message={row.message} />;
     case "compaction":
       return <CompactionMarker colors={colors} status={row.status} trigger={row.trigger} preTokens={row.preTokens} />;
+    case "routine-run":
+      return <RoutineRunCard colors={colors} card={row.card} onOpenChat={context.openChat} />;
   }
 }
 

@@ -23,7 +23,7 @@ async function botAppNames(bot: Bot): Promise<string[]> {
 
 export async function promptContext(bot: Bot, local: boolean, library: Library, paseoTools: boolean): Promise<PromptContext> {
   // Connected apps go through this host's relay, so bots on other hosts can't reach them.
-  if (!local) return { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools, apps: [] };
+  if (!local) return { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools, botTools: false, apps: [] };
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
   for (const skill of botSkills(bot, library)) {
@@ -39,6 +39,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     recentWork: recentWork(await recentLogEntries(bot.id, 3), new Date()),
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
+    botTools: true,
     apps: await botAppNames(bot),
   };
 }

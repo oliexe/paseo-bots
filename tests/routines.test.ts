@@ -5,7 +5,7 @@ import { decide, describeSchedule, latestDue, nextRun } from "../shared/routines
 const at = (text: string) => new Date(text);
 
 function routine(patch: Partial<Routine>): Routine {
-  return { id: "rt", name: "r", prompt: "p", enabled: true, schedule: { kind: "interval", minutes: 60 }, createdAt: "2026-09-01T00:00:00", ...patch };
+  return { id: "rt", name: "r", prompt: "p", enabled: true, schedule: { kind: "interval", minutes: 60 }, resultsChatId: null, createdAt: "2026-09-01T00:00:00", ...patch };
 }
 
 describe("latestDue", () => {

@@ -14,6 +14,8 @@ import {
   type ToolCallDetail,
   type ToolCallStatus,
 } from "../../../shared/tools";
+import { ROUTINE_RUN_CARD, RoutineRunCardSchema, type RoutineRunCard } from "../../../shared/rpc";
+import { PLUGIN_ID } from "../../../shared/version";
 
 /** The fields of a projected timeline entry the stream reads. */
 export interface StreamEntry {
@@ -47,7 +49,8 @@ export type StreamRow =
   | (RowBase & { kind: "speak"; text: string })
   | (RowBase & { kind: "todo"; items: TaskEntry[]; activity: TaskActivity })
   | (RowBase & { kind: "notification"; level: "info" | "warning" | "error"; message: string })
-  | (RowBase & { kind: "compaction"; status: "loading" | "completed"; trigger?: "auto" | "manual"; preTokens?: number });
+  | (RowBase & { kind: "compaction"; status: "loading" | "completed"; trigger?: "auto" | "manual"; preTokens?: number })
+  | (RowBase & { kind: "routine-run"; card: RoutineRunCard });
 
 export interface TurnFooterInfo {
   /** Key of the assistant row the footer belongs to. */
@@ -195,8 +198,14 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
           ...(typeof item.preTokens === "number" ? { preTokens: item.preTokens } : {}),
         });
         break;
+      case "plugin": {
+        // This plugin's routine result cards; other plugins' items belong to their renderers.
+        if (item.pluginId !== PLUGIN_ID || item.kind !== ROUTINE_RUN_CARD.kind) break;
+        const card = RoutineRunCardSchema.safeParse(item.data);
+        if (card.success) rows.push({ ...base, key: `plugin:${String(item.id ?? entry.seqStart)}`, kind: "routine-run", card: card.data });
+        break;
+      }
       default:
-        // Plugin timeline items belong to other plugins' renderers.
         break;
     }
   });
@@ -233,14 +242,17 @@ function category(row: StreamRow | null | undefined): Category | null {
 }
 
 /** turn-membership.ts continuesTurn: canonical turn ids first, else a user message starts a turn. */
+/** Routine result cards arrive between turns and belong to none. */
+const standsAlone = (row: StreamRow) => row.kind === "routine-run";
+
 export function continuesTurn(previous: StreamRow | null, next: StreamRow | null): boolean {
-  if (!previous || !next) return false;
+  if (!previous || !next || standsAlone(previous) || standsAlone(next)) return false;
   if (previous.turnId !== undefined && next.turnId !== undefined) return previous.turnId === next.turnId;
   return next.kind !== "user";
 }
 
 function continuesResponse(previous: StreamRow | null, next: StreamRow | null): boolean {
-  if (!previous || !next) return false;
+  if (!previous || !next || standsAlone(previous) || standsAlone(next)) return false;
   return continuesTurn(previous, next) || next.kind !== "user";
 }
 

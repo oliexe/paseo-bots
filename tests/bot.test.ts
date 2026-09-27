@@ -97,10 +97,12 @@ describe("promptSections", () => {
       recentWork: ['- today 09:05 · "Inbox" · you said: "Done."'],
       skills: [{ name: "pdf", description: "PDFs.", path: "/m/skills/pdf/SKILL.md" }],
       paseoTools: true,
+      botTools: true,
       apps: [],
     });
-    expect(sections.map((section) => section.title)).toEqual(["Persona", "Standing instructions", "Memory", "Recent work", "Skills", "Paseo tools"]);
-    expect(sections[5]!.text).toContain('MCP server "paseo"');
+    expect(sections.map((section) => section.title)).toEqual(["Persona", "Standing instructions", "Memory", "Recent work", "Skills", "Bot tools", "Paseo tools"]);
+    expect(sections[5]!.text).toContain("propose_routine");
+    expect(sections[6]!.text).toContain('MCP server "paseo"');
     expect(sections[3]!.text).toContain('you said: "Done."');
     expect(sections[0]!.text).toBe("You are Email Manager, a personal bot running inside Paseo.\nRole: Inbox triage\nAbout: Triages the inbox.");
     expect(sections[1]!.text).toContain("BEGIN STANDING INSTRUCTIONS\nBe brief.");
@@ -109,7 +111,7 @@ describe("promptSections", () => {
   });
 
   it("leaves out memory and skills when the bot has no local folder", () => {
-    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
+    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
   });
 });
 

@@ -46,6 +46,7 @@ export interface ChatStreamProps {
   platform: "ios" | "android" | "web";
   /** Bumps when Paseo's font sizes change, so rows re-render. */
   typeVersion: number;
+  onOpenChat?(chatId: string): void;
 }
 
 /** Whether a turn is running, as the stream shows it. */
@@ -53,7 +54,7 @@ export function isTurnRunning(chat: ChatState): boolean {
   return chat.agent?.status === "running" || chat.agent?.status === "initializing";
 }
 
-export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion }: ChatStreamProps) {
+export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat }: ChatStreamProps) {
   const running = isTurnRunning(chat);
   const inverted = platform !== "web";
   const list = useRef<NativeFlatList<StreamLayoutItem>>(null);
@@ -157,8 +158,9 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
         const found = sentAttachments(row);
         return found.length > 0 ? found : EMPTY_ATTACHMENTS;
       },
+      openChat: onOpenChat,
     }),
-    [colors, compact, cwd],
+    [colors, compact, cwd, onOpenChat],
   );
 
   const renderItem = useCallback(({ item }: ListRenderItemInfo<StreamLayoutItem>) => <StreamItem item={item} context={context} typeVersion={typeVersion} />, [context, typeVersion]);

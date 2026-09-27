@@ -28,3 +28,7 @@ export function botToolName(name: string): BotToolName | null {
 export function supportsToolGrants(provider: string): boolean {
   return /^(claude|codex|opencode)(\b|$)/.test(provider);
 }
+
+/** The prompt section for the plugin's own tools, given to chats that get them (bots on the plugin's host). */
+export const BOT_TOOLS_PROMPT =
+  'Your own tools come from the MCP server "bots". Use propose_routine for your own recurring or webhook-started work (rather than Paseo schedules) and propose_skill to keep a way of working for next time; the user confirms both on a card in the chat. Use search_chats to look through your past chats and daily log, and list_bots to see the other bots.';

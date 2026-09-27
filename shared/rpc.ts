@@ -139,24 +139,52 @@ export const mcpProbeRpc = defineRpc({
   output: z.discriminatedUnion("ok", [z.object({ ok: z.literal(true), tools: z.array(McpToolSchema) }), z.object({ ok: z.literal(false), error: z.string() })]),
 });
 
-export const RoutineRunStateSchema = z.object({
-  lastRunAt: z.string().nullable(),
-  lastStatus: z.enum(["started", "skipped-busy", "skipped-missed", "failed"]).nullable(),
-  lastError: z.string().nullable(),
-  lastAgentId: z.string().nullable(),
+/** One run of a routine, like Paseo's ScheduleRun. */
+export const RoutineRunSchema = z.object({
+  id: z.string(),
+  trigger: z.enum(["schedule", "manual", "webhook"]),
+  /** When the run was due; for manual and webhook runs, when it was asked for. */
+  scheduledFor: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  status: z.enum(["running", "succeeded", "failed", "skipped-busy", "skipped-missed"]),
+  agentId: z.string().nullable(),
+  /** The start of the bot's reply once the run finished. */
+  output: z.string().nullable(),
+  error: z.string().nullable(),
 });
-export type RoutineRunState = z.infer<typeof RoutineRunStateSchema>;
+export type RoutineRun = z.infer<typeof RoutineRunSchema>;
+
+/** A run's card in the routine's results chat: a plugin timeline item that's replaced (same id) when the run finishes. */
+export const RoutineRunCardSchema = RoutineRunSchema.pick({ trigger: true, scheduledFor: true, status: true, agentId: true, output: true, error: true }).extend({ routineName: z.string() });
+export type RoutineRunCard = z.infer<typeof RoutineRunCardSchema>;
+export const ROUTINE_RUN_CARD = { kind: "routine-run", version: 1 } as const;
+
+export const RoutineRecordSchema = z.object({
+  /** The last time the schedule fired (runs, skips and misses), which the next due time counts from. */
+  lastRunAt: z.string().nullable(),
+  /** The latest runs, oldest first. */
+  runs: z.array(RoutineRunSchema),
+});
+export type RoutineRecord = z.infer<typeof RoutineRecordSchema>;
 
 export const routineStatusRpc = defineRpc({
   name: "bots.routines.status",
   input: z.object({}),
-  output: z.object({ scheduler: z.boolean(), runs: z.record(z.string(), RoutineRunStateSchema) }),
+  output: z.object({ scheduler: z.boolean(), routines: z.record(z.string(), RoutineRecordSchema) }),
 });
 
 export const routineRunNowRpc = defineRpc({
   name: "bots.routines.run-now",
   input: z.object({ botId: BotId, routineId: z.string() }),
-  output: z.object({ agentId: z.string() }),
+  output: z.object({ run: RoutineRunSchema }),
+});
+
+/** The routine's webhook URL on this host; `rotate` replaces its secret so the old URL stops working. */
+export const routineWebhookRpc = defineRpc({
+  name: "bots.routines.webhook",
+  input: z.object({ routineId: z.string().regex(/^[a-z0-9-]+$/), rotate: z.boolean().optional() }),
+  output: z.object({ url: z.string() }),
 });
 
 /** A shareable bot file: identity, soul, its skills and MCP servers, routines (paused) and optionally memory. Secrets are redacted. */
@@ -253,11 +281,11 @@ export const proposalGetRpc = defineRpc({
   output: z.object({ proposal: ProposalSchema.nullable() }),
 });
 
-/** Saves a proposed skill to the library; the app then turns it on for the bot. */
+/** Accepts a proposal. A skill is written to the library here; the app then records it (and routines) in the bots' settings. */
 export const proposalAcceptRpc = defineRpc({
   name: "bots.proposals.accept",
   input: z.object({ id: ProposalId }),
-  output: z.object({ proposal: ProposalSchema, skill: z.object({ id: SkillName, description: z.string(), sha: z.string() }) }),
+  output: z.object({ proposal: ProposalSchema, skill: z.object({ id: SkillName, description: z.string(), sha: z.string() }).optional() }),
 });
 
 export const proposalDismissRpc = defineRpc({

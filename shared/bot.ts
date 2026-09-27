@@ -1,7 +1,7 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt } from "./apps";
-import { QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
+import { BOT_TOOLS_PROMPT, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
@@ -100,6 +100,8 @@ export const RoutineScheduleSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("once"), at: z.string() }),
   /** Five-field cron ("minute hour day-of-month month day-of-week") in the host's local time. */
   z.object({ kind: z.literal("cron"), expression: z.string() }),
+  /** Runs when its webhook URL on this host is called; the request body comes with the prompt. */
+  z.object({ kind: z.literal("webhook") }),
 ]);
 export type RoutineSchedule = z.infer<typeof RoutineScheduleSchema>;
 
@@ -109,6 +111,8 @@ export const RoutineSchema = z.object({
   prompt: z.string(),
   enabled: z.boolean().default(true),
   schedule: RoutineScheduleSchema,
+  /** A chat of the bot that gets a card for each run (OpenMausBot's results thread); runs themselves always get their own chat. */
+  resultsChatId: z.string().nullable().default(null),
   createdAt: z.string(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
@@ -302,6 +306,8 @@ export interface PromptContext {
   skills: { name: string; description: string; path: string }[];
   /** Whether the host gives this bot's provider Paseo's own tools. */
   paseoTools: boolean;
+  /** Whether chats get the plugin's own tools (bots on the plugin's host). */
+  botTools: boolean;
   /** Names of the connected apps the bot may use; empty when it has none. */
   apps: string[];
 }
@@ -348,6 +354,7 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
     });
   }
   if (context.apps.length > 0) sections.push({ title: "Connected apps", text: appsPrompt(context.apps) });
+  if (context.botTools) sections.push({ title: "Bot tools", text: BOT_TOOLS_PROMPT });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });
   return sections;
 }
