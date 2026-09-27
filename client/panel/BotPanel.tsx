@@ -33,7 +33,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
     label: "Bot",
     sections: [
       { id: "overview", label: "Overview", icon: "LayoutDashboard", rows: ["Set up with the bot", "System prompt"], keywords: "summary setup prompt preview tokens" },
-      { id: "identity", label: "Identity", icon: "IdCard", rows: ["Avatar", "Colour", "Shape", "Image URL", "Name", "Title", "Blurb"], keywords: "description picture color face" },
+      { id: "identity", label: "Identity", icon: "IdCard", rows: ["Avatar", "Colour", "Shape", "Image URL", "Name", "Title", "Blurb", "Voice", "Read replies aloud"], keywords: "description picture color face upload generate speech speak tts" },
       { id: "soul", label: "Soul", icon: "ScrollText", rows: ["Standing instructions"], keywords: "system prompt soul behaviour behavior" },
     ],
   },

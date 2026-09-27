@@ -10,6 +10,7 @@ import { buildToolCallPresentation, type TaskActivity, type TaskEntry, type Tool
 import { AttachmentPill } from "../../AttachmentPill";
 import { Markdown } from "../../Markdown";
 import { CONTENT_MAX_WIDTH, nativeTokens } from "../../native";
+import { canSpeak } from "../../speech";
 import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
 import type { StreamRow, TurnFooterInfo } from "./model";
@@ -17,7 +18,7 @@ import { PlanCard } from "./PlanCard";
 import { ConnectCard } from "./ConnectCard";
 import { ProposalCard } from "./ProposalCard";
 import { RoutineRunCard } from "./RoutineRunCard";
-import { CopyButton, ExpandableBadge, isWeb, Spinner } from "./ui";
+import { CopyButton, ExpandableBadge, isWeb, SpeakButton, Spinner } from "./ui";
 
 type Colors = PluginTheme["colors"];
 type ImageAttachment = Extract<ComposerAttachment, { kind: "image" }>;
@@ -37,6 +38,8 @@ export interface RowContext {
   agentId: string | null;
   /** Set for bots on this host. */
   botId: string | null;
+  /** The bot's device voice for reading turns aloud; undefined hides the button. */
+  voice?: string | null;
 }
 
 /** One stream item, laid out like Paseo's StreamItemWrapper (820 wide, 8 inset). */
@@ -364,7 +367,7 @@ export function TurnFooterRow({ children }: { children: ReactNode }) {
 }
 
 /** Paseo's AssistantTurnFooter: copy, then "Worked for 2m 12s", swapping to the end time on hover or tap. */
-export const CompletedTurnFooter = memo(function CompletedTurnFooter({ colors, footer }: { colors: Colors; footer: TurnFooterInfo }) {
+export const CompletedTurnFooter = memo(function CompletedTurnFooter({ colors, footer, voice }: { colors: Colors; footer: TurnFooterInfo; voice?: string | null }) {
   const [hovered, setHovered] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -389,6 +392,7 @@ export const CompletedTurnFooter = memo(function CompletedTurnFooter({ colors, f
     <TurnFooterRow>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <CopyButton colors={colors} getContent={getContent} style={{ alignSelf: "center", marginLeft: -4 }} />
+        {canSpeak && voice !== undefined && footer.copy ? <SpeakButton colors={colors} text={footer.copy} voice={voice} /> : null}
         {primary ? (
           <Pressable
             onPress={press}

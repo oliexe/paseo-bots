@@ -16,8 +16,10 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import type { ComposerAttachment } from "../../shared/attachments";
+import type { BotVoice } from "../../shared/bot";
 import { CONTENT_MAX_WIDTH, nativeTokens } from "../native";
 import { sentAttachments } from "../sent-attachments";
+import { canSpeak, speak, stopSpeaking } from "../speech";
 import { ui } from "../typography";
 import type { ChatState } from "../useChat";
 import { PermissionCard } from "./Permission";
@@ -49,6 +51,8 @@ export interface ChatStreamProps {
   onOpenChat?(chatId: string): void;
   /** Set for bots on this host, whose approval cards can save commands. */
   botId?: string;
+  /** How the bot's turns are read aloud. */
+  voice?: BotVoice;
 }
 
 /** Whether a turn is running, as the stream shows it. */
@@ -56,7 +60,7 @@ export function isTurnRunning(chat: ChatState): boolean {
   return chat.agent?.status === "running" || chat.agent?.status === "initializing";
 }
 
-export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId }: ChatStreamProps) {
+export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId, voice }: ChatStreamProps) {
   const running = isTurnRunning(chat);
   const inverted = platform !== "web";
   const list = useRef<NativeFlatList<StreamLayoutItem>>(null);
@@ -163,15 +167,25 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       openChat: onOpenChat,
       agentId,
       botId: botId ?? null,
+      voice: canSpeak && voice ? voice.name : undefined,
     }),
-    [colors, compact, cwd, onOpenChat, agentId, botId],
+    [colors, compact, cwd, onOpenChat, agentId, botId, voice],
   );
+
+  // A bot that reads its replies aloud reads each one as it finishes, while its chat is open.
+  const latestCopy = layout.auxiliaryFooter?.copy ?? "";
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (wasRunning.current && !running && voice?.readReplies && latestCopy) speak(latestCopy, latestCopy, voice.name);
+    wasRunning.current = running;
+  }, [running, voice, latestCopy]);
+  useEffect(() => () => stopSpeaking(), []);
 
   const renderItem = useCallback(({ item }: ListRenderItemInfo<StreamLayoutItem>) => <StreamItem item={item} context={context} typeVersion={typeVersion} />, [context, typeVersion]);
 
   const auxiliary = (
     <View>
-      {running ? <WorkingIndicator colors={colors} startedAt={chat.agent?.activeTurn?.startedAt} /> : layout.auxiliaryFooter ? <CompletedTurnFooter colors={colors} footer={layout.auxiliaryFooter} /> : null}
+      {running ? <WorkingIndicator colors={colors} startedAt={chat.agent?.activeTurn?.startedAt} /> : layout.auxiliaryFooter ? <CompletedTurnFooter colors={colors} footer={layout.auxiliaryFooter} voice={context.voice} /> : null}
       {permissions.length > 0 ? (
         <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center", paddingHorizontal: 8 }}>
           <View style={{ gap: 12 }}>
@@ -237,7 +251,7 @@ const StreamItem = memo(function StreamItem({ item, context, typeVersion }: { it
       <RowFrame key={typeVersion} gapBelow={item.gapBelow}>
         <RowContent row={item.row} context={context} compactBottom={item.compactBottom} />
       </RowFrame>
-      {item.footer ? <CompletedTurnFooter colors={context.colors} footer={item.footer} /> : null}
+      {item.footer ? <CompletedTurnFooter colors={context.colors} footer={item.footer} voice={context.voice} /> : null}
     </>
   );
 });

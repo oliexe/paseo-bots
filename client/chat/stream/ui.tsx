@@ -3,6 +3,7 @@ import { Icon, copyText } from "@getpaseo/plugin/client/react-native";
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Animated, Easing, Platform, Pressable, Text, View, type StyleProp, type TextStyle } from "react-native";
 import { nativeTokens, useHover } from "../../native";
+import { speak, stopSpeaking, useSpeaking } from "../../speech";
 import { ui } from "../../typography";
 
 type Colors = PluginTheme["colors"];
@@ -137,6 +138,23 @@ export const CopyButton = memo(function CopyButton({
     </Pressable>
   );
 });
+
+/** Reads a turn aloud in the bot's voice, or stops the reading; styled like CopyButton. */
+export function SpeakButton({ colors, text, voice }: { colors: Colors; text: string; voice: string | null }) {
+  const speaking = useSpeaking(text);
+  const { hovered, hoverProps } = useHover();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={speaking ? "Stop reading" : "Read aloud"}
+      onPress={() => (speaking ? stopSpeaking() : speak(text, text, voice))}
+      {...hoverProps}
+      style={{ padding: 4, alignSelf: "center" }}
+    >
+      <Icon name={speaking ? "Square" : "Volume2"} size={14} color={hovered || speaking ? colors.foreground : colors.foregroundMuted} />
+    </Pressable>
+  );
+}
 
 /** Paseo's Button size="sm" variant="secondary": 32 high, radius 12, surface3. */
 export function SecondaryButton({ colors, label, disabled, onPress }: { colors: Colors; label: string; disabled?: boolean; onPress(): void }) {

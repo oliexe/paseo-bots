@@ -138,6 +138,13 @@ export const AppRuleSchema = z.object({
 });
 export type AppRule = z.infer<typeof AppRuleSchema>;
 
+/** How a bot sounds when its replies are read aloud: a device voice by name (voices differ per device) and whether finished replies are read out. */
+export const BotVoiceSchema = z.object({
+  name: z.string().nullable().default(null),
+  readReplies: z.boolean().default(false),
+});
+export type BotVoice = z.infer<typeof BotVoiceSchema>;
+
 export const BotSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -165,6 +172,7 @@ export const BotSchema = z.object({
   apps: z.array(z.string()).default([]),
   /** Limits on connected apps, by slug. An app without one allows every tool and account. */
   appRules: z.record(z.string(), AppRuleSchema).default({}),
+  voice: BotVoiceSchema.default({ name: null, readReplies: false }),
   /** Whether the bot may ask other bots for help: after the user approves each request, freely, or not at all. */
   contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
   routines: z.array(RoutineSchema).default([]),
