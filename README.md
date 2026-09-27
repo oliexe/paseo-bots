@@ -1,4 +1,4 @@
-# paseo-bot
+# paseo-bots
 
 Personal bots for [Paseo](https://paseo.sh). Give each bot instructions, a model, skills and MCP tools, then chat with it in its own workspace.
 
