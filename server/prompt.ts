@@ -12,7 +12,7 @@ import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./m
 
 /**
  * The connected apps a bot may use right now (allowed for it and signed in on
- * this host), with their accounts when an app has several.
+ * this host), with their accounts when it picks one of several, and its limits.
  */
 async function botApps(bot: Bot): Promise<PromptApp[]> {
   if (bot.apps.length === 0 || !(await readState()).apiKey) return [];
@@ -21,8 +21,10 @@ async function botApps(bot: Bot): Promise<PromptApp[]> {
   if (slugs.length === 0) return [];
   const names = new Map((await catalog().catch(() => ({ apps: [] }))).apps.map((app) => [app.slug, app.name]));
   return slugs.map((slug) => {
-    const mine = connected.filter((account) => account.slug === slug);
-    return { name: names.get(slug) ?? slug, accounts: mine.length > 1 ? mine.map((account) => ({ account: account.alias ?? account.id, name: account.name })) : [] };
+    const rule = bot.appRules[slug];
+    // A bot kept to one account doesn't pick; the relay fills it in.
+    const mine = rule?.account ? [] : connected.filter((account) => account.slug === slug);
+    return { name: names.get(slug) ?? slug, accounts: mine.length > 1 ? mine.map((account) => ({ account: account.alias ?? account.id, name: account.name })) : [], tools: rule?.tools ?? "all" };
   });
 }
 

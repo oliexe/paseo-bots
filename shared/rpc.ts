@@ -277,6 +277,13 @@ export const appsRenameRpc = defineRpc({
   output: z.object({ ok: z.boolean() }),
 });
 
+/** An app's tools, and which ones Composio marks read-only, for choosing what a bot may run. */
+export const appsToolsRpc = defineRpc({
+  name: "bots.apps.tools",
+  input: z.object({ slug: AppSlug }),
+  output: z.object({ tools: z.array(z.object({ slug: z.string(), name: z.string(), readOnly: z.boolean() })) }),
+});
+
 export const appsDisconnectRpc = defineRpc({
   name: "bots.apps.disconnect",
   input: z.object({ accountId: z.string().min(1).max(200) }),

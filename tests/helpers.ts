@@ -20,6 +20,7 @@ export function makeBot(patch: Partial<Bot> = {}): Bot {
     alwaysAllow: [],
     skillIds: [],
     apps: [],
+    appRules: {},
     contactBots: "ask",
     routines: [],
     playbooks: [],

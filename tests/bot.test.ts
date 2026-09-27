@@ -21,6 +21,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     alwaysAllow: [],
     skillIds: [],
     apps: [],
+    appRules: {},
     contactBots: "ask",
     playbooks: [],
     routines: [],

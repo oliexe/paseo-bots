@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { appCallRefusal } from "../shared/apps";
-import type { McpServerConfig } from "../shared/bot";
-import { connectedSlugs, deadline, readState, session, writeState } from "./composio";
+import { checkAppCall, type AppLimit } from "../shared/apps";
+import type { Bot, McpServerConfig } from "../shared/bot";
+import { accounts, appTools, connectedSlugs, deadline, readState, session, writeState } from "./composio";
 import type { BotsHost } from "./host";
 import { answerMcp, type BotTool } from "./tools/mcp";
 
@@ -60,6 +60,19 @@ function json(response: ServerResponse, status: number, body: unknown) {
 
 /** Extra routes other features add (webhooks). Return true when handled. */
 export type RelayRoute = (request: IncomingMessage, response: ServerResponse, path: string) => Promise<boolean>;
+
+/** A bot's limits on its apps, with the read-only tools and the pinned accounts' aliases looked up. */
+async function appLimits(bot: Bot): Promise<Map<string, AppLimit>> {
+  const limits = new Map<string, AppLimit>();
+  for (const slug of bot.apps) {
+    const rule = bot.appRules[slug];
+    if (!rule || (rule.tools === "all" && !rule.account)) continue;
+    const tools = rule.tools === "all" ? null : rule.tools === "read" ? (await appTools({ slug })).tools.filter((tool) => tool.readOnly).map((tool) => tool.slug) : rule.tools;
+    const alias = rule.account ? ((await accounts()).accounts.find((account) => account.id === rule.account)?.alias ?? null) : null;
+    limits.set(slug, { tools: tools && new Set(tools.map((tool) => tool.toUpperCase())), account: rule.account ? { id: rule.account, alias } : null });
+  }
+  return limits;
+}
 
 export class Relay {
   private server: Server | null = null;
@@ -179,14 +192,15 @@ export class Relay {
     const parsed = await this.parse(request, response);
     if (!parsed) return;
     const bot = await this.host.bot(botId);
-    const allowed = bot && !bot.archived && !bot.hostId ? bot.apps : null;
     const id = (parsed.message.id as string | number | undefined) ?? null;
-    if (!allowed || allowed.length === 0) {
+    if (!bot || bot.archived || bot.hostId || bot.apps.length === 0) {
       return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "Connected apps are off for this bot. Turn them on under its Access settings in Paseo." } });
     }
-    const refusal = appCallRefusal(parsed.message, allowed, await connectedSlugs());
-    if (refusal) return json(response, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: refusal }], isError: true } });
-    await this.forward(request, response, parsed.body);
+    // Limits need Composio's tool lists, so they're looked up for tool calls only.
+    const limits = parsed.message.method === "tools/call" ? await appLimits(bot) : new Map<string, AppLimit>();
+    const verdict = checkAppCall(parsed.message, { allowed: bot.apps, connected: await connectedSlugs(), limits });
+    if ("refusal" in verdict) return json(response, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: verdict.refusal }], isError: true } });
+    await this.forward(request, response, verdict.message === parsed.message ? parsed.body : JSON.stringify(verdict.message));
   }
 
   private async forward(request: IncomingMessage, response: ServerResponse, body: string) {

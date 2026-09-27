@@ -127,6 +127,17 @@ export const PlaybookSchema = z.object({
 });
 export type Playbook = z.infer<typeof PlaybookSchema>;
 
+/**
+ * How a bot may use one connected app: its tools ("all", "read" for the ones
+ * Composio marks read-only, or exact tool names) and the account it must use
+ * (a Composio account id; null lets it pick one by name).
+ */
+export const AppRuleSchema = z.object({
+  tools: z.union([z.enum(["all", "read"]), z.array(z.string())]).default("all"),
+  account: z.string().nullable().default(null),
+});
+export type AppRule = z.infer<typeof AppRuleSchema>;
+
 export const BotSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -152,6 +163,8 @@ export const BotSchema = z.object({
   skillIds: z.array(z.string()).default([]),
   /** Connected apps (Composio toolkit slugs) this bot may use. */
   apps: z.array(z.string()).default([]),
+  /** Limits on connected apps, by slug. An app without one allows every tool and account. */
+  appRules: z.record(z.string(), AppRuleSchema).default({}),
   /** Whether the bot may ask other bots for help: after the user approves each request, freely, or not at all. */
   contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
   routines: z.array(RoutineSchema).default([]),

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { appDomain, appStatus, canonicalSlug, isComposioUrl, type AppAccount, type AppCard } from "../shared/apps";
+import { appDomain, appStatus, canonicalSlug, isComposioUrl, type AppAccount, type AppCard, type AppTool } from "../shared/apps";
 import { pluginDataPath } from "./bot-home";
 
 // Composio over its REST API, the way OpenMausBot's self-hosted mode does it:
@@ -159,10 +159,12 @@ export async function session(options: { recreate?: boolean } = {}): Promise<{ a
 
 let catalogCache: { key: string; at: number; apps: AppCard[] } | null = null;
 let connectedCache: { key: string; at: number; accounts: AppAccount[] } | null = null;
+const toolsCache = new Map<string, { key: string; at: number; tools: AppTool[] }>();
 
 function forgetCaches() {
   catalogCache = null;
   connectedCache = null;
+  toolsCache.clear();
 }
 
 function fingerprint(apiKey: string): string {
@@ -218,6 +220,43 @@ export async function catalog(): Promise<{ apps: AppCard[] }> {
   }
   catalogCache = { key, at: Date.now(), apps };
   return { apps };
+}
+
+interface ToolItem {
+  slug?: string;
+  name?: string;
+  tags?: string[];
+  is_deprecated?: boolean;
+}
+
+/** An app's tools, without deprecated ones and ones Composio keeps out of MCP. Cached for ten minutes. */
+export async function appTools({ slug }: { slug: string }): Promise<{ tools: AppTool[] }> {
+  const { apiKey } = await readState();
+  if (!apiKey) return { tools: [] };
+  const app = canonicalSlug(slug);
+  const key = fingerprint(apiKey);
+  const cached = toolsCache.get(app);
+  if (cached?.key === key && Date.now() - cached.at < CATALOG_TTL_MS) return { tools: cached.tools };
+  const tools: AppTool[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const params = new URLSearchParams({ toolkit_slug: app, limit: "200" });
+    if (cursor) params.set("cursor", cursor);
+    const response = await fetch(`${CATALOG_API()}/tools?${params}`, { headers: headers(apiKey), signal: deadline(20_000) });
+    if (!response.ok) throw await failure(response, `Composio tools: HTTP ${response.status}`);
+    const body = (await response.json()) as { items?: ToolItem[]; next_cursor?: string | null };
+    for (const item of body.items ?? []) {
+      const tags = item.tags ?? [];
+      if (!item.slug || item.is_deprecated || tags.includes("mcpIgnore")) continue;
+      tools.push({ slug: item.slug.toUpperCase(), name: item.name?.trim() || item.slug, readOnly: tags.includes("readOnlyHint") });
+    }
+    const next = body.next_cursor?.trim();
+    if (!next || next === cursor) break;
+    cursor = next;
+  }
+  tools.sort((a, b) => a.name.localeCompare(b.name));
+  toolsCache.set(app, { key, at: Date.now(), tools });
+  return { tools };
 }
 
 interface AccountItem {

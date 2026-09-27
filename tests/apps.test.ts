@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appCallRefusal, appDomain, appForTool, appsPrompt, appStatus, canonicalSlug, executedTools, faviconUrl, isComposioUrl } from "../shared/apps";
+import { appDomain, appForTool, appsPrompt, appStatus, canonicalSlug, checkAppCall, faviconUrl, isComposioUrl, withAppRule } from "../shared/apps";
 import { buildAgentConfig, EMPTY_LIBRARY, promptSections, type Bot } from "../shared/bot";
 import { fakeHost, makeBot } from "./helpers";
 
@@ -26,6 +26,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     alwaysAllow: [],
     skillIds: [],
     apps: [],
+    appRules: {},
     contactBots: "ask",
     playbooks: [],
     routines: [],
@@ -45,21 +46,46 @@ describe("tool to app", () => {
     expect(appForTool("NOTION_SEARCH", ["gmail"])).toBeNull();
   });
 
-  it("reads multi-execute calls in both shapes", () => {
-    expect(executedTools({ tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }, { nope: 1 }] })).toEqual(["GMAIL_SEND_EMAIL"]);
-    expect(executedTools({ tool_slug: "SLACK_POST" })).toEqual(["SLACK_POST"]);
-    expect(executedTools(null)).toEqual([]);
+  const call = (tools: { tool_slug: string; account?: string }[]) => ({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: { tools, sync_response_to_workbench: false } } });
+  const refusal = (verdict: { refusal: string } | { message: unknown }) => ("refusal" in verdict ? verdict.refusal : null);
+
+  it("refuses running a connected app the bot isn't allowed", () => {
+    const access = { allowed: ["gmail"], connected: ["gmail", "slack"], limits: new Map() };
+    const allowed = call([{ tool_slug: "GMAIL_SEND_EMAIL" }]);
+    expect(checkAppCall(allowed, access)).toEqual({ message: allowed });
+    expect(refusal(checkAppCall(call([{ tool_slug: "GMAIL_SEND_EMAIL" }, { tool_slug: "SLACK_POST" }]), access))).toContain("isn't allowed to use slack");
+    // Not connected: Composio answers that itself.
+    expect(refusal(checkAppCall(call([{ tool_slug: "NOTION_SEARCH" }]), access))).toBeNull();
+    // The older single-tool shape is read too.
+    expect(refusal(checkAppCall({ method: "tools/call", params: { name: "COMPOSIO_EXECUTE_TOOL", arguments: { tool_slug: "SLACK_POST" } } }, access))).toContain("slack");
+    // Searching and connecting always pass.
+    expect(refusal(checkAppCall({ method: "tools/call", params: { name: "COMPOSIO_SEARCH_TOOLS", arguments: {} } }, { ...access, allowed: [] }))).toBeNull();
+    expect(refusal(checkAppCall({ method: "tools/list" }, { ...access, allowed: [] }))).toBeNull();
   });
 
-  it("refuses only executing a connected app the bot isn't allowed", () => {
-    const call = (tools: string[]) => ({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: { tools: tools.map((tool_slug) => ({ tool_slug })) } } });
-    expect(appCallRefusal(call(["GMAIL_SEND_EMAIL"]), ["gmail"], ["gmail", "slack"])).toBeNull();
-    expect(appCallRefusal(call(["GMAIL_SEND_EMAIL", "SLACK_POST"]), ["gmail"], ["gmail", "slack"])).toContain("isn't allowed to use slack");
-    // Not connected: Composio answers that itself.
-    expect(appCallRefusal(call(["NOTION_SEARCH"]), ["gmail"], ["gmail"])).toBeNull();
-    // Searching and connecting always pass.
-    expect(appCallRefusal({ method: "tools/call", params: { name: "COMPOSIO_SEARCH_TOOLS", arguments: {} } }, [], ["slack"])).toBeNull();
-    expect(appCallRefusal({ method: "tools/list" }, [], ["slack"])).toBeNull();
+  it("keeps a bot to its tools and account", () => {
+    const access = { allowed: ["gmail"], connected: ["gmail"], limits: new Map([["gmail", { tools: new Set(["GMAIL_FETCH_EMAILS"]), account: { id: "ca_1", alias: "work" } }]]) };
+    expect(refusal(checkAppCall(call([{ tool_slug: "GMAIL_SEND_EMAIL" }]), access))).toContain("isn't allowed to run GMAIL_SEND_EMAIL");
+    // The account is filled in; naming it by its alias or id is fine.
+    for (const account of [undefined, "Work", "ca_1"]) {
+      const verdict = checkAppCall(call([{ tool_slug: "gmail_fetch_emails", ...(account ? { account } : {}) }]), access);
+      expect(verdict).toEqual({ message: call([{ tool_slug: "gmail_fetch_emails", account: "ca_1" }]) });
+    }
+    expect(refusal(checkAppCall(call([{ tool_slug: "GMAIL_FETCH_EMAILS", account: "personal" }]), access))).toContain('only use the account "work"');
+  });
+
+  it("turns the remote workbench off for bots with limits", () => {
+    const workbench = { method: "tools/call", params: { name: "COMPOSIO_REMOTE_WORKBENCH", arguments: {} } };
+    const open = { allowed: ["gmail", "slack"], connected: ["gmail", "slack"], limits: new Map() };
+    expect(refusal(checkAppCall(workbench, open))).toBeNull();
+    expect(refusal(checkAppCall(workbench, { ...open, allowed: ["gmail"] }))).toContain("remote workbench");
+    const pinned = new Map([["gmail", { tools: null, account: { id: "ca_1", alias: null } }]]);
+    expect(refusal(checkAppCall({ method: "tools/call", params: { name: "COMPOSIO_REMOTE_BASH_TOOL", arguments: {} } }, { ...open, limits: pinned }))).toContain("remote workbench");
+  });
+
+  it("drops a rule that allows everything", () => {
+    expect(withAppRule({}, "gmail", { tools: "read", account: null })).toEqual({ gmail: { tools: "read", account: null } });
+    expect(withAppRule({ gmail: { tools: "read", account: null } }, "gmail", { tools: "all", account: null })).toEqual({});
   });
 
   it("folds statuses, slugs and links", () => {
@@ -93,8 +119,8 @@ describe("agent config and prompt", () => {
 
   it("describes the meta-tools when the bot has apps", () => {
     const apps = [
-      { name: "Gmail", accounts: [] },
-      { name: "Slack", accounts: [] },
+      { name: "Gmail", accounts: [], tools: "all" as const },
+      { name: "Slack", accounts: [], tools: "all" as const },
     ];
     const sections = promptSections(bot(), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps });
     expect(sections.map((section) => section.title)).toEqual(["Persona", "Connected apps"]);
@@ -104,9 +130,17 @@ describe("agent config and prompt", () => {
   });
 
   it("lists an app's accounts by what Composio takes to pick one", () => {
-    const text = appsPrompt([{ name: "Gmail", accounts: [{ account: "work", name: "me@work.com" }, { account: "ca_2", name: null }] }]);
+    const text = appsPrompt([{ name: "Gmail", accounts: [{ account: "work", name: "me@work.com" }, { account: "ca_2", name: null }], tools: "all" }]);
     expect(text).toContain('You may use: Gmail (accounts: "work" = me@work.com, "ca_2").');
     expect(text).toContain('pass the one to use as "account"');
+  });
+
+  it("names a bot's limits on an app", () => {
+    const text = appsPrompt([
+      { name: "Gmail", accounts: [], tools: "read" },
+      { name: "Slack", accounts: [], tools: ["SLACK_SEND_MESSAGE"] },
+    ]);
+    expect(text).toContain("You may use: Gmail (read-only tools), Slack (only SLACK_SEND_MESSAGE).");
   });
 });
 
@@ -147,6 +181,17 @@ describe("Composio client and relay", () => {
           return send(200, { items: [{ slug: "SLACK", name: "Slack", meta: {} }], next_cursor: null });
         }
         if (url.pathname === "/api/v3.1/connected_accounts" && request.method === "GET") return send(200, { items: accountsList, next_cursor: null });
+        if (url.pathname === "/api/v3/tools" && url.searchParams.get("toolkit_slug") === "gmail") {
+          return send(200, {
+            items: [
+              { slug: "GMAIL_SEND_EMAIL", name: "Send email", tags: ["openWorldHint"] },
+              { slug: "GMAIL_FETCH_EMAILS", name: "Fetch emails", tags: ["readOnlyHint"] },
+              { slug: "GMAIL_OLD", name: "Old", tags: ["readOnlyHint"], is_deprecated: true },
+              { slug: "GMAIL_HIDDEN", name: "Hidden", tags: ["mcpIgnore"] },
+            ],
+            next_cursor: null,
+          });
+        }
         if (url.pathname === "/api/v3.1/tool_router/session/trs_1/link") {
           linkBodies.push(JSON.parse(body) as Record<string, unknown>);
           return send(200, { redirect_url: `${origin}/link/abc` });
@@ -273,6 +318,32 @@ describe("Composio client and relay", () => {
       expect(body.id).toBe(9);
       expect(body.result.isError).toBe(true);
       expect(body.result.content[0]!.text).toContain("isn't allowed to use slack");
+    } finally {
+      relay.stop();
+    }
+  });
+
+  it("lists an app's tools and keeps a read-only bot to them, on its account", async () => {
+    const composio = await import("../server/composio");
+    expect((await composio.appTools({ slug: "gmail" })).tools).toEqual([
+      { slug: "GMAIL_FETCH_EMAILS", name: "Fetch emails", readOnly: true },
+      { slug: "GMAIL_SEND_EMAIL", name: "Send email", readOnly: false },
+    ]);
+    const { Relay } = await import("../server/relay");
+    const relay = new Relay(fakeHost([makeBot({ id: "bot-1", apps: ["gmail"], appRules: { gmail: { tools: "read", account: "ca_1" } } })]), []);
+    try {
+      const mount = (await relay.mountApps("bot-1")) as { url: string; headers: Record<string, string> };
+      const run = async (tool_slug: string) => {
+        const response = await fetch(mount.url, {
+          method: "POST",
+          headers: { authorization: mount.headers.Authorization!, "content-type": "application/json", accept: "application/json, text/event-stream" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/call", params: { name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: { tools: [{ tool_slug, arguments: {} }] } } }),
+        });
+        return response.text();
+      };
+      expect(await run("GMAIL_SEND_EMAIL")).toContain("isn't allowed to run GMAIL_SEND_EMAIL");
+      expect(await run("GMAIL_FETCH_EMAILS")).toContain('"ok":true');
+      expect((JSON.parse(forwarded.at(-1)!.body) as { params: { arguments: { tools: { account: string }[] } } }).params.arguments.tools[0]!.account).toBe("ca_1");
     } finally {
       relay.stop();
     }

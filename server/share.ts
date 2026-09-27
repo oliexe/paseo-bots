@@ -175,6 +175,7 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     skillIds: skills.map((skill) => skill.id),
     mcpServerIds: [],
     apps: [],
+    appRules: {},
     // Contact with other bots starts at asking, as on a new bot.
     contactBots: "ask",
     routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, resultsChatId: null, createdAt: now })),
