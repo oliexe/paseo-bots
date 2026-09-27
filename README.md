@@ -11,7 +11,6 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 | Feature | Description |
 | --- | --- |
 | **Bots** | Instructions, provider and model, host, approval mode and an avatar: a pixel-art face, your own picture, or one OpenAI draws with your key. Start blank or from a role such as Email triage or Researcher. |
-| **A workspace per bot** | Every chat is a thread in that bot's workspace. Find words in a chat (⌘F) or copy it as a Markdown transcript. |
 | **Memory** | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. Every change to its memory can be undone, and bots can search their past chats. |
 | **Routines** | Runs on a schedule, such as every weekday at 9:00 or any cron expression, or when its webhook is called. Bots can propose them from a chat, results can post back to a chat, and each routine keeps its run history and upcoming runs. |
 | **Teams** | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. The Team map shows each team and what every bot is doing. |
