@@ -146,6 +146,34 @@ export const mcpSourcesRpc = defineRpc({
   output: z.object({ sources: z.array(z.object({ label: z.string(), count: z.number(), json: z.string() })) }),
 });
 
+// ---------------------------------------------------------------- avatar pictures
+
+/** Whether an OpenAI key for drawing avatars is saved on this host; only its last characters are shown. */
+export const avatarKeyStatusRpc = defineRpc({
+  name: "bots.avatar.status",
+  input: z.object({}),
+  output: z.object({ configured: z.boolean(), keyHint: z.string().nullable() }),
+});
+
+export const avatarSetKeyRpc = defineRpc({
+  name: "bots.avatar.set-key",
+  input: z.object({ key: z.string().min(1).max(400) }),
+  output: z.object({ ok: z.boolean() }),
+});
+
+export const avatarRemoveKeyRpc = defineRpc({
+  name: "bots.avatar.remove-key",
+  input: z.object({}),
+  output: z.object({ ok: z.boolean() }),
+});
+
+/** Draws an avatar from a bot's name, role and an optional direction; returns a WebP data URL. */
+export const avatarGenerateRpc = defineRpc({
+  name: "bots.avatar.generate",
+  input: z.object({ name: z.string().max(200), title: z.string().max(400), description: z.string().max(4000), direction: z.string().max(400) }),
+  output: z.object({ image: z.string() }),
+});
+
 /** One run of a routine, like Paseo's ScheduleRun. */
 export const RoutineRunSchema = z.object({
   id: z.string(),

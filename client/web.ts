@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 
-// Web-only DOM helpers for the composer: file picking, clipboard images, drag and drop,
-// textarea measuring and focus. Every entry point is a no-op off the web.
+// Web-only DOM helpers for the composer and avatars: file picking, clipboard images, drag and
+// drop, picture scaling, textarea measuring and focus. Pickers are no-ops off the web.
 // This plugin typechecks without the DOM library. Declare only what this module uses.
 
 interface DomFile {
@@ -59,10 +59,24 @@ export interface DomElement {
   appendChild?(node: unknown): void;
   focus?(): void;
 }
+interface DomImage {
+  src: string;
+  naturalWidth: number;
+  naturalHeight: number;
+  decode(): Promise<void>;
+}
+interface DomCanvas {
+  width: number;
+  height: number;
+  getContext(type: "2d"): { imageSmoothingQuality: string; drawImage(image: DomImage, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number): void } | null;
+  toDataURL(type: string, quality: number): string;
+}
 declare const document: {
   createElement(tag: "input"): DomInput;
   createElement(tag: "textarea"): DomTextArea;
   createElement(tag: "div"): DomDiv;
+  createElement(tag: "img"): DomImage;
+  createElement(tag: "canvas"): DomCanvas;
   body: { appendChild(node: unknown): void };
   activeElement: unknown;
 };
@@ -109,12 +123,12 @@ function toHandle(file: DomFile): FileHandle {
 }
 
 /** Opens the browser's file picker. Resolves with lazy handles so sizes can be checked before reading. */
-export function pickFileHandles(options: { accept?: string } = {}): Promise<FileHandle[]> {
+export function pickFileHandles(options: { accept?: string; multiple?: boolean } = {}): Promise<FileHandle[]> {
   if (!web) return Promise.resolve([]);
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.multiple = true;
+    input.multiple = options.multiple ?? true;
     if (options.accept) input.accept = options.accept;
     input.style.display = "none";
     let done = false;
@@ -135,6 +149,22 @@ export function pickFileHandles(options: { accept?: string } = {}): Promise<File
 export async function pickFiles(): Promise<PickedFile[]> {
   const handles = await pickFileHandles();
   return Promise.all(handles.map(async (file) => ({ name: file.name, mimeType: file.mimeType, size: file.size, base64: await file.readBase64() })));
+}
+
+/** A picture as a small square WebP data URL: its centre, scaled down to `size` pixels (avatars). */
+export async function squareImage(source: string, size: number): Promise<string> {
+  const image = document.createElement("img");
+  image.src = source;
+  await image.decode();
+  const side = Math.min(image.naturalWidth, image.naturalHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!side || !context) throw new Error("That picture couldn't be read.");
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+  return canvas.toDataURL("image/webp", 0.85);
 }
 
 export function decodeUtf8(base64: string): string {

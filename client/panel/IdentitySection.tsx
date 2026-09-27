@@ -1,3 +1,4 @@
+import { useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
@@ -5,6 +6,9 @@ import { PALETTE_COUNT, paletteSwatch, randomSeed } from "../../shared/avatar";
 import type { BotAvatar } from "../../shared/bot";
 import { Avatar } from "../Avatar";
 import type { PanelProps } from "./BotPanel";
+import { errorText } from "../native";
+import { canPickFiles, pickFileHandles, squareImage } from "../web";
+import { AVATAR_SIZE, AvatarSheet } from "./AvatarSheet";
 import { InputField, StackedRow, TextAreaField } from "./controls";
 
 const DESCRIPTION_MAX = 4000;
@@ -12,19 +16,40 @@ const IMAGE_URL = /^(https?:\/\/\S+|data:image\/\S+)$/i;
 
 export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
   const setAvatar = (patch: Partial<BotAvatar>) => onPatch({ avatar: { ...bot.avatar, ...patch } });
-  const [imageText, setImageText] = useState(bot.avatar.imageUrl ?? "");
+  const toast = useToast();
+  // An uploaded or generated picture is stored with the bot as a data URL.
+  const stored = !!bot.avatar.imageUrl?.startsWith("data:");
+  const [imageText, setImageText] = useState(stored ? "" : (bot.avatar.imageUrl ?? ""));
+  const [generating, setGenerating] = useState(false);
   const [nameEmpty, setNameEmpty] = useState(!bot.name.trim());
   const imageError = imageText.trim() && !IMAGE_URL.test(imageText.trim()) ? "Use an https:// or data:image URL" : null;
   const length = bot.description.length;
+
+  const upload = async () => {
+    const [file] = await pickFileHandles({ accept: "image/png,image/jpeg,image/webp,image/gif", multiple: false });
+    if (!file) return;
+    try {
+      if (file.size > 20 * 1024 * 1024) throw new Error("Pick a picture under 20 MB.");
+      setAvatar({ imageUrl: await squareImage(`data:${file.mimeType};base64,${await file.readBase64()}`, AVATAR_SIZE) });
+    } catch (error) {
+      toast.error(errorText(error));
+    }
+  };
 
   return (
     <>
       <SettingsSection title="Avatar">
         <SettingsCard>
-          <SettingsRow label="Picture" hint={bot.avatar.imageUrl ? "Showing the image from Image URL" : "A pixel-art face generated for this bot"}>
+          <SettingsRow label="Picture" hint={stored ? "Your picture" : bot.avatar.imageUrl ? "Showing the image from Image URL" : "A pixel-art face generated for this bot"}>
             <Avatar avatar={bot.avatar} size={56} />
           </SettingsRow>
           <SettingsAction label="New face" hint="Picks a different face" actionLabel="Reroll" onPress={() => setAvatar({ seed: randomSeed(), imageUrl: null })} />
+          {canPickFiles ? (
+            <>
+              <SettingsAction label="Upload a picture" hint="Cropped to a square" actionLabel="Upload" onPress={() => void upload()} />
+              <SettingsAction label="Generate a picture" hint="Drawn by OpenAI with your key" actionLabel="Generate" onPress={() => setGenerating(true)} />
+            </>
+          ) : null}
           <StackedRow colors={colors} label="Colour">
             <View accessibilityRole="radiogroup" style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
               <Swatch colors={colors} label="Automatic colour" color={null} selected={bot.avatar.palette === null} onPress={() => setAvatar({ palette: null })} />
@@ -43,21 +68,36 @@ export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
             ]}
             onValueChange={(shape) => setAvatar({ shape })}
           />
-          <InputField colors={colors}
-            label="Image URL"
-            hint="Optional. Replaces the pixel face"
-            error={imageError}
-            initialValue={imageText}
-            placeholder="https://example.com/avatar.png"
-            onChangeText={(url) => {
-              setImageText(url);
-              const trimmed = url.trim();
-              if (!trimmed) setAvatar({ imageUrl: null });
-              else if (IMAGE_URL.test(trimmed)) setAvatar({ imageUrl: trimmed });
-            }}
-          />
+          {stored ? (
+            <SettingsAction label="Image" hint="Uploaded or generated" actionLabel="Remove" onPress={() => setAvatar({ imageUrl: null })} />
+          ) : (
+            <InputField colors={colors}
+              label="Image URL"
+              hint="Optional. Replaces the pixel face"
+              error={imageError}
+              initialValue={imageText}
+              placeholder="https://example.com/avatar.png"
+              onChangeText={(url) => {
+                setImageText(url);
+                const trimmed = url.trim();
+                if (!trimmed) setAvatar({ imageUrl: null });
+                else if (IMAGE_URL.test(trimmed)) setAvatar({ imageUrl: trimmed });
+              }}
+            />
+          )}
         </SettingsCard>
       </SettingsSection>
+      {generating ? (
+        <AvatarSheet
+          colors={colors}
+          bot={bot}
+          onClose={() => setGenerating(false)}
+          onPicture={(imageUrl) => {
+            setGenerating(false);
+            setAvatar({ imageUrl });
+          }}
+        />
+      ) : null}
       <SettingsSection title="Profile">
         <SettingsCard>
           <InputField colors={colors}
