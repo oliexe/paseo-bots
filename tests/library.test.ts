@@ -24,6 +24,7 @@ function bot(id: string, patch: Partial<Bot> = {}): Bot {
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],
+    apps: [],
     routines: [],
     cwd: null,
     pinned: false,

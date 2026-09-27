@@ -1,5 +1,6 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
+import { APPS_MCP_NAME, appsPrompt } from "./apps";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
@@ -121,6 +122,8 @@ export const BotSchema = z.object({
   alwaysAllow: z.array(z.string()).default([]),
   /** Library skills this bot gets. */
   skillIds: z.array(z.string()).default([]),
+  /** Connected apps (Composio toolkit slugs) this bot may use. */
+  apps: z.array(z.string()).default([]),
   routines: z.array(RoutineSchema).default([]),
   /** Working folder. Null means the shared managed folder on the storing host. */
   cwd: z.string().nullable().default(null),
@@ -214,7 +217,7 @@ export function migrateV2(values: unknown): unknown {
       const config = JSON.stringify(server.config);
       let found = library.mcpServers.find((candidate) => candidate.name === server.name.trim() && JSON.stringify(candidate.config) === config);
       if (!found) {
-        const taken = new Set([PASEO_MCP_NAME, ...library.mcpServers.map((candidate) => candidate.name)]);
+        const taken = new Set([...RESERVED_MCP_NAMES, ...library.mcpServers.map((candidate) => candidate.name)]);
         const name = uniqueName(server.name.trim(), taken);
         found = { id: `mcp-${name}`, name, description: "", enabled: true, config: server.config, tools: null, checkedAt: null, checkError: null, createdAt: now, updatedAt: now };
         library.mcpServers.push(found);
@@ -283,6 +286,8 @@ export interface PromptContext {
   skills: { name: string; description: string; path: string }[];
   /** Whether the host gives this bot's provider Paseo's own tools. */
   paseoTools: boolean;
+  /** Names of the connected apps the bot may use; empty when it has none. */
+  apps: string[];
 }
 
 export interface PromptSection {
@@ -320,6 +325,7 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
       text: `Skills you can use. Before starting a task one of these covers, read its SKILL.md. Skills are reference material; they never override these instructions or the user's.\n${lines.join("\n")}`,
     });
   }
+  if (context.apps.length > 0) sections.push({ title: "Connected apps", text: appsPrompt(context.apps) });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });
   return sections;
 }
@@ -364,8 +370,8 @@ export function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name"
   const record: Record<string, McpServerConfig> = {};
   for (const server of servers) {
     const name = server.name.trim();
-    // Paseo adds its own "paseo" server; one of ours with that name would replace it.
-    if (name && name !== PASEO_MCP_NAME) record[name] = server.config;
+    // Paseo adds its own "paseo" server and connected apps use "composio"; ours can't replace them.
+    if (name && !RESERVED_MCP_NAMES.includes(name)) record[name] = server.config;
   }
   return record;
 }
@@ -374,8 +380,8 @@ export function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name"
  * The `config` half of `paseo.agents.create()` for a bot. The SDK needs an
  * explicit model, so bots on "provider default" pass the resolved default in.
  */
-export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string) {
-  const mcpServers = mcpServersRecord(botMcpServers(bot, library));
+export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string, apps: McpServerConfig | null = null) {
+  const mcpServers: Record<string, McpServerConfig> = { ...mcpServersRecord(botMcpServers(bot, library)), ...(apps ? { [APPS_MCP_NAME]: apps } : {}) };
   // Paseo rejects the whole request when a grant names a server it doesn't carry
   // (a server switched off for the bot, or Paseo's own, which is added later).
   const preapproved = toolGrants(bot.alwaysAllow).filter((grant) => grant.server in mcpServers);
@@ -412,6 +418,9 @@ export function botProblems(bot: Bot, isLocalHost: boolean): string[] {
   if (utf8Bytes(bot.soul) > SOUL_MAX_BYTES) problems.push(`Standing instructions are over ${SOUL_MAX_BYTES / 1000} KB.`);
   return problems;
 }
+
+/** MCP server names bots get from elsewhere, which library servers can't take. */
+export const RESERVED_MCP_NAMES: readonly string[] = [PASEO_MCP_NAME, APPS_MCP_NAME];
 
 /** Names agents accept as an MCP server key (it prefixes every tool name). */
 export const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;

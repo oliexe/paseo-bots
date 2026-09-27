@@ -51,6 +51,16 @@ function parseColor(color: string): Rgba | null {
   return null;
 }
 
+/** A thrown error as one readable line: without Paseo's RPC wrapper ("Request failed: … requestType=… code=…") or a trailing period. */
+export function errorText(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw
+    .replace(/^Request failed:\s*/, "")
+    .replace(/\s+requestType=\S+(\s+code=\S+)?\s*$/, "")
+    .trim()
+    .replace(/\.$/, "");
+}
+
 /** Blend two colours (`weight` of `a`); returns `a` when either can't be parsed. */
 export function mix(a: string, b: string, weight: number): string {
   const x = parseColor(a);

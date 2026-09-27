@@ -9,6 +9,7 @@ import type { RoutineRunState } from "../shared/rpc";
 import { decide } from "../shared/routines";
 import { ensureBotHome, pluginDataPath } from "./bot-home";
 import { systemPrompt } from "./prompt";
+import type { AppsRelay } from "./relay";
 
 const TICK_MS = 30_000;
 type Runs = Record<string, RoutineRunState>;
@@ -41,7 +42,10 @@ export class RoutineScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
 
-  constructor(private readonly settings: PluginSettings<typeof botSettings.schema>) {}
+  constructor(
+    private readonly settings: PluginSettings<typeof botSettings.schema>,
+    private readonly relay: AppsRelay,
+  ) {}
 
   attach(paseo: PaseoApi): void {
     if (this.paseo === paseo) return;
@@ -92,6 +96,7 @@ export class RoutineScheduler {
     return startBotChat(this.paseo, {
       bot,
       library,
+      apps: bot.apps.length ? await this.relay.mount(bot.id) : null,
       placement: bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root },
       prompt: routine.prompt,
       systemPrompt: prompt,

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { PaseoApi } from "@getpaseo/client";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
+import { catalog, connectedSlugs, readState } from "./composio";
 import { botSkills, composeSystemPrompt, promptSections, type Bot, type Library, type PromptContext } from "../shared/bot";
 import { linkBotSkills } from "./library";
 import { injectedMemory, MAIN_MEMORY, memoryFolder } from "./memory";
@@ -9,8 +10,19 @@ import { injectedMemory, MAIN_MEMORY, memoryFolder } from "./memory";
  * Memory and skills live on this host, so only bots running here get them:
  * an agent on another host couldn't read or update the files.
  */
+/** Names of the connected apps a bot may use right now: allowed for it and signed in on this host. */
+async function botAppNames(bot: Bot): Promise<string[]> {
+  if (bot.apps.length === 0 || !(await readState()).apiKey) return [];
+  const connected = new Set(await connectedSlugs());
+  const slugs = bot.apps.filter((slug) => connected.has(slug));
+  if (slugs.length === 0) return [];
+  const names = new Map((await catalog().catch(() => ({ apps: [] }))).apps.map((app) => [app.slug, app.name]));
+  return slugs.map((slug) => names.get(slug) ?? slug);
+}
+
 export async function promptContext(bot: Bot, local: boolean, library: Library, paseoTools: boolean): Promise<PromptContext> {
-  if (!local) return { memory: "", memoryPath: null, skills: [], paseoTools };
+  // Connected apps go through this host's relay, so bots on other hosts can't reach them.
+  if (!local) return { memory: "", memoryPath: null, skills: [], paseoTools, apps: [] };
   const skills = botSkills(bot, library);
   const paths = await linkBotSkills(
     bot.id,
@@ -21,6 +33,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     memoryPath: join(memoryFolder(bot.id), MAIN_MEMORY),
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
+    apps: await botAppNames(bot),
   };
 }
 

@@ -1,5 +1,4 @@
-import { PASEO_MCP_NAME } from "./paseo-tools";
-import { joinArgs, uniqueName, type Bot, type BotMcpServer, type Library, type LibraryMcpServer, type LibrarySkill } from "./bot";
+import { joinArgs, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type Library, type LibraryMcpServer, type LibrarySkill } from "./bot";
 
 // The shared library of skills and MCP servers. Bots only hold ids; these
 // helpers keep the ids, names and bot references consistent.
@@ -44,7 +43,7 @@ export function addMcpServers(library: Library, drafts: readonly BotMcpServer[],
       ids.push(existing.id);
       continue;
     }
-    const server = libraryServer(draft, uniqueName(name, new Set([PASEO_MCP_NAME, ...servers.map((entry) => entry.name)])), now);
+    const server = libraryServer(draft, uniqueName(name, new Set([...RESERVED_MCP_NAMES, ...servers.map((entry) => entry.name)])), now);
     servers.push(server);
     ids.push(server.id);
   }

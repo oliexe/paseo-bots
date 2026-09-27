@@ -7,7 +7,7 @@ import { useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import type { Bot, LibrarySkill } from "../../shared/bot";
 import { skillImportRpc, skillReadRpc } from "../../shared/rpc";
-import { MONO_FONT, MONO_PROPS } from "../native";
+import { errorText, MONO_FONT, MONO_PROPS } from "../native";
 import { CardNote, SectionLink } from "../panel/controls";
 import { code, codeLine } from "../typography";
 import { BotsCard, DangerZone, PageTitle } from "./parts";
@@ -54,7 +54,7 @@ export function SkillPage({ colors, skill, bots, showTitle, onPatch, onToggleBot
       await queryClient.invalidateQueries({ queryKey: skillQueryKey(skill.id) });
       toast.show("Skill updated", { variant: "success" });
     } catch (error) {
-      toast.error(`Couldn't update: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Couldn't update: ${errorText(error)}`);
     } finally {
       setUpdating(false);
     }

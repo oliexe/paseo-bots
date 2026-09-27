@@ -11,7 +11,7 @@ import { uploadRpc } from "../../shared/rpc";
 import { AttachmentPill, PendingAttachmentPill } from "../AttachmentPill";
 import type { BotHost } from "../data";
 import { homeIndicatorInset } from "../keyboard";
-import { CONTENT_MAX_WIDTH, nativeTokens, placeholderColor, useHover } from "../native";
+import { CONTENT_MAX_WIDTH, errorText, nativeTokens, placeholderColor, useHover } from "../native";
 import { newMessageId, rememberSent } from "../sent-attachments";
 import { measureAnchor, useMenu, type MenuEntry } from "../ui/Menu";
 import { decodeUtf8, domNode, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, type FileHandle } from "../web";
@@ -376,7 +376,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     try {
       await host.api.agents.ref(agentId).respondToPermission({ requestId: permission.id, response: { behavior: "deny", interrupt: true, message: "Interrupted by the user." } });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(errorText(error));
     } finally {
       if (mounted.current) setStopping(false);
     }
@@ -400,7 +400,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
         .ref(agentId)
         .commands()
         .then((result) => ({ commands: result.commands as SlashCommand[], error: result.error }))
-        .catch((error: unknown) => ({ commands: [], error: error instanceof Error ? error.message : String(error) }));
+        .catch((error: unknown) => ({ commands: [], error: errorText(error) }));
       commandCache.set(agentId, promise);
       // Don't cache failures: the next chat visit asks again.
       void promise.then((result) => result.error && commandCache.delete(agentId));

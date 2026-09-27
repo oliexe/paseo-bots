@@ -1,7 +1,9 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
-import { Pressable, Text, View } from "react-native";
+import { useState } from "react";
+import { Image, Platform, Pressable, Text, View } from "react-native";
+import { faviconUrl, type AppCard } from "../../shared/apps";
 import type { Bot } from "../../shared/bot";
 import { Avatar } from "../Avatar";
 import { confirmDialog, nativeTokens, useHover } from "../native";
@@ -75,5 +77,30 @@ export function DangerZone({ label, hint, actionLabel, confirmTitle, confirmMess
         />
       </SettingsCard>
     </SettingsSection>
+  );
+}
+
+/**
+ * An app's logo on a small light tile, so dark marks (GitHub, Notion) read on
+ * dark themes. Composio's logos are SVGs, which React Native only draws on the
+ * web, so phones use the site's PNG favicon; the initial is the last resort.
+ */
+export function AppLogo({ colors, app, size = 20 }: { colors: Colors; app: Pick<AppCard, "name" | "logo" | "domain">; size?: number }) {
+  const sources = [Platform.OS === "web" ? app.logo : null, app.domain ? faviconUrl(app.domain) : null].filter((uri): uri is string => !!uri);
+  const [failed, setFailed] = useState(0);
+  const uri = sources[failed];
+  const radius = Math.round(size / 4);
+  if (!uri) {
+    return (
+      <View style={{ width: size, height: size, borderRadius: radius, alignItems: "center", justifyContent: "center", backgroundColor: nativeTokens(colors).surface3 }}>
+        <Text style={{ fontSize: ui(Math.round(size * 0.55)), fontWeight: "500", color: colors.foregroundMuted }}>{app.name.slice(0, 1).toUpperCase()}</Text>
+      </View>
+    );
+  }
+  const inner = Math.round(size * 0.75);
+  return (
+    <View style={{ width: size, height: size, borderRadius: radius, alignItems: "center", justifyContent: "center", backgroundColor: "#ffffff" }}>
+      <Image key={uri} accessibilityIgnoresInvertColors source={{ uri }} resizeMode="contain" onError={() => setFailed((count) => count + 1)} style={{ width: inner, height: inner }} />
+    </View>
   );
 }

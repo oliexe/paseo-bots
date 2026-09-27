@@ -4,7 +4,7 @@ import { Icon, useToast } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ToolCallDetail } from "../../shared/tools";
-import { nativeTokens } from "../native";
+import { errorText, nativeTokens } from "../native";
 import { ui } from "../typography";
 import { ToolCallDetailsContent } from "./stream/details";
 import { PlanCard } from "./stream/PlanCard";
@@ -44,7 +44,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     } catch (error) {
       setResponding(false);
       setRespondingId(null);
-      toast.error(`Couldn't answer: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Couldn't answer: ${errorText(error)}`);
     }
   };
 

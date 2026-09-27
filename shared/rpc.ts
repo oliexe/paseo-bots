@@ -134,3 +134,61 @@ export const uploadRpc = defineRpc({
   input: z.object({ botId: BotId, fileName: z.string().min(1).max(255), dataBase64: z.string().max(36_000_000) }),
   output: z.object({ path: z.string(), size: z.number() }),
 });
+
+// ---------------------------------------------------------------- connected apps
+
+const AppCardSchema = z.object({ slug: z.string(), name: z.string(), description: z.string(), logo: z.string().nullable(), domain: z.string().nullable(), noAuth: z.boolean() });
+const AppAccountSchema = z.object({ id: z.string(), slug: z.string(), status: z.enum(["connected", "pending", "failed"]) });
+const AppSlug = z.string().regex(/^[a-z0-9_-]+$/);
+
+/** Whether a Composio project key is saved on this host; only its last characters are shown. */
+export const appsStatusRpc = defineRpc({
+  name: "bots.apps.status",
+  input: z.object({}),
+  output: z.object({ configured: z.boolean(), keyHint: z.string().nullable() }),
+});
+
+/** Saves a Composio project key after opening a session with it. */
+export const appsSetKeyRpc = defineRpc({
+  name: "bots.apps.set-key",
+  input: z.object({ key: z.string().min(1).max(200) }),
+  output: z.object({ ok: z.boolean() }),
+});
+
+export const appsRemoveKeyRpc = defineRpc({
+  name: "bots.apps.remove-key",
+  input: z.object({}),
+  output: z.object({ ok: z.boolean() }),
+});
+
+export const appsCatalogRpc = defineRpc({
+  name: "bots.apps.catalog",
+  input: z.object({}),
+  output: z.object({ apps: z.array(AppCardSchema) }),
+});
+
+export const appsAccountsRpc = defineRpc({
+  name: "bots.apps.accounts",
+  input: z.object({ fresh: z.boolean().optional() }),
+  output: z.object({ accounts: z.array(AppAccountSchema) }),
+});
+
+/** A Composio-hosted sign-in link for an app. */
+export const appsConnectRpc = defineRpc({
+  name: "bots.apps.connect",
+  input: z.object({ slug: AppSlug }),
+  output: z.object({ url: z.string() }),
+});
+
+export const appsDisconnectRpc = defineRpc({
+  name: "bots.apps.disconnect",
+  input: z.object({ accountId: z.string().min(1).max(200) }),
+  output: z.object({ ok: z.boolean() }),
+});
+
+/** The relay's MCP server entry for a bot's new chat, or null when connected apps aren't set up. */
+export const appsMountRpc = defineRpc({
+  name: "bots.apps.mount",
+  input: z.object({ botId: BotId }),
+  output: z.object({ server: McpServerConfigSchema.nullable() }),
+});

@@ -7,6 +7,8 @@ import { matchesQuery, mcpTarget } from "../../shared/library";
 import type { LibraryTarget } from "../navigation";
 import { nativeTokens, useHover } from "../native";
 import { SearchField } from "../panel/controls";
+import { connectedApps, useAppsAccounts, useAppsCatalog, useAppsStatus } from "./apps";
+import { AppLogo } from "./parts";
 import { ui } from "../typography";
 import { measureAnchor } from "../ui/Menu";
 
@@ -40,7 +42,12 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
     .filter((server) => matchesQuery(query, server.name, server.description, mcpTarget(server.config)))
     .sort((a, b) => a.name.localeCompare(b.name));
   const searching = query.trim().length > 0;
-  const is = (kind: LibraryTarget["kind"], id: string) => selected?.kind === kind && selected.id === id;
+  const is = (kind: LibraryTarget["kind"], id?: string) => selected?.kind === kind && (id === undefined || ("id" in selected && selected.id === id));
+  const appsStatus = useAppsStatus();
+  const configured = appsStatus.data?.configured ?? false;
+  const accounts = useAppsAccounts(configured);
+  const catalog = useAppsCatalog(configured);
+  const apps = connectedApps(accounts.data?.accounts ?? [], catalog.data?.apps ?? []).filter((app) => matchesQuery(query, app.name, app.slug));
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
@@ -60,7 +67,7 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
             colors={colors}
             icon="Puzzle"
             label={skill.id}
-            off={!skill.enabled}
+            note={skill.enabled ? undefined : "Off"}
             selected={is("skill", skill.id)}
             touch={touch}
             onPress={() => onSelect({ kind: "skill", id: skill.id })}
@@ -76,13 +83,30 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
             colors={colors}
             icon="Plug"
             label={server.name}
-            off={!server.enabled}
+            note={server.enabled ? undefined : "Off"}
             selected={is("mcp", server.id)}
             touch={touch}
             onPress={() => onSelect({ kind: "mcp", id: server.id })}
           />
         ))}
         {servers.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching servers" : "No MCP servers yet"} /> : null}
+      </Group>
+
+      <Group colors={colors} label="Connected apps" addLabel={configured ? "Connect an app" : "Set up connected apps"} onAdd={() => onSelect({ kind: "apps" })}>
+        {apps.map((app) => (
+          <NavRow
+            key={app.slug}
+            colors={colors}
+            icon="AppWindow"
+            leading={<AppLogo colors={colors} app={app} size={16} />}
+            label={app.name}
+            note={app.status === "connected" ? undefined : app.status === "pending" ? "Pending" : "Failed"}
+            selected={is("app", app.slug)}
+            touch={touch}
+            onPress={() => onSelect({ kind: "app", id: app.slug })}
+          />
+        ))}
+        {apps.length === 0 ? <GroupNote colors={colors} text={searching ? "No matching apps" : configured ? "No apps connected yet" : "Not set up yet"} /> : null}
       </Group>
     </ScrollView>
   );
@@ -129,22 +153,24 @@ interface NavRowProps {
   colors: Colors;
   icon: string;
   label: string;
-  /** Turned off in the library: muted label and an "Off" note. */
-  off?: boolean;
+  /** Replaces the icon, e.g. an app's logo. */
+  leading?: ReactNode;
+  /** A short muted note on the right ("Off", "Pending"); the label is muted too. */
+  note?: string;
   selected: boolean;
   touch: boolean;
   onPress(): void;
 }
 
 /** Settings nav item: 28 min height (36 for touch), 4/8 padding, radius 8, 16pt icon, surfaceSidebarHover when hovered or selected. */
-function NavRow({ colors, icon, label, off, selected, touch, onPress }: NavRowProps) {
+function NavRow({ colors, icon, leading, label, note, selected, touch, onPress }: NavRowProps) {
   const { hovered, hoverProps } = useHover();
   const strong = selected || hovered;
   const tint = strong ? colors.foreground : colors.foregroundMuted;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={off ? `${label}, off` : label}
+      accessibilityLabel={note ? `${label}, ${note}` : label}
       accessibilityState={{ selected }}
       onPress={onPress}
       {...hoverProps}
@@ -159,11 +185,11 @@ function NavRow({ colors, icon, label, off, selected, touch, onPress }: NavRowPr
         backgroundColor: strong || pressed ? colors.surface1 : "transparent",
       })}
     >
-      <Icon name={icon} size={16} color={tint} />
-      <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: ui(14), color: tint, opacity: off ? 0.6 : 1 }}>
+      {leading ?? <Icon name={icon} size={16} color={tint} />}
+      <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: ui(14), color: tint, opacity: note ? 0.6 : 1 }}>
         {label}
       </Text>
-      {off ? <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>Off</Text> : null}
+      {note ? <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>{note}</Text> : null}
     </Pressable>
   );
 }

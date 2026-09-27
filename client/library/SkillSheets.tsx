@@ -8,6 +8,7 @@ import { skillImportRpc, skillWriteRpc } from "../../shared/rpc";
 import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../../shared/skills";
 import { Button, FormTextArea, InputField, SheetActions, SheetFooter, TextAreaField } from "../panel/controls";
 import { ui } from "../typography";
+import { errorText } from "../native";
 
 type Colors = PluginTheme["colors"];
 
@@ -17,9 +18,6 @@ export interface SavedSkill {
   source: string;
 }
 
-function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(/\.$/, "");
-}
 
 function ErrorLine({ colors, text, tone = "error" }: { colors: Colors; text: string | null; tone?: "error" | "warning" }) {
   return text ? (

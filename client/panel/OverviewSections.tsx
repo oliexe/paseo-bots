@@ -11,6 +11,7 @@ import { relativeTime } from "../../shared/time";
 import { useBotChats, useBotHost } from "../data";
 import { MONO_FONT, MONO_PROPS } from "../native";
 import { code, codeLine } from "../typography";
+import { useAppsCatalog, useAppsStatus } from "../library/apps";
 import type { PanelProps } from "./BotPanel";
 import { CardNote, DrillRow, SectionMeta } from "./controls";
 
@@ -42,7 +43,13 @@ export function OverviewSection({ colors, bot, library, localHost, onSetup }: Pa
   });
   const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
 
-  const tools = [...botMcpServers(bot, library).map((server) => server.name), ...botSkills(bot, library).map((skill) => `${skill.id} (skill)`)];
+  const appsStatus = useAppsStatus();
+  const appNames = new Map((useAppsCatalog(appsStatus.data?.configured ?? false).data?.apps ?? []).map((app) => [app.slug, app.name]));
+  const tools = [
+    ...botMcpServers(bot, library).map((server) => server.name),
+    ...botSkills(bot, library).map((skill) => `${skill.id} (skill)`),
+    ...(appsStatus.data?.configured && host.isLocal ? bot.apps.map((slug) => `${appNames.get(slug) ?? slug} (app)`) : []),
+  ];
   const sections = prompt.data?.sections ?? [];
 
   return (
@@ -96,6 +103,7 @@ function summarize(before: Bot, after: Bot): string {
     ["skillIds", "skills"],
     ["routines", "routines"],
     ["mcpServerIds", "MCP servers"],
+    ["apps", "connected apps"],
     ["alwaysAllow", "always-allowed tools"],
     ["cwd", "folder"],
     ["hostId", "host"],

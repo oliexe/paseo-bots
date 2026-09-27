@@ -1,16 +1,18 @@
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useRpc } from "@getpaseo/plugin/client";
+import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { ScrollView, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Text, View, type LayoutRectangle } from "react-native";
+import { useEffect, useState } from "react";
+import { View, type LayoutRectangle } from "react-native";
 import { EMPTY_LIBRARY, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill } from "../../shared/bot";
 import { addMcpServers, forgetItem, newMcpServerId, renameGrants, setBotUses, updateMcpServer, updateSkill, upsertSkills, type LibraryKind } from "../../shared/library";
-import { skillDeleteRpc } from "../../shared/rpc";
+import { appsConnectRpc, skillDeleteRpc } from "../../shared/rpc";
 import type { LibraryTarget } from "../navigation";
-import { nativeTokens } from "../native";
-import { ui } from "../typography";
+import { errorText, nativeTokens } from "../native";
 import { useMenu } from "../ui/Menu";
+import { AppPage } from "./AppPage";
+import { useAppsAccounts, useAppsCatalog, useAppsInvalidate, useAppsStatus } from "./apps";
+import { AppsPage } from "./AppsPage";
 import { LibraryList } from "./LibraryList";
 import { McpPage } from "./McpPage";
 import { BLANK_SERVER, ImportSheet, ServerSheet, type McpDraft } from "./McpSheets";
@@ -18,9 +20,6 @@ import { BackBar, PAGE_STYLE } from "./parts";
 import { ImportSkillsSheet, NewSkillSheet, type SavedSkill } from "./SkillSheets";
 import { skillQueryKey, SkillPage } from "./SkillPage";
 
-function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(/\.$/, "");
-}
 
 /** Settings sidebar width (constants/layout.ts SETTINGS_DESKTOP_SIDEBAR_WIDTH). */
 const LIST_WIDTH = 320;
@@ -54,6 +53,29 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
   const deleteSkillFiles = useRpc(skillDeleteRpc);
   const [query, setQuery] = useState("");
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  const connectApp = useRpc(appsConnectRpc);
+  const invalidateApps = useAppsInvalidate();
+  /** The app whose sign-in is open in the browser, and since when. */
+  const [pending, setPending] = useState<{ slug: string; since: number } | null>(null);
+  const appsStatus = useAppsStatus();
+  const appsConfigured = appsStatus.data?.configured ?? false;
+  const appAccounts = useAppsAccounts(appsConfigured, pending !== null);
+  const appCatalog = useAppsCatalog(appsConfigured);
+
+  // Finish a pending sign-in when Composio reports the account, or give up after five minutes.
+  useEffect(() => {
+    if (!pending) return;
+    const account = appAccounts.data?.accounts.find((entry) => entry.slug === pending.slug && entry.status === "connected");
+    if (account) {
+      const name = appCatalog.data?.apps.find((app) => app.slug === pending.slug)?.name ?? pending.slug;
+      toast.show(`Connected ${name}`, { variant: "success" });
+      setPending(null);
+      setTarget({ kind: "app", id: pending.slug });
+      void invalidateApps();
+    } else if (Date.now() - pending.since > 5 * 60_000) {
+      setPending(null);
+    }
+  }, [appAccounts.data, pending]);
 
   const library = values.library ?? EMPTY_LIBRARY;
   const bots = values.bots;
@@ -100,6 +122,23 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
       const renamed = patch.name !== undefined && before && patch.name !== before.name;
       return { library: updateMcpServer(current, id, patch), bots: renamed ? renameGrants(currentBots, before.name, patch.name!) : currentBots };
     });
+
+  /** Opens Composio's sign-in page in the browser; the accounts query polls until it's done. */
+  const startConnect = async (slug: string) => {
+    try {
+      const { url } = await connectApp({ slug });
+      setPending({ slug, since: Date.now() });
+      await openExternalUrl(url);
+    } catch (error) {
+      setPending(null);
+      toast.error(`Couldn't start the sign-in: ${errorText(error)}`);
+    }
+  };
+
+  const toggleApp = (slug: string, bot: Bot, on: boolean) =>
+    void save((_current, currentBots) => ({
+      bots: currentBots.map((entry) => (entry.id !== bot.id ? entry : { ...entry, apps: on ? [...new Set([...entry.apps, slug])] : entry.apps.filter((app) => app !== slug) })),
+    }));
 
   const toggleBot = (kind: LibraryKind, id: string, bot: Bot, on: boolean) =>
     void save((_current, currentBots) => ({ bots: currentBots.map((entry) => (entry.id === bot.id ? setBotUses(entry, kind, id, on) : entry)) }));
@@ -151,11 +190,16 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
   // Desktop always shows a page, like Paseo's settings: the first item until one is picked.
   const firstSkill = library.skills.map((entry) => entry.id).sort((a, b) => a.localeCompare(b))[0];
   const firstServer = library.mcpServers.slice().sort((a, b) => a.name.localeCompare(b.name))[0];
-  const first: LibraryTarget | null = firstSkill ? { kind: "skill", id: firstSkill } : firstServer ? { kind: "mcp", id: firstServer.id } : null;
+  const first: LibraryTarget = firstSkill ? { kind: "skill", id: firstSkill } : firstServer ? { kind: "mcp", id: firstServer.id } : { kind: "apps" };
   const shown = target ?? (compact ? null : first);
   const skill = shown?.kind === "skill" ? library.skills.find((entry) => entry.id === shown.id) : undefined;
   const server = shown?.kind === "mcp" ? library.mcpServers.find((entry) => entry.id === shown.id) : undefined;
-  const pageTitle = skill ? skill.id : server ? server.name : "";
+  const appAccountsFor = shown?.kind === "app" ? (appAccounts.data?.accounts ?? []).filter((account) => account.slug === shown.id) : [];
+  const app =
+    shown?.kind === "app" && appAccountsFor.length
+      ? (appCatalog.data?.apps.find((entry) => entry.slug === shown.id) ?? { slug: shown.id, name: shown.id, description: "", logo: null, domain: null, noAuth: false })
+      : undefined;
+  const pageTitle = skill ? skill.id : server ? server.name : app ? app.name : shown?.kind === "apps" ? "Connected apps" : "";
   const showTitle = !compact;
 
   const page = skill ? (
@@ -182,8 +226,19 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
       onToggleBot={(bot, on) => toggleBot("mcp", server.id, bot, on)}
       onDelete={() => void removeServer(server.id)}
     />
+  ) : app ? (
+    <AppPage
+      key={`app:${app.slug}`}
+      colors={colors}
+      app={app}
+      accounts={appAccountsFor}
+      bots={bots}
+      showTitle={showTitle}
+      onToggleBot={(bot, on) => toggleApp(app.slug, bot, on)}
+      onDisconnected={() => setTarget(compact ? null : { kind: "apps" })}
+    />
   ) : (
-    <Text style={{ fontSize: ui(14), color: colors.foregroundMuted, textAlign: "center", paddingTop: 48 }}>No skills or MCP servers yet</Text>
+    <AppsPage colors={colors} showTitle={showTitle} pending={pending?.slug ?? null} onConnect={(slug) => void startConnect(slug)} />
   );
 
   const list = (

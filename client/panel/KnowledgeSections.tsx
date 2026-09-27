@@ -7,7 +7,7 @@ import { ActivityIndicator, View } from "react-native";
 import { SOUL_MAX_BYTES, utf8Bytes } from "../../shared/bot";
 import { memoryDeleteRpc, memoryListRpc, memoryReadRpc, memoryWriteRpc } from "../../shared/rpc";
 import { useBotHost } from "../data";
-import { confirmDialog } from "../native";
+import { confirmDialog, errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { LibraryPicker } from "./LibraryPicker";
 import { Alert, Button, DrillRow, FormTextArea, InputField, SectionMeta, SheetActions } from "./controls";
@@ -16,10 +16,6 @@ type Colors = PanelProps["colors"];
 
 const kb = (bytes: number) => (bytes / 1000).toFixed(1);
 
-/** Error text from a thrown message, without the trailing period of a single sentence. */
-function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(/\.$/, "");
-}
 
 function LocalOnly({ colors, what }: { colors: Colors; what: string }) {
   return (

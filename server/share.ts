@@ -169,6 +169,7 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     alwaysAllow: [],
     skillIds: skills.map((skill) => skill.id),
     mcpServerIds: [],
+    apps: [],
     routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, createdAt: now })),
     pinned: false,
     archived: false,

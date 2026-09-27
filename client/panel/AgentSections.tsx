@@ -1,10 +1,12 @@
 import { useHosts } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
+import { APPS_MCP_NAME } from "../../shared/apps";
 import { botMcpServers, toolGrants } from "../../shared/bot";
 import { useAgentProfiles, useBotHost, useHostWorkspaces, usePaseoTools, useProviders } from "../data";
 import type { PanelProps } from "./BotPanel";
 import { InputField, SectionMeta, StatusBadge, TextAreaField } from "./controls";
+import { AppsPicker } from "./AppsPicker";
 import { LibraryPicker } from "./LibraryPicker";
 
 const MANAGED = "__managed__";
@@ -32,7 +34,7 @@ export function AccessSection(props: PanelProps) {
 
   const lines = allowText.split("\n").map((line) => line.trim()).filter(Boolean);
   // Only grants for the bot's own servers are sent; Paseo rejects the rest.
-  const active = new Set(botMcpServers(bot, props.library).map((server) => server.name));
+  const active = new Set([...botMcpServers(bot, props.library).map((server) => server.name), ...(host.isLocal && bot.apps.length ? [APPS_MCP_NAME] : [])]);
   const grants = toolGrants(lines).filter((grant) => active.has(grant.server));
   const ignored = lines.length - grants.length;
 
@@ -71,6 +73,8 @@ export function AccessSection(props: PanelProps) {
       <PaseoToolsSection colors={colors} bot={bot} localHost={localHost} />
 
       <LibraryPicker {...props} kind="mcp" title="MCP servers" info="Added on top of the MCP servers the provider already loads. Paseo's own tools are always included. Add and edit servers in Skills & Tools." />
+
+      <AppsPicker colors={colors} bot={bot} localHost={localHost} onPatch={onPatch} />
 
       <SettingsSection
         title="Always allowed"

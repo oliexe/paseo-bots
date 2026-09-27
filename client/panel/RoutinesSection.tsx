@@ -9,7 +9,7 @@ import { CRON_PRESETS, describeCron, describeSchedule, nextRun, scheduleToCron, 
 import { routineRunNowRpc, routineStatusRpc, type RoutineRunState } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
 import { useBotHost } from "../data";
-import { confirmDialog } from "../native";
+import { confirmDialog, errorText } from "../native";
 import { useMenu } from "../ui/Menu";
 import { Alert, type BadgeVariant, Button, CardNote, InputField, KebabButton, PressableRow, RowText, SectionLink, SheetFooter, StatusBadge, TextAreaField } from "./controls";
 import type { PanelProps } from "./BotPanel";
@@ -71,7 +71,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush }: Pane
       toast.show(`Started "${routine.name}". It appears as a chat under ${bot.name}.`, { variant: "success" });
       void queryClient.invalidateQueries({ queryKey: ["paseo-bot"] });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(errorText(error));
     }
   };
 

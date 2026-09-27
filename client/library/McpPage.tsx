@@ -7,7 +7,7 @@ import type { Bot, LibraryMcpServer } from "../../shared/bot";
 import { mcpTarget } from "../../shared/library";
 import { mcpProbeRpc } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
-import { MONO_FONT, MONO_PROPS } from "../native";
+import { errorText, MONO_FONT, MONO_PROPS } from "../native";
 import { CardNote, SectionLink, SectionMeta } from "../panel/controls";
 import { code, ui } from "../typography";
 import { ServerSheet, type McpDraft } from "./McpSheets";
@@ -45,7 +45,7 @@ export function McpPage({ colors, server, bots, otherNames, showTitle, onPatch, 
       const checkedAt = new Date().toISOString();
       onPatch(result.ok ? { tools: result.tools, checkError: null, checkedAt } : { checkError: result.error, checkedAt });
     } catch (error) {
-      onPatch({ checkError: error instanceof Error ? error.message : String(error), checkedAt: new Date().toISOString() });
+      onPatch({ checkError: errorText(error), checkedAt: new Date().toISOString() });
     } finally {
       setTesting(false);
     }

@@ -3,7 +3,7 @@ import { Modal } from "@getpaseo/plugin/client/react-native";
 import { SettingsCard, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { formatPairs, joinArgs, MCP_NAME, parseMcpJson, parsePairs, splitArgs, type BotMcpServer, type LibraryMcpServer, type McpServerConfig } from "../../shared/bot";
+import { formatPairs, joinArgs, MCP_NAME, RESERVED_MCP_NAMES, parseMcpJson, parsePairs, splitArgs, type BotMcpServer, type LibraryMcpServer, type McpServerConfig } from "../../shared/bot";
 import { PASEO_MCP_NAME } from "../../shared/paseo-tools";
 import { Button, FormTextArea, InputField, SheetFooter, TextAreaField } from "../panel/controls";
 import { ui } from "../typography";
@@ -46,8 +46,8 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
     ? null
     : !MCP_NAME.test(name)
       ? "Use letters, numbers, dashes and underscores"
-      : name === PASEO_MCP_NAME
-        ? `"${PASEO_MCP_NAME}" is Paseo's own server, which every bot already gets`
+      : RESERVED_MCP_NAMES.includes(name)
+        ? `"${name}" is taken by ${name === PASEO_MCP_NAME ? "Paseo's own tools" : "connected apps"}`
         : otherNames.includes(name)
           ? `"${name}" is already in the library`
           : null;

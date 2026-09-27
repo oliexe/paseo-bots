@@ -8,7 +8,7 @@ import type { Bot } from "../shared/bot";
 import { exportBotRpc } from "../shared/rpc";
 import { BOT_TEMPLATES, type BotTemplate } from "../shared/templates";
 import { Avatar } from "./Avatar";
-import { MONO_FONT, MONO_PROPS, nativeTokens, useHover } from "./native";
+import { errorText, MONO_FONT, MONO_PROPS, nativeTokens, useHover } from "./native";
 import { Button, FormTextArea, SheetActions } from "./panel/controls";
 import type { MenuEntry } from "./ui/Menu";
 import { code, codeLine, ui } from "./typography";
@@ -28,7 +28,7 @@ export function NewBotDialog({ colors, onClose, onCreate, onImport }: { colors: 
           <SettingsCard>
             <StartRow colors={colors} label="Blank bot" hint="Set everything up yourself in the settings panel." onPress={() => onCreate()} />
             {BOT_TEMPLATES.map((template) => (
-              <StartRow key={template.id} colors={colors} label={template.name} hint={template.title} avatarSeed={template.avatarSeed} onPress={() => onCreate(template)} />
+              <StartRow key={template.id} colors={colors} label={template.title} hint={template.description} avatarSeed={template.avatarSeed} onPress={() => onCreate(template)} />
             ))}
           </SettingsCard>
         </SettingsSection>
@@ -54,7 +54,7 @@ export function NewBotDialog({ colors, onClose, onCreate, onImport }: { colors: 
               onPress={() => {
                 setImporting(true);
                 void onImport(json)
-                  .catch((error: unknown) => toast.error(error instanceof Error ? error.message : String(error)))
+                  .catch((error: unknown) => toast.error(errorText(error)))
                   .finally(() => setImporting(false));
               }}
             />
@@ -299,7 +299,7 @@ export function ExportDialog({ colors, bot, onClose }: { colors: Colors; bot: Bo
     setJson(null);
     exportBot({ bot, includeMemory })
       .then((result) => !cancelled && setJson(result.json))
-      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : String(error)));
+      .catch((error: unknown) => toast.error(errorText(error)));
     return () => {
       cancelled = true;
     };

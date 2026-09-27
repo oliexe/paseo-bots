@@ -12,7 +12,7 @@ import { DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, pushHistory, type Bot, ty
 import { addMcpServers, upsertSkills } from "../shared/library";
 import { startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
-import { ensureBotHomeRpc, exportBotRpc, importBotRpc, systemPromptRpc } from "../shared/rpc";
+import { appsMountRpc, ensureBotHomeRpc, exportBotRpc, importBotRpc, systemPromptRpc } from "../shared/rpc";
 import type { BotTemplate } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
@@ -21,11 +21,11 @@ import { ChatPane, type OutgoingMessage } from "./ChatPane";
 import { useBotHost, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
 import { takeIntent } from "./intent";
 import { LibraryView } from "./library/LibraryView";
-import { onLibraryTarget, takeLibraryTarget, type LibraryTarget } from "./navigation";
+import { onLibraryTarget, type LibraryTarget } from "./navigation";
 import { Splash } from "./Splash";
 import { ResizeHandle, SlideOver } from "./ui/Columns";
 import { fitColumns } from "../shared/layout";
-import { confirmDialog, nativeTokens } from "./native";
+import { confirmDialog, errorText, nativeTokens } from "./native";
 import { measureAnchor, MenuProvider, useMenu } from "./ui/Menu";
 import { useKeyboardHeight } from "./keyboard";
 import { newMessageId } from "./sent-attachments";
@@ -60,6 +60,7 @@ function blankBot(provider: string, template?: BotTemplate): Bot {
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],
+    apps: [],
     routines: [],
     cwd: null,
     pinned: false,
@@ -80,9 +81,6 @@ export function BotsSurface(props: PluginSurfaceProps) {
   );
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfaceProps) {
   const { colors } = theme;
@@ -193,8 +191,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   enterLibraryRef.current = enterLibrary;
   useEffect(
     () =>
-      onLibraryTarget(() => {
-        enterLibraryRef.current(takeLibraryTarget());
+      onLibraryTarget((target) => {
+        enterLibraryRef.current(target);
       }),
     [],
   );
@@ -640,6 +638,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
   const chat = useChat(host.api, selection.chatId);
   const ensureHome = useRpc(ensureBotHomeRpc);
   const compose = useRpc(systemPromptRpc);
+  const mountApps = useRpc(appsMountRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -649,9 +648,12 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
     const home = await ensureHome({ botId: bot.id });
     const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
     const { systemPrompt } = await compose({ bot, local: host.isLocal });
+    // Connected apps go through this host's relay, so only bots here get them.
+    const apps = host.isLocal && bot.apps.length ? (await mountApps({ botId: bot.id })).server : null;
     const id = await startBotChat(host.api, {
       bot,
       library,
+      apps,
       placement,
       prompt: message.text,
       systemPrompt,
@@ -681,7 +683,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
   useEffect(() => {
     if (selection.chatId !== null || !selection.prompt || autoStarted.current || !host.api) return;
     autoStarted.current = true;
-    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(`Couldn't start: ${error instanceof Error ? error.message : String(error)}`));
+    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
     // Runs once for the selection that carries the prompt.
   }, [host.api]);
 
