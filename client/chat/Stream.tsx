@@ -161,8 +161,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
         return found.length > 0 ? found : EMPTY_ATTACHMENTS;
       },
       openChat: onOpenChat,
+      agentId,
+      botId: botId ?? null,
     }),
-    [colors, compact, cwd, onOpenChat],
+    [colors, compact, cwd, onOpenChat, agentId, botId],
   );
 
   const renderItem = useCallback(({ item }: ListRenderItemInfo<StreamLayoutItem>) => <StreamItem item={item} context={context} typeVersion={typeVersion} />, [context, typeVersion]);

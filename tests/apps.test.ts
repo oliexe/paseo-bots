@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appDomain, appForTool, appsPrompt, appStatus, canonicalSlug, checkAppCall, faviconUrl, isComposioUrl, withAppRule } from "../shared/apps";
+import { appDomain, appForTool, appSignIns, appsPrompt, appStatus, canonicalSlug, checkAppCall, faviconUrl, isComposioUrl, withAppRule } from "../shared/apps";
 import { buildAgentConfig, EMPTY_LIBRARY, promptSections, type Bot } from "../shared/bot";
 import { fakeHost, makeBot } from "./helpers";
 
@@ -86,6 +86,28 @@ describe("tool to app", () => {
   it("drops a rule that allows everything", () => {
     expect(withAppRule({}, "gmail", { tools: "read", account: null })).toEqual({ gmail: { tools: "read", account: null } });
     expect(withAppRule({ gmail: { tools: "read", account: null } }, "gmail", { tools: "all", account: null })).toEqual({});
+  });
+
+  it("finds the sign-ins a bot started, for connect cards", () => {
+    // Composio's answer to {toolkits: [{name: "notion", action: "add", alias: "work"}]}.
+    const output = JSON.stringify({
+      data: {
+        message: "All connections have been initiated and are pending completion",
+        results: { notion: { toolkit: "notion", status: "initiated", redirect_url: "https://connect.composio.dev/link/lk_1", instruction: "Share the link", accounts: [{ id: "notion_spiro-param", alias: "work", status: "initiated", is_default: true }] } },
+      },
+      error: null,
+      successful: true,
+    });
+    const call = (name: string, detail: unknown, status = "completed") => appSignIns({ name, status, detail });
+    const expected = [{ slug: "notion", url: "https://connect.composio.dev/link/lk_1", wordId: "notion_spiro-param", alias: "work" }];
+    expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output })).toEqual(expected);
+    // Paseo's projection wraps the parsed answer; Codex names the tool differently and may keep MCP content blocks.
+    expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: { output: JSON.parse(output) } })).toEqual(expected);
+    expect(call("composio.COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: [{ type: "text", text: output }] })).toEqual(expected);
+    expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output }, "running")).toEqual([]);
+    expect(call("mcp__other__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output })).toEqual([]);
+    // Only Composio's own sign-in pages.
+    expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: output.replace("connect.composio.dev", "evil.example") })).toEqual([]);
   });
 
   it("folds statuses, slugs and links", () => {

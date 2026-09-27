@@ -227,7 +227,11 @@ export const uploadRpc = defineRpc({
 // ---------------------------------------------------------------- connected apps
 
 const AppCardSchema = z.object({ slug: z.string(), name: z.string(), description: z.string(), logo: z.string().nullable(), domain: z.string().nullable(), noAuth: z.boolean() });
-const AppAccountSchema = z.object({ id: z.string(), slug: z.string(), status: z.enum(["connected", "pending", "failed"]), alias: z.string().nullable(), name: z.string().nullable() });
+const AppAccountSchema = z.object({ id: z.string(), slug: z.string(), status: z.enum(["connected", "pending", "failed"]), alias: z.string().nullable(), name: z.string().nullable(), wordId: z.string().nullable() });
+
+/** A sign-in a bot started, as its chat shows it. */
+export const APP_SIGN_IN_CARD = { kind: "app-sign-in", version: 1 } as const;
+export const AppSignInSchema = z.object({ slug: z.string(), url: z.string(), wordId: z.string().nullable(), alias: z.string().nullable() });
 const Alias = z.string().max(40).regex(/^[\w .@+-]*$/, "Use letters, numbers, spaces, dots and dashes");
 const AppSlug = z.string().regex(/^[a-z0-9_-]+$/);
 

@@ -42,6 +42,8 @@ export interface AppAccount {
   alias: string | null;
   /** The provider's name for the sign-in, usually an email address. */
   name: string | null;
+  /** Composio's readable id ("gmail_brave-owl"), which its tool router reports for a new sign-in. */
+  wordId: string | null;
 }
 
 /** How an account reads in lists: its alias, its sign-in name, or the app's name. */
@@ -165,6 +167,56 @@ export function withAppRule(rules: Readonly<Record<string, AppRule>>, slug: stri
   return next;
 }
 
+/** A sign-in a bot started with COMPOSIO_MANAGE_CONNECTIONS, shown as a card in its chat (a type, so it's timeline JSON). */
+export type AppSignIn = {
+  slug: string;
+  /** Composio's sign-in page; it expires ten minutes after the call. */
+  url: string;
+  /** The readable id of the account being signed in, to tell when it's done. */
+  wordId: string | null;
+  alias: string | null;
+};
+
+/** Composio's `data.results` in a tool output, however the provider wrapped it: JSON text, content blocks or `{output}`. */
+function composioResults(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 4 || value === null || typeof value !== "object") {
+    if (typeof value !== "string" || depth > 4) return null;
+    try {
+      return composioResults(JSON.parse(value), depth + 1);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(value)) return value.reduce<Record<string, unknown> | null>((found, entry) => found ?? composioResults(entry, depth + 1), null);
+  const record = value as { data?: { results?: unknown }; output?: unknown; text?: unknown; content?: unknown };
+  const results = record.data?.results;
+  if (results && typeof results === "object" && !Array.isArray(results)) return results as Record<string, unknown>;
+  return composioResults(record.output, depth + 1) ?? composioResults(record.text, depth + 1) ?? composioResults(record.content, depth + 1);
+}
+
+/**
+ * The sign-ins a finished COMPOSIO_MANAGE_CONNECTIONS call started, from its
+ * output: `{data: {results: {notion: {redirect_url, accounts: [{id, alias}]}}}}`.
+ */
+export function appSignIns(call: { name: string; status: string; detail: unknown }): AppSignIn[] {
+  if (call.status !== "completed" || !/^(?:mcp__)?composio(?:__|\.|_)COMPOSIO_MANAGE_CONNECTIONS$/.test(call.name.trim())) return [];
+  const results = composioResults((call.detail as { output?: unknown } | null)?.output) ?? {};
+  const signIns: AppSignIn[] = [];
+  for (const [slug, value] of Object.entries(results)) {
+    const result = (value ?? {}) as { redirect_url?: unknown; accounts?: { id?: unknown; alias?: unknown }[] };
+    const url = result.redirect_url;
+    if (typeof url !== "string" || !isComposioUrl(url)) continue;
+    const account = Array.isArray(result.accounts) ? result.accounts[0] : undefined;
+    signIns.push({
+      slug: canonicalSlug(slug),
+      url,
+      wordId: typeof account?.id === "string" ? account.id : null,
+      alias: typeof account?.alias === "string" && account.alias.trim() ? account.alias.trim() : null,
+    });
+  }
+  return signIns;
+}
+
 /** A connected app as a bot's prompt lists it. */
 export interface PromptApp {
   name: string;
@@ -189,6 +241,6 @@ export function appsPrompt(apps: readonly PromptApp[]): string {
     `Connected apps are available through the MCP server "${APPS_MCP_NAME}". You may use: ${apps.map(promptAppName).join(", ")}.`,
     "Find a tool with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL.",
     ...(apps.some((app) => app.accounts.length > 1) ? ['When an app has several accounts, pass the one to use as "account" in each COMPOSIO_MULTI_EXECUTE_TOOL entry, and ask the user when it isn\'t clear which one they mean.'] : []),
-    "If a task needs an app that isn't connected, use COMPOSIO_MANAGE_CONNECTIONS to get a sign-in link and give it to the user.",
+    "If a task needs an app that isn't connected, add it with COMPOSIO_MANAGE_CONNECTIONS: the user gets a card in this chat to sign in. Then end your turn; they'll tell you when it's connected.",
   ].join(" ");
 }

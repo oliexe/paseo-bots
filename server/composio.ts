@@ -286,7 +286,7 @@ export async function accounts({ fresh }: { fresh?: boolean } = {}): Promise<{ a
     for (const item of body.items ?? []) {
       if (!item.id || !item.toolkit?.slug) continue;
       const name = typeof item.data?.displayName === "string" && item.data.displayName.trim() ? item.data.displayName.trim().slice(0, 120) : null;
-      found.push({ id: item.id, slug: canonicalSlug(item.toolkit.slug), status: appStatus(item.status), alias: item.alias?.trim() || null, name });
+      found.push({ id: item.id, slug: canonicalSlug(item.toolkit.slug), status: appStatus(item.status), alias: item.alias?.trim() || null, name, wordId: item.word_id?.trim() || null });
     }
     const next = body.next_cursor?.trim();
     if (!next || next === cursor) break;
