@@ -24,6 +24,7 @@ export function TeamMap({
   bots,
   localHost,
   compact,
+  bottomInset,
   onBack,
   onNewTeam,
   onEditTeam,
@@ -34,6 +35,8 @@ export function TeamMap({
   bots: readonly Bot[];
   localHost: LocalHost;
   compact: boolean;
+  /** The home indicator on phones. */
+  bottomInset: number;
   onBack?: () => void;
   onNewTeam(): void;
   onEditTeam(group: BotGroup): void;
@@ -58,7 +61,7 @@ export function TeamMap({
         <View style={{ flex: 1 }} />
         <Button colors={colors} variant="ghost" label="New team" icon="Plus" onPress={onNewTeam} />
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: compact ? 16 : 24, alignItems: "center" }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: compact ? 16 : 24, paddingBottom: (compact ? 16 : 24) + bottomInset, alignItems: "center" }}>
         <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 16 }}>
           {groups.length === 0 ? (
             <View style={{ padding: 24, borderRadius: 12, backgroundColor: colors.surface1, alignItems: "center", gap: 12 }}>

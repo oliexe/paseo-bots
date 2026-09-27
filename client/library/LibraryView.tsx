@@ -9,6 +9,7 @@ import { addMcpServers, forgetItem, newMcpServerId, renameGrants, setBotUses, up
 import { appsConnectRpc, skillDeleteRpc } from "../../shared/rpc";
 import type { LibraryTarget } from "../navigation";
 import { errorText, nativeTokens } from "../native";
+import { SlideOver } from "../ui/Columns";
 import { useMenu } from "../ui/Menu";
 import { AppPage } from "./AppPage";
 import { useAppsAccounts, useAppsCatalog, useAppsInvalidate, useAppsStatus } from "./apps";
@@ -36,6 +37,8 @@ interface LibraryViewProps {
   onTarget(target: LibraryTarget | null): void;
   /** Back to the bot list. */
   onBack(): void;
+  /** The home indicator on phones, kept clear below lists and pages. */
+  bottomInset: number;
 }
 
 /**
@@ -45,7 +48,7 @@ interface LibraryViewProps {
  * back row and a 720-wide page on desktop; on compact the list is a screen
  * that pushes the page.
  */
-export function LibraryView({ colors, layout, values, commit, target, onTarget: setTarget, onBack }: LibraryViewProps) {
+export function LibraryView({ colors, layout, values, commit, target, onTarget: setTarget, onBack, bottomInset }: LibraryViewProps) {
   const compact = layout.compact;
   const toast = useToast();
   const menu = useMenu();
@@ -260,11 +263,12 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
       onAddServer={openServerMenu}
       touch={compact || layout.platform !== "web"}
       onBack={compact ? undefined : onBack}
+      bottomInset={bottomInset}
     />
   );
 
   const scrollPage = (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={PAGE_STYLE}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[PAGE_STYLE, { paddingBottom: PAGE_STYLE.paddingBottom + bottomInset }]}>
       {page}
     </ScrollView>
   );
@@ -272,17 +276,21 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: colors.surface0 }}>
       {compact ? (
-        shown ? (
-          <View style={{ flex: 1 }}>
-            <BackBar colors={colors} title={pageTitle} onBack={() => setTarget(null)} />
-            {scrollPage}
-          </View>
-        ) : (
+        // Phones stack a page over the list, so a swipe or Back returns to it.
+        <View style={{ flex: 1 }}>
           <View style={{ flex: 1, backgroundColor: nativeTokens(colors).surfaceSidebar }}>
             <BackBar colors={colors} title="Skills & Tools" backLabel="Back to bots" onBack={onBack} />
             {list}
           </View>
-        )
+          {shown ? (
+            <SlideOver onClose={() => setTarget(null)}>
+              <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
+                <BackBar colors={colors} title={pageTitle} onBack={() => setTarget(null)} />
+                {scrollPage}
+              </View>
+            </SlideOver>
+          ) : null}
+        </View>
       ) : (
         <>
           <View style={{ width: LIST_WIDTH, borderRightWidth: 1, borderRightColor: colors.border, backgroundColor: nativeTokens(colors).surfaceSidebar }}>{list}</View>

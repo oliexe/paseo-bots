@@ -53,42 +53,54 @@ export function ResizeHandle({ side, width, onResize, onCommit }: { side: "left"
   );
 }
 
+const native = Platform.OS !== "web";
+
+/** Open slide-overs, innermost last: only the top one answers a swipe. */
+const layers: object[] = [];
+
 /**
- * Full-width panel sliding in from the right on phones, closed by swiping right,
- * like Paseo's mobile explorer overlay (mobile-panels/presentation.tsx, gestures.ts:
- * close past a third of the width or a flick faster than 500pt/s).
+ * A full-width level sliding in from the right on phones over the level it came from,
+ * like Paseo's mobile panels (mobile-panels/presentation.tsx). Swiping right follows the
+ * finger with Paseo's rules (gestures.ts, gesture-intent.ts): 15pt of mostly-horizontal
+ * travel starts it, a third of the width or 500pt/s finishes it. The top level claims the
+ * swipe before its buttons can, so it works from anywhere on the level. A finished swipe
+ * steps back inside the level when `onBack` handles it (a settings page back to the
+ * list), otherwise the level slides away and closes.
  */
-export function SlideOver({ onClose, children }: { onClose(): void; children: ReactNode }) {
+export function SlideOver({ onClose, onBack, children }: { onClose(): void; onBack?: () => boolean; children: ReactNode }) {
   const width = Dimensions.get("window").width;
   const offset = useRef(new Animated.Value(width)).current;
   const [closing, setClosing] = useState(false);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const handlers = useRef({ onClose, onBack });
+  handlers.current = { onClose, onBack };
+  const layer = useRef({}).current;
 
   useEffect(() => {
-    Animated.timing(offset, { toValue: 0, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start();
-  }, [offset]);
+    layers.push(layer);
+    Animated.timing(offset, { toValue: 0, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: native }).start();
+    return () => void layers.splice(layers.indexOf(layer), 1);
+  }, [offset, layer]);
 
+  const settle = () => Animated.spring(offset, { toValue: 0, useNativeDriver: native, bounciness: 0 }).start();
   const dismiss = () => {
     if (closing) return;
     setClosing(true);
-    Animated.timing(offset, { toValue: width, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start(() => onCloseRef.current());
+    Animated.timing(offset, { toValue: width, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: native }).start(() => handlers.current.onClose());
+  };
+  const finish = useRef(dismiss);
+  finish.current = () => {
+    if (handlers.current.onBack?.()) settle();
+    else dismiss();
   };
 
   const responder = useRef(
     PanResponder.create({
-      // Only claim clearly horizontal right swipes so vertical scrolling keeps working.
-      onMoveShouldSetPanResponder: (_event, gesture) => gesture.dx > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 2,
+      onMoveShouldSetPanResponderCapture: (_event, gesture) => layers[layers.length - 1] === layer && gesture.dx >= 15 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
       onPanResponderMove: (_event, gesture) => offset.setValue(Math.max(0, gesture.dx)),
-      onPanResponderRelease: (_event, gesture) => {
-        if (gesture.dx > width / 3 || gesture.vx > 0.5) dismissRef.current();
-        else Animated.spring(offset, { toValue: 0, useNativeDriver: Platform.OS !== "web", bounciness: 0 }).start();
-      },
-      onPanResponderTerminate: () => Animated.spring(offset, { toValue: 0, useNativeDriver: Platform.OS !== "web", bounciness: 0 }).start(),
+      onPanResponderRelease: (_event, gesture) => (gesture.dx > width / 3 || gesture.vx > 0.5 ? finish.current() : settle()),
+      onPanResponderTerminate: settle,
     }),
   ).current;
-  const dismissRef = useRef(dismiss);
-  dismissRef.current = dismiss;
 
   return (
     <Animated.View {...responder.panHandlers} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, transform: [{ translateX: offset }] }}>

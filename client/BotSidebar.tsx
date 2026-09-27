@@ -49,6 +49,8 @@ interface BotSidebarProps {
   touch: boolean;
   /** Phone layout: with no bots at all, show the Paseo Bots splash instead of the empty state. */
   splash?: boolean;
+  /** The home indicator: Paseo's mobile sidebar pads its panel by the bottom safe area. */
+  bottomInset: number;
   onToggle(botId: string): void;
   onTogglePinnedSection(): void;
   onShowArchived(): void;
@@ -66,7 +68,7 @@ const noSelect = { userSelect: "none" } as object;
 const CHEVRON_COLOR = "#9ca3af";
 
 export function BotSidebar(props: BotSidebarProps) {
-  const { colors, bots, groups, ui: listUi, hiddenArchivedCount, onNewBot, onShowArchived, onTeamMap } = props;
+  const { colors, bots, groups, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onTeamMap } = props;
   const tokens = nativeTokens(colors);
   const pinnedIds = new Set(listUi.pinnedChats.map((pin) => pin.chatId));
   const listedBots = new Map(bots.map((bot) => [bot.id, bot]));
@@ -82,14 +84,14 @@ export function BotSidebar(props: BotSidebarProps) {
   const loose = bots.filter((bot) => !teamed.has(bot.id));
   if (props.splash && bots.length === 0 && hiddenArchivedCount === 0 && pins.length === 0) {
     return (
-      <View style={{ flex: 1, backgroundColor: tokens.surfaceSidebar }}>
+      <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
         <Splash colors={colors} background={tokens.surfaceSidebar} />
         <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
       </View>
     );
   }
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.surfaceSidebar }}>
+    <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
       <ScrollView
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"

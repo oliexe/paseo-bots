@@ -92,6 +92,8 @@ interface BotPanelProps extends PanelProps {
   onClose(): void;
   /** The surface's compact layout; falls back to the window width. */
   compact?: boolean;
+  /** The home indicator on phones. */
+  bottomInset: number;
 }
 
 /**
@@ -99,7 +101,7 @@ interface BotPanelProps extends PanelProps {
  * section list, and a pushed detail page whose header carries a back arrow.
  */
 export function BotPanel(props: BotPanelProps) {
-  const { colors, bot, localHost, section, onSection, onClose } = props;
+  const { colors, bot, localHost, section, onSection, onClose, bottomInset } = props;
   const compact = useCompact(props.compact);
   const [query, setQuery] = useState("");
   const host = useBotHost(bot.hostId, localHost);
@@ -110,7 +112,7 @@ export function BotPanel(props: BotPanelProps) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
         <PanelHeader colors={colors} compact={compact} title={open.label} onBack={() => onSection(null)} onClose={onClose} />
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: 24, paddingBottom: 32 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: 24, paddingBottom: 32 + bottomInset }}>
           {renderSection(open.id, props)}
         </ScrollView>
       </View>
@@ -129,7 +131,7 @@ export function BotPanel(props: BotPanelProps) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
       <PanelHeader colors={colors} compact={compact} title={bot.name || "Untitled bot"} onClose={onClose} />
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 + bottomInset }}>
         <View style={{ paddingHorizontal: 8, paddingTop: 8, gap: 8 }}>
           <SearchField colors={colors} value={query} onChangeText={setQuery} placeholder="Search settings" />
           {problems.length > 0 ? <Alert colors={colors} variant="warning" title="Needs attention" description={problems} /> : null}

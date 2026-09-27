@@ -28,13 +28,15 @@ interface LibraryListProps {
   touch: boolean;
   /** Desktop: a "Back to bots" row heads the column, like settings' "Back to workspace". */
   onBack?(): void;
+  /** The home indicator on phones. */
+  bottomInset: number;
 }
 
 /**
  * The page's list column, in the settings sidebar's geometry (settings-screen.tsx):
  * a group per kind with its items and an add button.
  */
-export function LibraryList({ colors, library, query, onQuery, selected, onSelect, onAddSkill, onAddServer, touch, onBack }: LibraryListProps) {
+export function LibraryList({ colors, library, query, onQuery, selected, onSelect, onAddSkill, onAddServer, touch, onBack, bottomInset }: LibraryListProps) {
   const skills = library.skills
     .filter((skill) => matchesQuery(query, skill.id, skill.description, skill.source))
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -50,7 +52,7 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
   const apps = connectedApps(accounts.data?.accounts ?? [], catalog.data?.apps ?? []).filter((app) => matchesQuery(query, app.name, app.slug));
 
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
+    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 + bottomInset }}>
       {onBack ? (
         <View style={{ paddingHorizontal: 8, paddingTop: 8 }}>
           <NavRow colors={colors} icon="ArrowLeft" label="Back to bots" selected={false} touch={touch} onPress={onBack} />

@@ -31,7 +31,7 @@ import { ResizeHandle, SlideOver } from "./ui/Columns";
 import { fitColumns } from "../shared/layout";
 import { confirmDialog, errorText, nativeTokens } from "./native";
 import { measureAnchor, MenuProvider, useMenu } from "./ui/Menu";
-import { useKeyboardHeight } from "./keyboard";
+import { homeIndicatorInset, useKeyboardHeight } from "./keyboard";
 import { newMessageId } from "./sent-attachments";
 import { BotPanel, type SectionId } from "./panel/BotPanel";
 import { useBotSettings } from "./useBotSettings";
@@ -127,6 +127,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const uiRef = useRef<BotListUi | null>(null);
   const paneRef = useRef<View>(null);
   const keyboardHeight = useKeyboardHeight();
+  /** The home indicator on phones; the keyboard covers it while it's up. */
+  const bottomInset = keyboardHeight > 0 ? 0 : homeIndicatorInset();
   const [surfaceWidth, setSurfaceWidth] = useState(0);
   /** Widths while a resize handle is being dragged; saved to the list UI on release. */
   const [dragWidths, setDragWidths] = useState<{ list?: number; panel?: number }>({});
@@ -216,29 +218,38 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     [],
   );
 
-  // Android's Back steps out of Skills & Tools, closes the settings panel, then goes from a
-  // chat back to the list, before it would leave the plugin (Paseo's workspace screen does
-  // the same for its explorer).
-  const backState = useRef({ panelOpen: panel.open, section: panel.section, compact: layout.compact, hasSelection: selection !== null, libraryView });
-  backState.current = { panelOpen: panel.open, section: panel.section, compact: layout.compact, hasSelection: selection !== null, libraryView };
+  // One step back through the Bots screen, as Paseo's own screens go back: a settings page to
+  // the settings list, then the settings, Skills & Tools (page, then list), and on phones the
+  // team map or a chat back to the bot list. Android's Back and the phone swipes use it; with
+  // nothing left to step back from, Back leaves the plugin.
+  const back = useRef({ panel, compact: layout.compact, selection, teamMap, libraryView });
+  back.current = { panel, compact: layout.compact, selection, teamMap, libraryView };
+  const goBack = (): boolean => {
+    const state = back.current;
+    if (state.libraryView) {
+      setLibraryView(state.compact && state.libraryView.target ? { target: null } : null);
+      return true;
+    }
+    if (state.panel.open) {
+      setPanel(state.panel.section ? { open: true, section: null } : { open: false, section: null });
+      return true;
+    }
+    if (!state.compact) return false;
+    if (state.teamMap) {
+      setTeamMap(false);
+      return true;
+    }
+    if (state.selection) {
+      setSelection(null);
+      return true;
+    }
+    return false;
+  };
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
   useEffect(() => {
     if (Platform.OS !== "android") return;
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      const state = backState.current;
-      if (state.libraryView) {
-        setLibraryView(state.compact && state.libraryView.target ? { target: null } : null);
-        return true;
-      }
-      if (state.panelOpen) {
-        setPanel({ open: false, section: state.section });
-        return true;
-      }
-      if (state.compact && state.hasSelection) {
-        setSelection(null);
-        return true;
-      }
-      return false;
-    });
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => goBackRef.current());
     return () => subscription.remove();
   }, []);
 
@@ -524,6 +535,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       localHost={localHost}
       touch={layout.compact || layout.platform !== "web"}
       splash={layout.compact}
+      bottomInset={bottomInset}
       onToggle={(botId) =>
         updateUi((current) => ({
           ...current,
@@ -549,6 +561,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       bots={allBots}
       localHost={localHost}
       compact={layout.compact}
+      bottomInset={bottomInset}
       onBack={layout.compact ? () => setTeamMap(false) : undefined}
       onNewTeam={() => setEditingTeam("new")}
       onEditTeam={setEditingTeam}
@@ -584,6 +597,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         key={`${selectedBot.id}:${panelVersion}`}
         colors={colors}
         compact={layout.compact}
+        bottomInset={bottomInset}
         bot={selectedBot}
         localHost={localHost}
         history={settings.values.history}
@@ -608,20 +622,22 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       />
     ) : null;
 
-  if (libraryView) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>
-        <LibraryView
-          colors={colors}
-          layout={layout}
-          values={settings.values}
-          commit={commit}
-          target={libraryView.target}
-          onTarget={(target) => setLibraryView({ target })}
-          onBack={() => setLibraryView(null)}
-        />
-      </View>
-    );
+  const libraryScreen = libraryView ? (
+    <LibraryView
+      colors={colors}
+      layout={layout}
+      bottomInset={bottomInset}
+      values={settings.values}
+      commit={commit}
+      target={libraryView.target}
+      onTarget={(target) => setLibraryView({ target })}
+      onBack={() => setLibraryView(null)}
+    />
+  ) : null;
+
+  // On desktop Skills & Tools takes over the screen, like Paseo's settings.
+  if (libraryScreen && !layout.compact) {
+    return <View style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>{libraryScreen}</View>;
   }
 
   return (
@@ -633,8 +649,14 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     >
       {layout.compact ? (
         <View ref={paneRef} collapsable={false} style={{ flex: 1 }}>
-          {selection || teamMap ? pane : sidebar}
-          {settingsPanel ? <SlideOver onClose={() => setPanel({ open: false, section: panel.section })}>{settingsPanel}</SlideOver> : null}
+          {sidebar}
+          {selection || teamMap ? <SlideOver onClose={() => (teamMap ? setTeamMap(false) : setSelection(null))}>{pane}</SlideOver> : null}
+          {settingsPanel ? (
+            <SlideOver onClose={() => setPanel({ open: false, section: null })} onBack={() => (panel.section ? goBack() : false)}>
+              {settingsPanel}
+            </SlideOver>
+          ) : null}
+          {libraryScreen ? <SlideOver onClose={() => setLibraryView(null)}>{libraryScreen}</SlideOver> : null}
         </View>
       ) : (
         <>
