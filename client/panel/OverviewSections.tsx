@@ -36,7 +36,7 @@ export function OverviewSection({ colors, bot, library, localHost, onSetup }: Pa
   const promptBot = useDebounced(bot, 600);
   const prompt = useQuery({
     // The server reads skills from the saved library, so a library change recomposes too.
-    queryKey: ["paseo-bot", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills)],
+    queryKey: ["paseo-bots", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills)],
     queryFn: () => compose({ bot: promptBot, local: host.isLocal }),
     // Keep the previous composition while edits recompose it, so the card doesn't jump.
     placeholderData: (previous) => previous,

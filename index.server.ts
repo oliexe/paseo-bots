@@ -1,5 +1,5 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { ensureBotHome, ensureBotsHome } from "./server/bot-home";
+import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
 import { deleteMemory, listMemory, readMemory, writeMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
 import { RoutineScheduler } from "./server/scheduler";
@@ -39,10 +39,15 @@ import {
 } from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
+  try {
+    migrateRenamedPluginData();
+  } catch (error) {
+    console.error("paseo-bots: couldn't move the data of the old paseo-bot plugin", error);
+  }
   // Moves the old folder if needed and writes the Bots project icon.
   void ensureBotsHome()
     .then(migrateBotSkills)
-    .catch((error: unknown) => console.error("paseo-bot: couldn't prepare the Bots folder", error));
+    .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
   const library = async () => {
     const state = await settings.read();
@@ -54,7 +59,7 @@ export default function contribute(server: PluginServerContext) {
     const bot = state.status === "ready" ? state.values.bots.find((entry) => entry.id === botId) : undefined;
     return bot && !bot.archived && !bot.hostId ? bot.apps : null;
   });
-  void relay.start().catch((error: unknown) => console.error("paseo-bot: couldn't start the connected-apps relay", error));
+  void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the connected-apps relay", error));
   const scheduler = new RoutineScheduler(settings, relay);
   // Every handler and hook receives the plugin's Paseo API; the scheduler needs it to start chats.
   const attach = ({ paseo }: PluginHandlerContext) => scheduler.attach(paseo);

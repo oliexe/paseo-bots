@@ -107,7 +107,7 @@ describe("Composio client and relay", () => {
   let accountsList = [{ id: "ca_1", status: "ACTIVE", toolkit: { slug: "gmail" } }, { id: "ca_2", status: "ACTIVE", toolkit: { slug: "slack" } }];
 
   beforeAll(async () => {
-    home = await mkdtemp(join(tmpdir(), "paseo-bot-apps-"));
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-apps-"));
     process.env.PASEO_HOME = home;
     fake = createServer((request, response) => {
       let body = "";
@@ -119,7 +119,7 @@ describe("Composio client and relay", () => {
         if (request.headers["x-api-key"] !== "ak_test") return send(401, { message: "Invalid API key" });
         if (request.method === "POST" && url.pathname === "/api/v3.1/tool_router/session") {
           const parsed = JSON.parse(body) as { user_id: string };
-          expect(parsed.user_id).toMatch(/^paseo_bot_/);
+          expect(parsed.user_id).toMatch(/^paseo_bots_/);
           return send(200, { session_id: "trs_1", mcp: { type: "http", url: `${origin}/mcp/trs_1` } });
         }
         if (url.pathname === "/api/v3/toolkits") {
@@ -143,13 +143,13 @@ describe("Composio client and relay", () => {
     });
     await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", resolve));
     origin = `http://127.0.0.1:${(fake.address() as { port: number }).port}`;
-    process.env.PASEO_BOT_COMPOSIO_ORIGIN = origin;
+    process.env.PASEO_BOTS_COMPOSIO_ORIGIN = origin;
   });
 
   afterAll(async () => {
     fake.close();
     delete process.env.PASEO_HOME;
-    delete process.env.PASEO_BOT_COMPOSIO_ORIGIN;
+    delete process.env.PASEO_BOTS_COMPOSIO_ORIGIN;
     await rm(home, { recursive: true, force: true });
   });
 
@@ -159,7 +159,7 @@ describe("Composio client and relay", () => {
     await expect(composio.setKey({ key: "ak_bad" })).rejects.toThrow("Invalid API key");
     await composio.setKey({ key: "ak_test" });
     expect(await composio.status()).toEqual({ configured: true, keyHint: "ak_…test" });
-    const info = await stat(join(home, "plugin-data", "paseo-bot", "composio.json"));
+    const info = await stat(join(home, "plugin-data", "paseo-bots", "composio.json"));
     expect(info.mode & 0o077).toBe(0);
   });
 

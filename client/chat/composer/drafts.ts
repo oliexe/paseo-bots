@@ -7,7 +7,7 @@ import { readItem, readItemSync, writeItem } from "./storage";
 // ---------------------------------------------------------------- drafts
 
 // Paseo keeps one draft per chat (stores/draft-store) and persists it every 200ms.
-const DRAFTS_KEY = "@paseo-bot:composer-drafts";
+const DRAFTS_KEY = "@paseo-bots:composer-drafts";
 const PERSIST_INTERVAL_MS = 200;
 
 let drafts: Record<string, ComposerDraft> = Platform.OS === "web" ? parseDrafts(readItemSync(DRAFTS_KEY)) : {};

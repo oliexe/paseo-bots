@@ -24,7 +24,7 @@ export function librarySkillPath(id: string): string {
 }
 
 async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { headers: { "User-Agent": "paseo-bot", Accept: "application/vnd.github+json" } });
+  const response = await fetch(url, { headers: { "User-Agent": "paseo-bots", Accept: "application/vnd.github+json" } });
   if (!response.ok) throw new Error(`${url} answered ${response.status}.`);
   return response.text();
 }

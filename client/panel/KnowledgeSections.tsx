@@ -112,8 +112,8 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
   const [open, setOpen] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
   const [topicKey, setTopicKey] = useState(0);
-  const files = useQuery({ queryKey: ["paseo-bot", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["paseo-bot", "memory", bot.id] });
+  const files = useQuery({ queryKey: ["paseo-bots", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory", bot.id] });
 
   const data = files.data;
   const over = data ? data.injectedLines > MEMORY_LINES || data.injectedBytes > MEMORY_BYTES : false;

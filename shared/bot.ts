@@ -4,7 +4,7 @@ import { APPS_MCP_NAME, appsPrompt } from "./apps";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
-export const BOT_LABEL = "paseo-bot.bot";
+export const BOT_LABEL = "paseo-bots.bot";
 
 const StringRecord = z.record(z.string(), z.string());
 

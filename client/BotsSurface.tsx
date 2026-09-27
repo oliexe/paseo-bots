@@ -362,7 +362,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
 
   const openBotMenu = (bot: Bot, anchor: LayoutRectangle, source: MenuSource) => {
     const botHost = resolveHost(bot.hostId);
-    const chats = queryClient.getQueryData<PaseoAgent[]>(["paseo-bot", "chats", botHost.key, bot.id]) ?? [];
+    const chats = queryClient.getQueryData<PaseoAgent[]>(["paseo-bots", "chats", botHost.key, bot.id]) ?? [];
     const workspaceId = chats.find((chat) => chat.workspaceId)?.workspaceId;
     const openWorkspace = navigation?.openWorkspace;
     menu.open({
@@ -428,7 +428,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
             await botHost.api.agents.ref(chat.id).archive();
             if (selection?.chatId === chat.id) setSelection({ botId: bot.id, chatId: null });
             if (context.pinned) updateUi(unpin);
-            await queryClient.invalidateQueries({ queryKey: ["paseo-bot", "chats", botHost.key, bot.id] });
+            await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", botHost.key, bot.id] });
           } catch (error) {
             toast.error(`Failed to archive chat: ${errorText(error)}`);
           }
@@ -661,7 +661,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
       attachments: message.attachments,
       clientMessageId: message.messageId,
     });
-    await queryClient.invalidateQueries({ queryKey: ["paseo-bot", "chats", host.key, bot.id] });
+    await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", host.key, bot.id] });
     onStarted(id);
   };
 

@@ -27,7 +27,7 @@ interface SkillPageProps {
   onDelete(): void;
 }
 
-export const skillQueryKey = (id: string) => ["paseo-bot", "library-skill", id];
+export const skillQueryKey = (id: string) => ["paseo-bots", "library-skill", id];
 
 /** Imports stored as "github.com/owner/repo/path" update from "owner/repo/path"; links update from themselves. */
 function updateSource(source: string): string | null {

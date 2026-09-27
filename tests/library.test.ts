@@ -105,12 +105,26 @@ describe("display helpers", () => {
 describe("server library", () => {
   let home: string;
   beforeAll(async () => {
-    home = await mkdtemp(join(tmpdir(), "paseo-bot-lib-"));
+    home = await mkdtemp(join(tmpdir(), "paseo-bots-lib-"));
     process.env.PASEO_HOME = home;
   });
   afterAll(async () => {
     delete process.env.PASEO_HOME;
     await rm(home, { recursive: true, force: true });
+  });
+
+  it("moves the old paseo-bot data folder to the new name and links it", async () => {
+    const { migrateRenamedPluginData, pluginDataPath } = await import("../server/bot-home");
+    const { mkdir, readlink, readFile } = await import("node:fs/promises");
+    const legacy = join(home, "plugin-data", "paseo-bot");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(legacy, "composio.json"), "{}");
+    migrateRenamedPluginData();
+    expect(await readFile(join(pluginDataPath(), "composio.json"), "utf8")).toBe("{}");
+    expect(await readlink(legacy)).toBe(pluginDataPath());
+    // Running it again leaves everything as it is.
+    migrateRenamedPluginData();
+    expect(await readlink(legacy)).toBe(pluginDataPath());
   });
 
   it("writes, reads and deletes library skills", async () => {
@@ -167,6 +181,7 @@ describe("server library", () => {
   it("still imports v1 files that kept skills and servers on the bot", async () => {
     const { importBot } = await import("../server/share");
     const v1 = {
+      // Exported before the rename.
       format: "paseo-bot",
       version: 1,
       bot: { name: "Old", avatar: { seed: "s" }, provider: "claude", mcpServers: [fetchDraft], skills: [{ name: "Old Skill", description: "d", enabled: true }], routines: [] },

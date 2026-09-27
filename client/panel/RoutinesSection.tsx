@@ -58,7 +58,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush }: Pane
   const toast = useToast();
   const menu = useMenu();
   const queryClient = useQueryClient();
-  const runs = useQuery({ queryKey: ["paseo-bot", "routines"], queryFn: () => status({}), refetchInterval: 15_000, enabled: host.isLocal });
+  const runs = useQuery({ queryKey: ["paseo-bots", "routines"], queryFn: () => status({}), refetchInterval: 15_000, enabled: host.isLocal });
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
 
   const setRoutines = (routines: Routine[]) => onPatch({ routines });
@@ -69,7 +69,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush }: Pane
       await flush();
       await runNow({ botId: bot.id, routineId: routine.id });
       toast.show(`Started "${routine.name}". It appears as a chat under ${bot.name}.`, { variant: "success" });
-      void queryClient.invalidateQueries({ queryKey: ["paseo-bot"] });
+      void queryClient.invalidateQueries({ queryKey: ["paseo-bots"] });
     } catch (error) {
       toast.error(errorText(error));
     }

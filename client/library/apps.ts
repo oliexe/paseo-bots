@@ -6,7 +6,7 @@ import { appsAccountsRpc, appsCatalogRpc, appsStatusRpc } from "../../shared/rpc
 // Connected-apps state lives with Composio on this host, not in the bots
 // settings, so the client reads it through the plugin's server.
 
-export const APPS_KEY = ["paseo-bot", "apps"] as const;
+export const APPS_KEY = ["paseo-bots", "apps"] as const;
 
 export function useAppsStatus() {
   const status = useRpc(appsStatusRpc);

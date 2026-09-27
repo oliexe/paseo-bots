@@ -2,7 +2,7 @@ import type { PaseoApi } from "@getpaseo/client";
 import { BOT_LABEL, buildAgentConfig, defaultModelId, type Bot, type Library, type McpServerConfig } from "./bot";
 
 /** Label on chats started by a routine, carrying the routine id. */
-export const ROUTINE_LABEL = "paseo-bot.routine";
+export const ROUTINE_LABEL = "paseo-bots.routine";
 /** Longest title Paseo accepts (protocol/agent-title-limits.ts). */
 const MAX_TITLE_CHARS = 200;
 

@@ -1,3 +1,4 @@
+import { lstatSync, renameSync, symlinkSync } from "node:fs";
 import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { avatarSvg, spriteAvatar } from "../shared/avatar";
 import { homedir } from "node:os";
@@ -5,8 +6,36 @@ import { join } from "node:path";
 
 // The plugin SDK has no data-directory API; other plugins use
 // `$PASEO_HOME/plugin-data/<plugin-id>`, so this follows that convention.
+function pluginDataRoot(): string {
+  return join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "plugin-data");
+}
+
 export function pluginDataPath(): string {
-  return join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "plugin-data", "paseo-bot");
+  return join(pluginDataRoot(), "paseo-bots");
+}
+
+/**
+ * The plugin was called paseo-bot before. Move its data (bots' folders, the
+ * skill library, the Composio key) to the new name and leave a link behind,
+ * so chats started in the old folders keep their working directory. Runs
+ * once, synchronously, before anything reads the data folder.
+ */
+export function migrateRenamedPluginData(): void {
+  const legacy = join(pluginDataRoot(), "paseo-bot");
+  const target = pluginDataPath();
+  try {
+    if (!lstatSync(legacy).isDirectory()) return;
+  } catch {
+    return;
+  }
+  try {
+    lstatSync(target);
+    return;
+  } catch {
+    // No data under the new name yet: move the old folder over.
+  }
+  renameSync(legacy, target);
+  symlinkSync(target, legacy, "junction");
 }
 
 /**
@@ -44,7 +73,7 @@ export function migrateLegacyHome(): Promise<void> {
     await mkdir(join(target, ".."), { recursive: true });
     await rename(legacy, target);
     await symlink(target, legacy, "dir");
-  })().catch((error: unknown) => console.error("paseo-bot: couldn't move the bots folder", error));
+  })().catch((error: unknown) => console.error("paseo-bots: couldn't move the bots folder", error));
   return migration;
 }
 
@@ -63,7 +92,7 @@ export async function ensureBotsHome() {
   await migrateLegacyHome();
   const path = botsHomePath();
   await mkdir(path, { recursive: true });
-  await writeFile(join(path, "README.md"), "paseo-bot: one folder per bot, each the working folder of that bot's workspace.\n", { flag: "w" });
+  await writeFile(join(path, "README.md"), "paseo-bots: one folder per bot, each the working folder of that bot's workspace.\n", { flag: "w" });
   await writeFile(join(path, "icon.svg"), PROJECT_ICON, { flag: "w" });
   return { path };
 }

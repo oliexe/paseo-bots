@@ -10,7 +10,7 @@ import { pluginDataPath } from "./bot-home";
 // file only this process reads; clients never see it.
 
 /** Tests point this at a local fake; its URLs are then trusted like composio.dev's. */
-const ORIGIN_OVERRIDE = () => process.env.PASEO_BOT_COMPOSIO_ORIGIN?.replace(/\/$/, "");
+const ORIGIN_OVERRIDE = () => process.env.PASEO_BOTS_COMPOSIO_ORIGIN?.replace(/\/$/, "");
 const ORIGIN = () => ORIGIN_OVERRIDE() ?? "https://backend.composio.dev";
 const API = () => `${ORIGIN()}/api/v3.1`;
 const CATALOG_API = () => `${ORIGIN()}/api/v3`;
@@ -41,7 +41,7 @@ export async function readState(): Promise<State> {
   try {
     cached = JSON.parse(await readFile(statePath(), "utf8")) as State;
   } catch {
-    cached = { apiKey: null, userId: `paseo_bot_${randomUUID()}`, sessionId: null, mcpUrl: null, secret: randomBytes(32).toString("hex"), port: null };
+    cached = { apiKey: null, userId: `paseo_bots_${randomUUID()}`, sessionId: null, mcpUrl: null, secret: randomBytes(32).toString("hex"), port: null };
   }
   return cached;
 }

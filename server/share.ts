@@ -6,7 +6,9 @@ import { sanitizeSkillName } from "../shared/skills";
 import { botDataPath } from "./bot-home";
 import { librarySkillPath, type ImportedSkill } from "./library";
 
-const FORMAT = "paseo-bot";
+const FORMAT = "paseo-bots";
+/** Files exported before the plugin was renamed. */
+const FORMATS = z.enum([FORMAT, "paseo-bot"]);
 const MAX_FILES = 400;
 
 const BotFields = BotSchema.pick({
@@ -26,7 +28,7 @@ const SharedSkillSchema = z.object({ id: z.string(), description: z.string().def
 
 /** v2: skills and MCP servers travel next to the bot and join the importer's library. */
 const ExportV2Schema = z.object({
-  format: z.literal(FORMAT),
+  format: FORMATS,
   version: z.literal(2),
   bot: BotFields,
   skills: z.array(SharedSkillSchema).default([]),
@@ -36,7 +38,7 @@ const ExportV2Schema = z.object({
 
 /** v1 kept MCP servers and skills on the bot. */
 const ExportV1Schema = z.object({
-  format: z.literal(FORMAT),
+  format: FORMATS,
   version: z.literal(1),
   bot: BotFields.extend({
     mcpServers: z.array(BotMcpServerSchema).default([]),
@@ -114,12 +116,12 @@ function parseExport(json: string): z.infer<typeof ExportV2Schema> {
   try {
     raw = JSON.parse(json);
   } catch {
-    throw new Error("That isn't a paseo-bot export.");
+    throw new Error("That isn't a paseo-bots export.");
   }
   const v2 = ExportV2Schema.safeParse(raw);
   if (v2.success) return v2.data;
   const v1 = ExportV1Schema.safeParse(raw);
-  if (!v1.success) throw new Error("That isn't a paseo-bot export.");
+  if (!v1.success) throw new Error("That isn't a paseo-bots export.");
   const { mcpServers, skills, ...bot } = v1.data.bot;
   return {
     format: FORMAT,

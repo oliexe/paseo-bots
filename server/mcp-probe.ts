@@ -23,7 +23,7 @@ interface JsonRpcResponse {
 type Request = (method: string, params?: unknown) => Promise<unknown>;
 type Notify = (method: string) => Promise<void>;
 
-const initializeParams = { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "paseo-bot", version: PLUGIN_VERSION } };
+const initializeParams = { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "paseo-bots", version: PLUGIN_VERSION } };
 
 async function listTools(request: Request, notify: Notify): Promise<McpTool[]> {
   await request("initialize", initializeParams);

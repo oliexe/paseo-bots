@@ -62,7 +62,7 @@ export function useHostResolver(local: LocalHost): (hostId: string | null) => Bo
 
 export function useProviders(host: BotHost) {
   return useQuery({
-    queryKey: ["paseo-bot", "providers", host.key],
+    queryKey: ["paseo-bots", "providers", host.key],
     enabled: !!host.api,
     staleTime: 60_000,
     queryFn: async () => {
@@ -74,7 +74,7 @@ export function useProviders(host: BotHost) {
 
 export function useAgentProfiles(host: BotHost) {
   return useQuery({
-    queryKey: ["paseo-bot", "profiles", host.key],
+    queryKey: ["paseo-bots", "profiles", host.key],
     enabled: !!host.api,
     staleTime: 60_000,
     queryFn: async () => (await host.api!.config.get()).config.agentProfiles ?? [],
@@ -83,7 +83,7 @@ export function useAgentProfiles(host: BotHost) {
 
 export function useHostWorkspaces(host: BotHost) {
   return useQuery({
-    queryKey: ["paseo-bot", "workspaces", host.key],
+    queryKey: ["paseo-bots", "workspaces", host.key],
     enabled: !!host.api,
     staleTime: 30_000,
     queryFn: async () => {
@@ -99,7 +99,7 @@ export function useHostWorkspaces(host: BotHost) {
 
 export function useBotChats(host: BotHost, botId: string) {
   return useQuery({
-    queryKey: ["paseo-bot", "chats", host.key, botId],
+    queryKey: ["paseo-bots", "chats", host.key, botId],
     enabled: !!host.api,
     // The local host pushes agent updates (useChatInvalidation); other hosts are polled.
     refetchInterval: host.isLocal ? false : 15_000,
@@ -123,7 +123,7 @@ export function useChatInvalidation() {
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        void queryClient.invalidateQueries({ queryKey: ["paseo-bot", "chats"] });
+        void queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats"] });
       }, 500);
     });
     return () => {
@@ -166,7 +166,7 @@ export function chatStatus(agent: PaseoAgent, colors: PluginTheme["colors"]): Ch
 /** The host's Paseo-tools settings for a provider, and a way to turn them on. */
 export function usePaseoTools(host: BotHost, provider: string) {
   const queryClient = useQueryClient();
-  const key = ["paseo-bot", "paseo-tools", host.key];
+  const key = ["paseo-bots", "paseo-tools", host.key];
   const config = useQuery({
     queryKey: key,
     enabled: !!host.api,

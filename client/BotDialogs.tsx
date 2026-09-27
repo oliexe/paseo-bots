@@ -32,7 +32,7 @@ export function NewBotDialog({ colors, onClose, onCreate, onImport }: { colors: 
             ))}
           </SettingsCard>
         </SettingsSection>
-        <SettingsSection title="Import" info="Paste a bot exported from paseo-bot. Routines arrive paused and secrets must be filled in again.">
+        <SettingsSection title="Import" info="Paste a bot exported from paseo-bots. Routines arrive paused and secrets must be filled in again.">
           <FormTextArea
             colors={colors}
             monospace
@@ -42,7 +42,7 @@ export function NewBotDialog({ colors, onClose, onCreate, onImport }: { colors: 
             autoCapitalize="none"
             autoCorrect={false}
             minHeight={120}
-            placeholder='{"format": "paseo-bot", …}'
+            placeholder='{"format": "paseo-bots", …}'
           />
           <SheetActions>
             <Button

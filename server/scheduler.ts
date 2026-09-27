@@ -150,7 +150,7 @@ export class RoutineScheduler {
       }
       if (changed) await writeRuns(runs);
     } catch (error) {
-      console.error("paseo-bot: routine tick failed", error);
+      console.error("paseo-bots: routine tick failed", error);
     } finally {
       this.ticking = false;
     }
