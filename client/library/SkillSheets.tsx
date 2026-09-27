@@ -5,10 +5,10 @@ import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { skillImportRpc, skillWriteRpc } from "../../shared/rpc";
-import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../../shared/skills";
-import { Button, FormTextArea, InputField, SheetActions, SheetFooter, TextAreaField } from "../panel/controls";
-import { ui } from "../typography";
-import { errorText } from "../native";
+import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName, scanSkillText } from "../../shared/skills";
+import { Alert, Button, FormTextArea, InputField, SheetActions, SheetFooter, TextAreaField } from "../panel/controls";
+import { code, codeLine, ui } from "../typography";
+import { errorText, MONO_FONT, MONO_PROPS } from "../native";
 
 type Colors = PluginTheme["colors"];
 
@@ -16,6 +16,8 @@ export interface SavedSkill {
   id: string;
   description: string;
   source: string;
+  /** Set when the user wrote the text here, so it counts as reviewed. */
+  reviewedSha?: string;
 }
 
 
@@ -93,7 +95,7 @@ export function NewSkillSheet({ colors, taken, onClose, onCreated }: { colors: C
     setError(null);
     try {
       const saved = await write({ id, text: skillMarkdown(id, description, body) });
-      onCreated({ id, description: saved.description, source: "" });
+      onCreated({ id, description: saved.description, source: "", reviewedSha: saved.sha });
     } catch (caught) {
       setError(`Couldn't save: ${errorText(caught)}`);
       setBusy(false);
@@ -129,7 +131,7 @@ export function NewSkillSheet({ colors, taken, onClose, onCreated }: { colors: C
 }
 
 /** Edits SKILL.md as text; the description is read back from its frontmatter. */
-export function EditSkillSheet({ colors, id, saved, onClose, onSaved }: { colors: Colors; id: string; saved: string; onClose(): void; onSaved(description: string): void }) {
+export function EditSkillSheet({ colors, id, saved, onClose, onSaved }: { colors: Colors; id: string; saved: string; onClose(): void; onSaved(description: string, sha: string): void }) {
   const write = useRpc(skillWriteRpc);
   const [draft, setDraft] = useState(saved);
   const [busy, setBusy] = useState(false);
@@ -143,7 +145,7 @@ export function EditSkillSheet({ colors, id, saved, onClose, onSaved }: { colors
     setError(null);
     try {
       const result = await write({ id, text: draft });
-      onSaved(result.description);
+      onSaved(result.description, result.sha);
     } catch (caught) {
       setError(`Couldn't save: ${errorText(caught)}`);
       setBusy(false);
@@ -159,6 +161,36 @@ export function EditSkillSheet({ colors, id, saved, onClose, onSaved }: { colors
           <Button colors={colors} variant="ghost" label="Reset" disabled={!changed || busy} onPress={() => setDraft(saved)} />
           <Button colors={colors} variant="default" label="Save" loading={busy} disabled={!changed} onPress={() => void save()} />
         </SheetActions>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+/**
+ * OpenMausBot's "Review before enabling": the whole SKILL.md, anything that
+ * looks risky, and the files that come with it. Turning the skill on records
+ * the hash of exactly this text.
+ */
+export function ReviewSkillSheet({ colors, id, text, sha, files, onClose, onApprove }: { colors: Colors; id: string; text: string; sha: string; files: string[]; onClose(): void; onApprove(sha: string): void }) {
+  const warnings = scanSkillText(text);
+  const others = files.filter((file) => file !== "SKILL.md");
+  return (
+    <Modal title={`Review ${id}`} open onOpenChange={(open) => !open && onClose()}>
+      <Modal.Content>
+        {warnings.length ? <Alert colors={colors} variant="warning" title="Check these first" description={warnings} /> : null}
+        <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>
+          Bots read this before a task it covers and follow it like instructions. Turn it on only if you trust all of it.
+          {others.length ? ` ${others.length} other file${others.length === 1 ? "" : "s"} come with it (${others.slice(0, 4).join(", ")}${others.length > 4 ? ", ..." : ""}), which bots can read too.` : ""}
+        </Text>
+        <View style={{ padding: 16, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1 }}>
+          <Text selectable {...MONO_PROPS} style={{ fontFamily: MONO_FONT, fontSize: code(), lineHeight: codeLine(), color: colors.foreground }}>
+            {text}
+          </Text>
+        </View>
+        <SheetFooter>
+          <Button colors={colors} size="md" label="Not now" onPress={onClose} style={{ flex: 1 }} />
+          <Button colors={colors} size="md" variant="default" label="Turn on" onPress={() => onApprove(sha)} style={{ flex: 1 }} />
+        </SheetFooter>
       </Modal.Content>
     </Modal>
   );

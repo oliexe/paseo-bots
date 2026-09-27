@@ -47,10 +47,23 @@ export const LibrarySkillSchema = z.object({
   source: z.string().default(""),
   /** Off keeps it in the library but out of every bot's prompt. */
   enabled: z.boolean().default(true),
+  /**
+   * SHA-256 of the SKILL.md the user reviewed. Bots only get the skill while
+   * the file still matches, so an update, or a bot editing its own skill, needs
+   * a new review. Null: never reviewed. Absent: added before reviews existed.
+   */
+  reviewedSha: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type LibrarySkill = z.infer<typeof LibrarySkillSchema>;
+
+/** Whether a skill waits for review; pass the file's current hash when known. */
+export function skillNeedsReview(skill: Pick<LibrarySkill, "reviewedSha">, currentSha?: string | null): boolean {
+  if (skill.reviewedSha === undefined) return false;
+  if (skill.reviewedSha === null) return true;
+  return !!currentSha && currentSha !== skill.reviewedSha;
+}
 
 export const McpToolSchema = z.object({ name: z.string(), description: z.string().default("") });
 export type McpTool = z.infer<typeof McpToolSchema>;

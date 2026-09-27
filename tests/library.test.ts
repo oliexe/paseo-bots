@@ -61,16 +61,21 @@ describe("addMcpServers", () => {
 });
 
 describe("upsertSkills", () => {
-  it("adds new skills and refreshes existing ones without touching their switch", () => {
-    const library: Library = { ...EMPTY_LIBRARY, skills: [{ id: "pdf", description: "old", source: "a", enabled: false, createdAt: NOW, updatedAt: NOW }] };
+  it("adds fetched skills switched off and unreviewed, and a refresh needs a new review", () => {
+    const library: Library = { ...EMPTY_LIBRARY, skills: [{ id: "pdf", description: "old", source: "a", enabled: true, reviewedSha: "abc", createdAt: NOW, updatedAt: NOW }] };
     const next = upsertSkills(library, [
       { id: "pdf", description: "new", source: "" },
       { id: "docx", description: "Word", source: "b" },
     ]);
-    expect(next.skills.map((skill) => [skill.id, skill.description, skill.source, skill.enabled, skill.createdAt === NOW])).toEqual([
-      ["pdf", "new", "a", false, true],
-      ["docx", "Word", "b", true, false],
+    expect(next.skills.map((skill) => [skill.id, skill.description, skill.source, skill.enabled, skill.reviewedSha, skill.createdAt === NOW])).toEqual([
+      ["pdf", "new", "a", true, null, true],
+      ["docx", "Word", "b", false, null, false],
     ]);
+  });
+
+  it("switches on a skill written here, reviewed as written", () => {
+    const next = upsertSkills(EMPTY_LIBRARY, [{ id: "mine", description: "d", source: "", reviewedSha: "f00" }]);
+    expect(next.skills[0]).toMatchObject({ enabled: true, reviewedSha: "f00" });
   });
 });
 
@@ -127,9 +132,24 @@ describe("server library", () => {
     expect(await readlink(legacy)).toBe(pluginDataPath());
   });
 
+  it("only gives bots skills whose SKILL.md is what the user reviewed", async () => {
+    const { writeSkill, sha256 } = await import("../server/library");
+    const { promptContext } = await import("../server/prompt");
+    const text = "---\nname: gated\ndescription: G\n---\nBody\n";
+    await writeSkill({ id: "gated", text });
+    const skill = (reviewedSha: string | null | undefined) => ({ id: "gated", description: "G", source: "", enabled: true, reviewedSha, createdAt: NOW, updatedAt: NOW });
+    const names = async (reviewedSha: string | null | undefined) =>
+      (await promptContext(bot("gate-bot", { skillIds: ["gated"] }), true, { skills: [skill(reviewedSha)], mcpServers: [] }, false)).skills.map((entry) => entry.name);
+    expect(await names(sha256(text))).toEqual(["gated"]);
+    expect(await names(undefined)).toEqual(["gated"]);
+    expect(await names(null)).toEqual([]);
+    expect(await names(sha256("something else"))).toEqual([]);
+  });
+
   it("writes, reads and deletes library skills", async () => {
-    const { writeSkill, readSkill, deleteSkill } = await import("../server/library");
-    expect(await writeSkill({ id: "notes", text: "---\nname: notes\ndescription: Keep notes\n---\n\nBody\n" })).toEqual({ description: "Keep notes" });
+    const { writeSkill, readSkill, deleteSkill, sha256 } = await import("../server/library");
+    const written = "---\nname: notes\ndescription: Keep notes\n---\n\nBody\n";
+    expect(await writeSkill({ id: "notes", text: written })).toEqual({ description: "Keep notes", sha: sha256(written) });
     const read = await readSkill({ id: "notes" });
     expect(read.missing).toBe(false);
     expect(read.files).toEqual(["SKILL.md"]);

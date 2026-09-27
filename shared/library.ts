@@ -51,12 +51,17 @@ export function addMcpServers(library: Library, drafts: readonly BotMcpServer[],
 }
 
 /** Adds or refreshes skills after an import; a re-imported skill keeps its switches and creation date. */
-export function upsertSkills(library: Library, skills: readonly Pick<LibrarySkill, "id" | "description" | "source">[], now: string = new Date().toISOString()): Library {
+/**
+ * Adds or refreshes skills. Fetched skills arrive switched off and unreviewed,
+ * and a refreshed one needs a new review; a skill written here carries the
+ * hash of what the user wrote (`reviewedSha`) and arrives on.
+ */
+export function upsertSkills(library: Library, skills: readonly (Pick<LibrarySkill, "id" | "description" | "source"> & { reviewedSha?: string })[], now: string = new Date().toISOString()): Library {
   const next = [...library.skills];
-  for (const skill of skills) {
+  for (const { reviewedSha, ...skill } of skills) {
     const index = next.findIndex((entry) => entry.id === skill.id);
-    if (index === -1) next.push({ ...skill, enabled: true, createdAt: now, updatedAt: now });
-    else next[index] = { ...next[index]!, description: skill.description, source: skill.source || next[index]!.source, updatedAt: now };
+    if (index === -1) next.push({ ...skill, enabled: !!reviewedSha, reviewedSha: reviewedSha ?? null, createdAt: now, updatedAt: now });
+    else next[index] = { ...next[index]!, description: skill.description, source: skill.source || next[index]!.source, reviewedSha: reviewedSha ?? null, updatedAt: now };
   }
   return { ...library, skills: next };
 }

@@ -67,7 +67,7 @@ export function LibraryList({ colors, library, query, onQuery, selected, onSelec
             colors={colors}
             icon="Puzzle"
             label={skill.id}
-            note={skill.enabled ? undefined : "Off"}
+            note={skill.reviewedSha === null ? "Review" : skill.enabled ? undefined : "Off"}
             selected={is("skill", skill.id)}
             touch={touch}
             onPress={() => onSelect({ kind: "skill", id: skill.id })}

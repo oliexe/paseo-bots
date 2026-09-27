@@ -45,3 +45,17 @@ export function sanitizeSkillName(name: string): string {
   const clean = name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
   return clean || "skill";
 }
+
+/**
+ * Things worth a second look before a skill reaches a bot, as OpenMausBot's
+ * scanSkillText flags them. They warn; the user decides.
+ */
+export function scanSkillText(text: string): string[] {
+  const warnings: string[] = [];
+  if (/[A-Za-z0-9+/]{400,}={0,2}/.test(text)) warnings.push("It contains a long encoded blob that could hide instructions or a program.");
+  if (/\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z)?sh\b/.test(text)) warnings.push("It pipes a download straight into a shell.");
+  if (/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/.test(text)) warnings.push("It contains invisible characters, which can hide text from you.");
+  if (/\b(ignore|disregard)\b[^\n]{0,30}\b(previous|prior|above|all)\b[^\n]{0,20}\binstructions\b/i.test(text)) warnings.push("It tells the bot to ignore its other instructions.");
+  if (/\b(rm\s+-rf\s+[~/]|mkfs\b|dd\s+if=)/.test(text)) warnings.push("It includes commands that can erase data.");
+  return warnings;
+}

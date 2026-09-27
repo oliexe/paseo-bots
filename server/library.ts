@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, posix, relative, sep } from "node:path";
 import type { LibrarySkill } from "../shared/bot";
@@ -106,18 +107,28 @@ async function listFiles(root: string): Promise<string[]> {
   return files.sort((a, b) => (a === "SKILL.md" ? -1 : b === "SKILL.md" ? 1 : a.localeCompare(b)));
 }
 
+export function sha256(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+/** SHA-256 of a library skill's SKILL.md, or null when it's missing. */
+export async function skillSha(id: string): Promise<string | null> {
+  const text = await readFile(join(librarySkillPath(id), "SKILL.md"), "utf8").catch(() => null);
+  return text === null ? null : sha256(text);
+}
+
 export async function readSkill({ id }: { id: string }) {
   const dir = librarySkillPath(id);
   const text = await readFile(join(dir, "SKILL.md"), "utf8").catch(() => null);
-  return { text: text ?? "", missing: text === null, path: join(dir, "SKILL.md"), files: await listFiles(dir) };
+  return { text: text ?? "", sha: text === null ? null : sha256(text), missing: text === null, path: join(dir, "SKILL.md"), files: await listFiles(dir) };
 }
 
-/** Writes SKILL.md, creating the skill folder if needed. Returns the description from its frontmatter. */
+/** Writes SKILL.md, creating the skill folder if needed. Returns its frontmatter description and hash. */
 export async function writeSkill({ id, text }: { id: string; text: string }) {
   const dir = librarySkillPath(id);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "SKILL.md"), text, "utf8");
-  return { description: parseSkillFrontmatter(text).description ?? "" };
+  return { description: parseSkillFrontmatter(text).description ?? "", sha: sha256(text) };
 }
 
 export async function deleteSkill({ id }: { id: string }) {

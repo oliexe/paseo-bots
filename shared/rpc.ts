@@ -71,14 +71,14 @@ export const skillImportRpc = defineRpc({
 export const skillReadRpc = defineRpc({
   name: "bots.library.read-skill",
   input: z.object({ id: SkillName }),
-  output: z.object({ text: z.string(), missing: z.boolean(), path: z.string(), files: z.array(z.string()) }),
+  output: z.object({ text: z.string(), sha: z.string().nullable(), missing: z.boolean(), path: z.string(), files: z.array(z.string()) }),
 });
 
-/** Creates or replaces a library skill's SKILL.md; returns the description from its frontmatter. */
+/** Creates or replaces a library skill's SKILL.md; returns its frontmatter description and hash. */
 export const skillWriteRpc = defineRpc({
   name: "bots.library.write-skill",
   input: z.object({ id: SkillName, text: z.string().max(256_000) }),
-  output: z.object({ description: z.string() }),
+  output: z.object({ description: z.string(), sha: z.string() }),
 });
 
 export const skillDeleteRpc = defineRpc({

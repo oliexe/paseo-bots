@@ -94,7 +94,11 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
     if (skills.length === 0) return;
     if (!(await save((current) => ({ library: upsertSkills(current, skills) })))) return;
     for (const skill of skills) void queryClient.invalidateQueries({ queryKey: skillQueryKey(skill.id) });
-    toast.show(skills.length === 1 ? `Added ${skills[0]!.id}` : `Added ${skills.length} skills`, { variant: "success" });
+    const unreviewed = skills.filter((skill) => !skill.reviewedSha).length;
+    toast.show(
+      `${skills.length === 1 ? `Added ${skills[0]!.id}` : `Added ${skills.length} skills`}${unreviewed ? `. Review ${unreviewed === 1 ? "it" : "them"} before bots use ${unreviewed === 1 ? "it" : "them"}.` : ""}`,
+      { variant: "success" },
+    );
     setTarget({ kind: "skill", id: skills[0]!.id });
   };
 
