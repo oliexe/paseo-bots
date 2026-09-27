@@ -16,7 +16,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 - **Routines**: runs on a schedule, such as every weekday at 9:00 or any cron expression, or when its webhook is called. Bots can propose them from a chat, results can post back to a chat, and each routine keeps its run history and upcoming runs.
 - **Teams**: put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. The Team map shows each team and what every bot is doing.
 - **Bots working together**: a bot can ask another bot for help. The request starts a chat under that bot and the answer comes back; each bot asks you first, asks freely or never.
-- **Skills & Tools**: one library of skills and MCP servers, switched on per bot. Import skills from GitHub (they stay off until you review them) and test servers to see their tools.
+- **Skills & Tools**: one library of skills and MCP servers, switched on per bot. Import skills from GitHub (they stay off until you review them) and MCP servers from Claude Code, Claude Desktop or Cursor (they stay off until a test connects to them and lists their tools).
 - **Playbooks**: step-by-step guidance a chat gets when its first message mentions the playbook's trigger words.
 - **Learning**: send `/learn` after a task and the bot writes it up as a skill. Review it in the chat and save it.
 - **Connected apps**: 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. Keep a bot to an app's read-only or chosen tools, or to one of its accounts. A bot that needs another app asks with a sign-in card in the chat.

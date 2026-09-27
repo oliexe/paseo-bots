@@ -3,8 +3,8 @@ import { mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { EMPTY_LIBRARY, type Bot, type BotMcpServer, type Library } from "../shared/bot";
-import { addMcpServers, forgetItem, matchesQuery, mcpTarget, renameGrants, setBotUses, upsertSkills } from "../shared/library";
+import { EMPTY_LIBRARY, parseMcpJson, type Bot, type BotMcpServer, type Library } from "../shared/bot";
+import { addMcpServers, forgetItem, matchesQuery, mcpServerTested, mcpTarget, renameGrants, setBotUses, upsertSkills } from "../shared/library";
 
 const NOW = "2026-09-27T00:00:00.000Z";
 
@@ -57,9 +57,12 @@ describe("addMcpServers", () => {
     expect(again.library.mcpServers).toHaveLength(1);
   });
 
-  it("keeps a template's switched-off server off", () => {
-    const { library } = addMcpServers(EMPTY_LIBRARY, [{ ...fetchDraft, enabled: false }]);
+  it("adds servers switched off until a test connects", () => {
+    const { library } = addMcpServers(EMPTY_LIBRARY, [fetchDraft]);
     expect(library.mcpServers[0]!.enabled).toBe(false);
+    expect(mcpServerTested(library.mcpServers[0]!)).toBe(false);
+    expect(mcpServerTested({ tools: [], checkError: null })).toBe(true);
+    expect(mcpServerTested({ tools: [], checkError: "refused" })).toBe(false);
   });
 });
 
@@ -269,6 +272,29 @@ describe("probeMcpServer", () => {
       expect(seen).toEqual(["- Bearer t", "s1 Bearer t", "s1 Bearer t"]);
     } finally {
       http.close();
+    }
+  });
+});
+
+describe("MCP servers on this computer", () => {
+  it("reads Claude Code's and Cursor's servers and skips what isn't there", async () => {
+    const { mkdtemp, mkdir, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const home = await mkdtemp(join(tmpdir(), "paseo-bots-home-"));
+    const previous = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      await writeFile(join(home, ".claude.json"), JSON.stringify({ projects: { "/x": { mcpServers: { local: { command: "a" } } } }, mcpServers: { fetch: { command: "uvx", args: ["mcp-server-fetch"] } } }));
+      await mkdir(join(home, ".cursor"));
+      await writeFile(join(home, ".cursor", "mcp.json"), "{ not json");
+      const { mcpSources } = await import("../server/mcp-sources");
+      const { sources } = await mcpSources();
+      expect(sources.map((source) => [source.label, source.count])).toEqual([["Claude Code", 1]]);
+      expect(parseMcpJson(sources[0]!.json).map((server) => server.name)).toEqual(["fetch"]);
+    } finally {
+      process.env.HOME = previous;
+      await rm(home, { recursive: true, force: true });
     }
   });
 });

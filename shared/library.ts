@@ -9,12 +9,13 @@ export function newMcpServerId(): string {
 
 export type LibraryKind = "skill" | "mcp";
 
+/** A server joining the library, switched off until a test connects to it. */
 function libraryServer(draft: BotMcpServer, name: string, now: string): LibraryMcpServer {
   return {
     id: newMcpServerId(),
     name,
     description: "",
-    enabled: draft.enabled,
+    enabled: false,
     config: JSON.parse(JSON.stringify(draft.config)) as BotMcpServer["config"],
     tools: null,
     checkedAt: null,
@@ -95,6 +96,11 @@ export function renameGrants(bots: readonly Bot[], from: string, to: string): Bo
       ? { ...bot, alwaysAllow: bot.alwaysAllow.map((grant) => (grant.startsWith(prefix) ? `${to}/${grant.slice(prefix.length)}` : grant)) }
       : bot,
   );
+}
+
+/** Whether the last test of a server connected; only then can it be turned on. */
+export function mcpServerTested(server: Pick<LibraryMcpServer, "tools" | "checkError">): boolean {
+  return server.tools !== null && !server.checkError;
 }
 
 /** One line describing how a server connects: the command line, or transport and URL. */

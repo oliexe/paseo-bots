@@ -4,11 +4,11 @@ import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwi
 import { useState } from "react";
 import { Text, View } from "react-native";
 import type { Bot, LibraryMcpServer } from "../../shared/bot";
-import { mcpTarget } from "../../shared/library";
+import { mcpServerTested, mcpTarget } from "../../shared/library";
 import { mcpProbeRpc } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
 import { errorText, MONO_FONT, MONO_PROPS } from "../native";
-import { CardNote, SectionLink, SectionMeta } from "../panel/controls";
+import { Alert, Button, CardNote, SectionLink, SectionMeta } from "../panel/controls";
 import { code, ui } from "../typography";
 import { ServerSheet, type McpDraft } from "./McpSheets";
 import { BotsCard, DangerZone, PageTitle } from "./parts";
@@ -38,18 +38,20 @@ export function McpPage({ colors, server, bots, otherNames, showTitle, onPatch, 
   const [editing, setEditing] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  const test = async (config = server.config) => {
+  /** Tests the connection; `enable` turns the server on when it connects. */
+  const test = async (config = server.config, enable = false) => {
     setTesting(true);
     try {
       const result = await probe({ config });
       const checkedAt = new Date().toISOString();
-      onPatch(result.ok ? { tools: result.tools, checkError: null, checkedAt } : { checkError: result.error, checkedAt });
+      onPatch(result.ok ? { tools: result.tools, checkError: null, checkedAt, ...(enable ? { enabled: true } : {}) } : { checkError: result.error, checkedAt });
     } catch (error) {
       onPatch({ checkError: errorText(error), checkedAt: new Date().toISOString() });
     } finally {
       setTesting(false);
     }
   };
+  const tested = mcpServerTested(server);
 
   const tools = server.tools ?? [];
   const toolsMeta = testing ? "Connecting..." : server.checkedAt ? `${server.tools ? `${tools.length} tools · ` : ""}checked ${relativeTime(server.checkedAt)}` : "";
@@ -57,9 +59,23 @@ export function McpPage({ colors, server, bots, otherNames, showTitle, onPatch, 
   return (
     <>
       {showTitle ? <PageTitle colors={colors} title={server.name} /> : null}
+      {!server.enabled && !tested ? (
+        <View style={{ marginBottom: 24, gap: 12 }}>
+          <Alert colors={colors} variant="warning" title="Test before bots use it" description="New servers arrive switched off. The test starts it on this host and lists its tools; it turns on once it connects." />
+          <View style={{ alignItems: "flex-start" }}>
+            <Button colors={colors} variant="outline" icon="PlugZap" label={testing ? "Testing..." : "Test and turn on"} disabled={testing} onPress={() => void test(server.config, true)} />
+          </View>
+        </View>
+      ) : null}
       <SettingsSection title="Server">
         <SettingsCard>
-          <SettingsSwitch label="Enabled" hint="When off, no bot gets this server" value={server.enabled} onValueChange={(enabled) => onPatch({ enabled })} />
+          <SettingsSwitch
+            label="Enabled"
+            hint={tested ? "When off, no bot gets this server" : "Test it to turn it on"}
+            value={server.enabled}
+            disabled={testing}
+            onValueChange={(enabled) => (enabled && !tested ? void test(server.config, true) : onPatch({ enabled }))}
+          />
           <SettingsAction label="Connection" hint={[mcpTarget(server.config), keysHint(server)].filter(Boolean).join("\n")} actionLabel="Edit" onPress={() => setEditing(true)} />
         </SettingsCard>
       </SettingsSection>

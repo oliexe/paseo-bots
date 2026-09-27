@@ -139,6 +139,13 @@ export const mcpProbeRpc = defineRpc({
   output: z.discriminatedUnion("ok", [z.object({ ok: z.literal(true), tools: z.array(McpToolSchema) }), z.object({ ok: z.literal(false), error: z.string() })]),
 });
 
+/** MCP servers other apps on this computer have (Claude Code, Claude Desktop, Cursor), to import. */
+export const mcpSourcesRpc = defineRpc({
+  name: "bots.library.mcp-sources",
+  input: z.object({}),
+  output: z.object({ sources: z.array(z.object({ label: z.string(), count: z.number(), json: z.string() })) }),
+});
+
 /** One run of a routine, like Paseo's ScheduleRun. */
 export const RoutineRunSchema = z.object({
   id: z.string(),

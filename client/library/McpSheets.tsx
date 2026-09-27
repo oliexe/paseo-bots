@@ -1,10 +1,13 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { useRpc } from "@getpaseo/plugin/client";
 import { Modal } from "@getpaseo/plugin/client/react-native";
-import { SettingsCard, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
+import { SettingsAction, SettingsCard, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { formatPairs, joinArgs, MCP_NAME, RESERVED_MCP_NAMES, parseMcpJson, parsePairs, splitArgs, type BotMcpServer, type LibraryMcpServer, type McpServerConfig } from "../../shared/bot";
 import { PASEO_MCP_NAME } from "../../shared/paseo-tools";
+import { mcpSourcesRpc } from "../../shared/rpc";
 import { Button, FormTextArea, InputField, SheetFooter, TextAreaField } from "../panel/controls";
 import { ui } from "../typography";
 
@@ -126,14 +129,37 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
   );
 }
 
-/** Pastes an `{"mcpServers": {...}}` block from Claude Code, Cursor or a .mcp.json file. */
+/**
+ * Adds servers from an `{"mcpServers": {...}}` block: pasted, or read from
+ * Claude Code, Claude Desktop or Cursor on this computer. They arrive off.
+ */
 export function ImportSheet({ colors, onClose, onImport }: { colors: Colors; onClose(): void; onImport(servers: BotMcpServer[]): void }) {
   const [json, setJson] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const readSources = useRpc(mcpSourcesRpc);
+  const sources = useQuery({ queryKey: ["paseo-bots", "mcp-sources"], queryFn: () => readSources({}) });
   return (
-    <Modal title="Paste MCP config" open onOpenChange={(open) => !open && onClose()}>
+    <Modal title="Import MCP servers" open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content contentContainerStyle={{ gap: 0 }}>
-        <SettingsSection title="JSON" info='Paste {"mcpServers": {...}} from Claude Code, Cursor or a .mcp.json file. A name that is already taken gets a number added.'>
+        {sources.data?.sources.length ? (
+          <SettingsSection title="On this computer" info="Servers other apps have set up here. Pick one to review its JSON before adding.">
+            <SettingsCard>
+              {sources.data.sources.map((source) => (
+                <SettingsAction
+                  key={source.label}
+                  label={source.label}
+                  hint={`${source.count} ${source.count === 1 ? "server" : "servers"}`}
+                  actionLabel="Use"
+                  onPress={() => {
+                    setJson(source.json);
+                    setError(null);
+                  }}
+                />
+              ))}
+            </SettingsCard>
+          </SettingsSection>
+        ) : null}
+        <SettingsSection title="JSON" info='Paste {"mcpServers": {...}} from Claude Code, Cursor or a .mcp.json file. Servers arrive switched off until a test connects to them; a name that is already taken gets a number added.'>
           <FormTextArea
             colors={colors}
             monospace

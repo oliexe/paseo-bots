@@ -9,6 +9,7 @@ import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
+import { mcpSources } from "./server/mcp-sources";
 import { accounts, appTools, catalog, connect, disconnect, removeKey, renameAccount, setKey, status as appsStatus } from "./server/composio";
 import { BotsHost } from "./server/host";
 import { Relay } from "./server/relay";
@@ -37,6 +38,7 @@ import {
   memoryWriteRpc,
   mountRpc,
   mcpProbeRpc,
+  mcpSourcesRpc,
   proposalAcceptRpc,
   proposalDismissRpc,
   proposalGetRpc,
@@ -118,6 +120,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(skillWriteRpc, writeSkill);
   server.handle(skillDeleteRpc, deleteSkill);
   server.handle(mcpProbeRpc, probeMcpServer);
+  server.handle(mcpSourcesRpc, () => mcpSources());
   server.handle(appsStatusRpc, () => appsStatus());
   server.handle(appsSetKeyRpc, setKey);
   server.handle(appsRemoveKeyRpc, () => removeKey());

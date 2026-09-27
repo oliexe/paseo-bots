@@ -115,7 +115,8 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
 
   const createServer = async (draft: McpDraft) => {
     const now = new Date().toISOString();
-    const server: LibraryMcpServer = { ...draft, id: newMcpServerId(), enabled: true, tools: null, checkedAt: null, checkError: null, createdAt: now, updatedAt: now };
+    // Off until a test connects to it.
+    const server: LibraryMcpServer = { ...draft, id: newMcpServerId(), enabled: false, tools: null, checkedAt: null, checkError: null, createdAt: now, updatedAt: now };
     if (await save((current) => ({ library: { ...current, mcpServers: [...current.mcpServers, server] } }))) setTarget({ kind: "mcp", id: server.id });
   };
 
@@ -186,7 +187,7 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
       title: "Add MCP server",
       entries: [
         { label: "New server", icon: "Plus", onSelect: () => setSheet({ kind: "new-server", initial: BLANK_SERVER }) },
-        { label: "Paste config", icon: "ClipboardPaste", onSelect: () => setSheet({ kind: "paste-servers" }) },
+        { label: "Import config", icon: "Import", onSelect: () => setSheet({ kind: "paste-servers" }) },
       ],
     });
 
