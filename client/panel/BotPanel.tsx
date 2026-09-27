@@ -2,7 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { botProblems, type Bot, type HistoryEntry, type Library } from "../../shared/bot";
+import { botProblems, type Bot, type BotGroup, type HistoryEntry, type Library } from "../../shared/bot";
 import { useBotHost, type LocalHost } from "../data";
 import { nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
@@ -75,6 +75,7 @@ export interface PanelProps {
   history: HistoryEntry[];
   /** The shared skills and MCP servers the bot picks from. */
   library: Library;
+  groups: readonly BotGroup[];
   onPatch(patch: Partial<Bot>): void;
   /** Saves pending edits now (routines run from the saved bot). */
   flush(): Promise<void>;

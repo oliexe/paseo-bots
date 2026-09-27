@@ -8,7 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
-import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, presetFromBot, pushHistory, type Bot, type BotListUi, type Library, type Preset } from "../shared/bot";
+import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library, type Preset } from "../shared/bot";
+import { saveTeam, withoutBot } from "../shared/groups";
 import { addImportedBots } from "../shared/library";
 import { startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
@@ -23,6 +24,8 @@ import { takeIntent } from "./intent";
 import { LibraryView } from "./library/LibraryView";
 import { onLibraryTarget, type LibraryTarget } from "./navigation";
 import { Splash } from "./Splash";
+import { TeamMap } from "./teams/TeamMap";
+import { TeamSheet } from "./teams/TeamSheet";
 import { ResizeHandle, SlideOver } from "./ui/Columns";
 import { fitColumns } from "../shared/layout";
 import { confirmDialog, errorText, nativeTokens } from "./native";
@@ -108,6 +111,9 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const [panel, setPanel] = useState<{ open: boolean; section: SectionId | null }>({ open: false, section: null });
   const [panelVersion, setPanelVersion] = useState(0);
   const [creating, setCreating] = useState(false);
+  /** The team map replaces the chat pane while open. */
+  const [teamMap, setTeamMap] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<BotGroup | "new" | null>(null);
   /** Skills & Tools replaces the bot list and chat while open; `target` is its page (null: the list, on compact). */
   const [libraryView, setLibraryView] = useState<{ target: LibraryTarget | null } | null>(null);
   const [renaming, setRenaming] = useState<Bot | null>(null);
@@ -268,6 +274,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   };
   const allBots = settings.values.bots.map((bot) => drafts[bot.id] ?? bot);
   const library = settings.values.library ?? EMPTY_LIBRARY;
+  const groups = settings.values.groups ?? [];
   const listed = allBots
     .filter((bot) => listUi.showArchived || !bot.archived)
     .sort((a, b) => Number(b.pinned) - Number(a.pinned));
@@ -278,6 +285,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
 
   const select = (next: Selection) => {
     setSelection(next);
+    setTeamMap(false);
     if (currentUi().collapsed.includes(next.botId)) {
       updateUi((current) => ({ ...current, collapsed: current.collapsed.filter((id) => id !== next.botId) }));
     }
@@ -288,11 +296,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     setPanel({ open: true, section });
   };
 
-  /**
-   * Saves a new bot. MCP servers from a template or an imported file join the
-   * library (reusing a server of the same name) and are switched on for the bot;
-   * imported skills join it unless the library already has them.
-   */
+  /** Saves a new bot and opens it with its settings. */
   const addBot = async (bot: Bot, section: SectionId = "identity") => {
     const saved = await commit((values) => ({ ...values, bots: [...values.bots, bot] }));
     if (saved) {
@@ -328,6 +332,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       ...values,
       bots: values.bots.filter((entry) => entry.id !== bot.id),
       history: values.history.filter((entry) => entry.botId !== bot.id),
+      groups: withoutBot(values.groups ?? [], bot.id, new Date().toISOString()),
     }));
     if (!ok) return;
     if (selection?.botId === bot.id) setSelection(null);
@@ -403,6 +408,27 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     });
   };
 
+  const deleteTeam = async (group: BotGroup) => {
+    const confirmed = await confirmDialog({ title: "Delete team?", message: `Delete the "${group.name}" team? Its bots stay, without a team.`, confirmLabel: "Delete", cancelLabel: "Cancel", destructive: true });
+    if (!confirmed) return false;
+    await commit((values) => ({ ...values, groups: (values.groups ?? []).filter((entry) => entry.id !== group.id) }));
+    return true;
+  };
+
+  const openTeamMenu = (group: BotGroup, anchor: LayoutRectangle) =>
+    menu.open({
+      anchor,
+      align: "end",
+      width: 200,
+      title: "Team actions",
+      entries: [
+        { label: "Edit team", icon: "Pencil", onSelect: () => setEditingTeam(group) },
+        { label: "Team map", icon: "Network", onSelect: () => setTeamMap(true) },
+        { kind: "separator" },
+        { label: "Delete team", icon: "Trash2", destructive: true, onSelect: () => void deleteTeam(group) },
+      ],
+    });
+
   const openChatMenu = (bot: Bot, chat: PaseoAgent, anchor: LayoutRectangle, source: MenuSource, context: ChatMenuContext) => {
     const botHost = resolveHost(bot.hostId);
     const move = (delta: -1 | 1) => {
@@ -475,6 +501,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     <BotSidebar
       colors={colors}
       bots={listed}
+      groups={groups}
       hiddenArchivedCount={listUi.showArchived ? 0 : archivedCount}
       selection={selection}
       ui={listUi}
@@ -494,11 +521,27 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       onBotMenu={openBotMenu}
       onChatMenu={openChatMenu}
       onDisplayMenu={openDisplayMenu}
+      onTeamMenu={openTeamMenu}
+      onTeamMap={() => setTeamMap(true)}
     />
   );
 
-  const pane =
-    selectedBot && selection ? (
+  const pane = teamMap ? (
+    <TeamMap
+      colors={colors}
+      groups={groups}
+      bots={allBots}
+      localHost={localHost}
+      compact={layout.compact}
+      onBack={layout.compact ? () => setTeamMap(false) : undefined}
+      onNewTeam={() => setEditingTeam("new")}
+      onEditTeam={setEditingTeam}
+      onOpenBot={(bot) => {
+        select({ botId: bot.id, chatId: null });
+        setPanel({ open: true, section: "overview" });
+      }}
+    />
+  ) : selectedBot && selection ? (
       <SelectedChat
         key={`${selectedBot.id}:${selection.chatId ?? "new"}`}
         colors={colors}
@@ -529,6 +572,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         localHost={localHost}
         history={settings.values.history}
         library={library}
+        groups={groups}
         section={panel.section}
         onSection={(section) => setPanel({ open: true, section })}
         onClose={() => setPanel({ open: false, section: panel.section })}
@@ -573,7 +617,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     >
       {layout.compact ? (
         <View ref={paneRef} collapsable={false} style={{ flex: 1 }}>
-          {selection ? pane : sidebar}
+          {selection || teamMap ? pane : sidebar}
           {settingsPanel ? <SlideOver onClose={() => setPanel({ open: false, section: panel.section })}>{settingsPanel}</SlideOver> : null}
         </View>
       ) : (
@@ -592,6 +636,21 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         </>
       )}
 
+      {editingTeam ? (
+        <TeamSheet
+          colors={colors}
+          group={editingTeam === "new" ? null : editingTeam}
+          groups={groups}
+          bots={allBots}
+          onClose={() => setEditingTeam(null)}
+          onSave={(draft) => {
+            const id = editingTeam === "new" ? null : editingTeam.id;
+            setEditingTeam(null);
+            void commit((values) => ({ ...values, groups: saveTeam(values.groups ?? [], id, draft, newGroupId(), new Date().toISOString()) }));
+          }}
+          onDelete={editingTeam === "new" ? undefined : () => void deleteTeam(editingTeam).then((deleted) => deleted && setEditingTeam(null))}
+        />
+      ) : null}
       {creating ? (
         <NewBotDialog
           colors={colors}

@@ -14,6 +14,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 - **Approvals**: allow a command once or always for a bot, exactly as it ran. Each bot's Overview lists what it won't do.
 - **Memory**: each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. Every change to its memory can be undone, and bots can search their past chats.
 - **Routines**: runs on a schedule, such as every weekday at 9:00 or any cron expression, or when its webhook is called. Bots can propose them from a chat, results can post back to a chat, and each routine keeps its run history and upcoming runs.
+- **Teams**: put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. The Team map shows each team and what every bot is doing.
 - **Bots working together**: a bot can ask another bot for help. The request starts a chat under that bot and the answer comes back; each bot asks you first, asks freely or never.
 - **Skills & Tools**: one library of skills and MCP servers, switched on per bot. Import skills from GitHub (they stay off until you review them) and test servers to see their tools.
 - **Playbooks**: step-by-step guidance a chat gets when its first message mentions the playbook's trigger words.

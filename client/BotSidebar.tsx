@@ -3,7 +3,7 @@ import type { PaseoAgent } from "@getpaseo/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Animated, Easing, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";
-import type { Bot, BotListUi } from "../shared/bot";
+import type { Bot, BotGroup, BotListUi } from "../shared/bot";
 import { displayTitle } from "../shared/chat";
 import { aggregateBuckets, BUCKET_LABELS, chatBucket, orderChats, SIDEBAR_GROUP_LIMIT, type ChatBucket } from "../shared/sidebar";
 import { Avatar } from "./Avatar";
@@ -38,6 +38,8 @@ export interface ChatMenuContext {
 interface BotSidebarProps {
   colors: Colors;
   bots: readonly Bot[];
+  /** Teams, each listed as a section with its Chief of Staff first. */
+  groups: readonly BotGroup[];
   /** Archived bots hidden by the display preferences. Keeps the header (and its menu) up when they're all that's left. */
   hiddenArchivedCount: number;
   selection: Selection | null;
@@ -55,6 +57,8 @@ interface BotSidebarProps {
   onBotMenu(bot: Bot, anchor: LayoutRectangle, source: MenuSource): void;
   onChatMenu(bot: Bot, chat: PaseoAgent, anchor: LayoutRectangle, source: MenuSource, context: ChatMenuContext): void;
   onDisplayMenu(anchor: LayoutRectangle): void;
+  onTeamMenu(group: BotGroup, anchor: LayoutRectangle): void;
+  onTeamMap(): void;
 }
 
 const noSelect = { userSelect: "none" } as object;
@@ -62,16 +66,25 @@ const noSelect = { userSelect: "none" } as object;
 const CHEVRON_COLOR = "#9ca3af";
 
 export function BotSidebar(props: BotSidebarProps) {
-  const { colors, bots, ui: listUi, hiddenArchivedCount, onNewBot, onShowArchived } = props;
+  const { colors, bots, groups, ui: listUi, hiddenArchivedCount, onNewBot, onShowArchived, onTeamMap } = props;
   const tokens = nativeTokens(colors);
   const pinnedIds = new Set(listUi.pinnedChats.map((pin) => pin.chatId));
   const listedBots = new Map(bots.map((bot) => [bot.id, bot]));
   const pins = listUi.pinnedChats.filter((pin) => listedBots.has(pin.botId));
+  // OpenMausBot's sidebar: each team is a section with its Chief of Staff first; bots without a team follow under Bots.
+  const teamed = new Set<string>();
+  const teams = groups.map((group) => {
+    const lead = group.leadId ? listedBots.get(group.leadId) : undefined;
+    const members = group.memberIds.filter((id) => id !== group.leadId).flatMap((id) => listedBots.get(id) ?? []);
+    for (const bot of [lead, ...members]) if (bot) teamed.add(bot.id);
+    return { group, lead, members };
+  });
+  const loose = bots.filter((bot) => !teamed.has(bot.id));
   if (props.splash && bots.length === 0 && hiddenArchivedCount === 0 && pins.length === 0) {
     return (
       <View style={{ flex: 1, backgroundColor: tokens.surfaceSidebar }}>
         <Splash colors={colors} background={tokens.surfaceSidebar} />
-        <Footer colors={colors} onNewBot={onNewBot} />
+        <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
       </View>
     );
   }
@@ -85,7 +98,18 @@ export function BotSidebar(props: BotSidebarProps) {
       >
         {pins.length > 0 ? <PinnedSection {...props} pins={pins} botById={listedBots} tokens={tokens} /> : null}
         {bots.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} tokens={tokens} onDisplayMenu={props.onDisplayMenu} /> : null}
-        {bots.map((bot) => (
+        {teams.map(({ group, lead, members }) => (
+          <TeamSection key={group.id} {...props} tokens={tokens} group={group}>
+            {lead ? <BotGroup {...props} tokens={tokens} bot={lead} lead pinnedIds={pinnedIds} /> : null}
+            {members.map((bot) => (
+              <BotGroup key={bot.id} {...props} tokens={tokens} bot={bot} pinnedIds={pinnedIds} />
+            ))}
+          </TeamSection>
+        ))}
+        {teams.length > 0 && loose.length > 0 ? (
+          <Text style={[{ fontSize: ui(12), color: colors.foregroundMuted, paddingHorizontal: 8, paddingTop: 8, paddingBottom: 8 }, noSelect]}>Other bots</Text>
+        ) : null}
+        {loose.map((bot) => (
           <BotGroup key={bot.id} {...props} tokens={tokens} bot={bot} pinnedIds={pinnedIds} />
         ))}
         {bots.length === 0 ? (
@@ -101,7 +125,7 @@ export function BotSidebar(props: BotSidebarProps) {
           )
         ) : null}
       </ScrollView>
-      <Footer colors={colors} onNewBot={onNewBot} />
+      <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
     </View>
   );
 }
@@ -134,7 +158,7 @@ function SectionHeader({ colors, tokens, onDisplayMenu }: { colors: Colors; toke
   );
 }
 
-function Footer({ colors, onNewBot }: { colors: Colors; onNewBot(): void }) {
+function Footer({ colors, onNewBot, onTeamMap }: { colors: Colors; onNewBot(): void; onTeamMap(): void }) {
   const { hovered, hoverProps } = useHover();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
@@ -164,6 +188,7 @@ function Footer({ colors, onNewBot }: { colors: Colors; onNewBot(): void }) {
           New bot
         </Text>
       </Pressable>
+      <FooterIconButton colors={colors} icon="Network" label="Team map" onPress={onTeamMap} />
       <FooterIconButton colors={colors} icon="Blocks" label="Skills & Tools" onPress={() => openLibrary()} />
     </View>
   );
@@ -283,9 +308,42 @@ function PinnedChatRow({ colors, tokens, bot, chatId, selection, localHost, touc
   );
 }
 
+// ------------------------------------------------------------------ team
+
+/** A team's section: its name like the Pinned header, collapsible, with the team menu on hover. */
+function TeamSection({ colors, group, ui: listUi, touch, onToggle, onTeamMenu, children }: BotSidebarProps & { tokens: NativeTokens; group: BotGroup; children: ReactNode }) {
+  const key = `team:${group.id}`;
+  const collapsed = listUi.collapsed.includes(key);
+  const [hovered, setHovered] = useState(false);
+  const kebabRef = useRef<View>(null);
+  return (
+    <View role="group" accessibilityLabel={group.name} style={{ marginBottom: 4 }}>
+      <View onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={[{ minHeight: 36, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 4 }, noSelect]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${group.name} team`}
+          accessibilityState={{ expanded: !collapsed }}
+          onPress={() => onToggle(key)}
+          {...contextMenuProps((anchor) => onTeamMenu(group, anchor))}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, flexShrink: 1, minWidth: 0 }}
+        >
+          <Text numberOfLines={1} style={{ fontSize: ui(12), color: colors.foregroundMuted, flexShrink: 1 }}>
+            {group.name || "Untitled team"}
+          </Text>
+          {hovered || touch ? <Icon name={collapsed ? "ChevronRight" : "ChevronDown"} size={12} color={colors.foregroundMuted} /> : null}
+        </Pressable>
+        <View style={{ opacity: hovered || touch ? 1 : 0 }} pointerEvents={hovered || touch ? "auto" : "none"}>
+          <KebabButton colors={colors} buttonRef={kebabRef} label="Team actions" box onPress={() => void measureAnchor(kebabRef).then((anchor) => anchor && onTeamMenu(group, anchor))} />
+        </View>
+      </View>
+      {collapsed ? null : children}
+    </View>
+  );
+}
+
 // ------------------------------------------------------------------ bot group
 
-type GroupProps = BotSidebarProps & { bot: Bot; tokens: NativeTokens; pinnedIds: ReadonlySet<string> };
+type GroupProps = BotSidebarProps & { bot: Bot; tokens: NativeTokens; pinnedIds: ReadonlySet<string>; /** The team's Chief of Staff. */ lead?: boolean };
 
 function BotGroup(props: GroupProps) {
   const { colors, tokens, bot, selection, ui: listUi, localHost, touch, pinnedIds, onSelect, onChatMenu } = props;
@@ -341,7 +399,7 @@ function BotGroup(props: GroupProps) {
   );
 }
 
-function BotRow({ colors, tokens, bot, touch, isOpen, aggregate, hostLabel, onToggle, onSelect, onBotMenu }: GroupProps & { isOpen: boolean; aggregate: ChatBucket | null; hostLabel: string | null }) {
+function BotRow({ colors, tokens, bot, lead, touch, isOpen, aggregate, hostLabel, onToggle, onSelect, onBotMenu }: GroupProps & { isOpen: boolean; aggregate: ChatBucket | null; hostLabel: string | null }) {
   const [hovered, setHovered] = useState(false);
   const kebabRef = useRef<View>(null);
   const plusTip = useTooltip(0);
@@ -394,6 +452,7 @@ function BotRow({ colors, tokens, bot, touch, isOpen, aggregate, hostLabel, onTo
           {bot.name}
           {hostLabel ? ` · ${hostLabel} offline` : ""}
         </Text>
+        {lead ? <Icon name="Crown" size={12} color={colors.foregroundMuted} /> : null}
       </View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 0, marginRight: -6 }}>
         <View style={{ width: 24, height: 24, alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: actionsVisible ? 1 : 0 }} pointerEvents={actionsVisible ? "auto" : "none"}>

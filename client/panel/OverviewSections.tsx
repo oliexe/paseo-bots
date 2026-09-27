@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import { botLimits, botMcpServers, botSkills, estimateTokens, utf8Bytes, type Bot } from "../../shared/bot";
+import { teamOf } from "../../shared/groups";
 import { describeSchedule } from "../../shared/routines";
 import { systemPromptRpc } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
@@ -30,13 +31,21 @@ function size(text: string): string {
   return `${(utf8Bytes(text) / 1000).toFixed(1)} KB · ≈${estimateTokens(text).toLocaleString()} tokens`;
 }
 
-export function OverviewSection({ colors, bot, library, localHost, onSetup }: PanelProps) {
+/** "Chief of Staff of Ops", "On Ops, led by Scout" or "No team". */
+function teamLine(bot: Bot, groups: PanelProps["groups"]): string {
+  const group = teamOf(bot.id, groups);
+  if (!group) return "No team. Put it on one from the Team map.";
+  if (group.leadId === bot.id) return `Chief of Staff of ${group.name}`;
+  return `On ${group.name}`;
+}
+
+export function OverviewSection({ colors, bot, library, groups, localHost, onSetup }: PanelProps) {
   const host = useBotHost(bot.hostId, localHost);
   const compose = useRpc(systemPromptRpc);
   const promptBot = useDebounced(bot, 600);
   const prompt = useQuery({
-    // The server reads skills from the saved library, so a library change recomposes too.
-    queryKey: ["paseo-bots", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills)],
+    // The server reads skills and teams from the saved settings, so changes there recompose too.
+    queryKey: ["paseo-bots", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills), JSON.stringify(groups)],
     queryFn: () => compose({ bot: promptBot, local: host.isLocal }),
     // Keep the previous composition while edits recompose it, so the card doesn't jump.
     placeholderData: (previous) => previous,
@@ -62,6 +71,7 @@ export function OverviewSection({ colors, bot, library, localHost, onSetup }: Pa
       <SettingsSection title="Summary">
         <SettingsCard>
           <SettingsRow label="Does" hint={bot.title || bot.description || "No title yet. Add one under Identity."} />
+          <SettingsRow label="Team" hint={teamLine(bot, groups)} />
           <SettingsRow label="Can reach" hint={tools.length ? tools.join(", ") : "Only its provider's built-in tools and Paseo's tools"} />
           <SettingsRow label="Runs" hint={bot.routines.length ? bot.routines.map((routine) => `${routine.name}: ${describeSchedule(routine.schedule)}${routine.enabled ? "" : " (paused)"}`).join("\n") : "Only when you message it"} />
           <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal, appsConfigured: !!appsStatus.data?.configured }).join("\n")} />

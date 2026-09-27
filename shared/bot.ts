@@ -192,6 +192,21 @@ export type BotListUi = z.infer<typeof BotListUiSchema>;
 
 export const DEFAULT_BOT_LIST_UI: BotListUi = BotListUiSchema.parse({});
 
+/** A team of bots, after OpenMausBot's teams: its members, its lead (Chief of Staff) and shared instructions. */
+export const BotGroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** The user's main contact for the team, who hands work to the others; null until one is picked. */
+  leadId: z.string().nullable().default(null),
+  /** The team's bots; the lead is one of them. */
+  memberIds: z.array(z.string()).default([]),
+  /** Added to every member's prompt; only the user edits them. */
+  instructions: z.string().default(""),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type BotGroup = z.infer<typeof BotGroupSchema>;
+
 /** What a new bot starts with, from the plugin's settings. An empty provider picks one that's ready. */
 export const BotDefaultsSchema = z.object({
   provider: z.string().default(""),
@@ -233,6 +248,7 @@ export const botSettings = defineSettings({
     library: LibrarySchema.optional(),
     defaults: BotDefaultsSchema.optional(),
     presets: z.array(PresetSchema).optional(),
+    groups: z.array(BotGroupSchema).optional(),
   }),
   migrate: (values, fromVersion) => {
     let migrated = values;
@@ -336,6 +352,10 @@ export function newBotId(): string {
   return "bot-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+export function newGroupId(): string {
+  return "team-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
 export function newPresetId(): string {
   return "pr-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
@@ -381,6 +401,8 @@ export interface PromptContext {
   recentWork: string[];
   /** Playbooks whose triggers appear in the chat's first message. */
   playbooks: Playbook[];
+  /** In a team's chat, the lead's view of the team (teamPrompt). */
+  team?: string | null;
   /** The bot's usable skills with the SKILL.md path the agent should read. Empty when the files aren't on the bot's host. */
   skills: { name: string; description: string; path: string }[];
   /** Whether the host gives this bot's provider Paseo's own tools. */
@@ -412,6 +434,7 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
       text: `BEGIN STANDING INSTRUCTIONS\n${bot.soul.trim()}\nEND STANDING INSTRUCTIONS\nFollow these unless the user asks otherwise in this chat.`,
     });
   }
+  if (context.team) sections.push({ title: "Team", text: context.team });
   if (context.memoryPath) {
     const body = context.memory.trim() ? `\n\nCurrent memory:\n${context.memory.trim()}` : "\n\nYour memory is empty so far.";
     sections.push({

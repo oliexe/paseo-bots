@@ -16,7 +16,7 @@ export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: {
   if (bot.hostId) throw new Error(`${bot.name} runs on another host, so its chats can't be started from here.`);
   const library = await host.library();
   const home = await ensureBotHome({ botId: bot.id });
-  const { systemPrompt: system } = await systemPrompt({ bot, local: true, message: input.prompt }, library, paseo);
+  const { systemPrompt: system } = await systemPrompt({ bot, local: true, message: input.prompt }, library, paseo, await host.values());
   const agentId = newUuid();
   return startBotChat(paseo, {
     bot,

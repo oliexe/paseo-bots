@@ -91,7 +91,7 @@ export default function contribute(server: PluginServerContext) {
     attach(context);
     return ensureBotHome(input);
   });
-  server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo));
+  server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
   server.handle(memoryReadRpc, ({ botId, name }) => readMemory(botId, name));
   server.handle(memoryWriteRpc, async ({ botId, name, text }) => {
