@@ -55,8 +55,8 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const connectApp = useRpc(appsConnectRpc);
   const invalidateApps = useAppsInvalidate();
-  /** The app whose sign-in is open in the browser, and since when. */
-  const [pending, setPending] = useState<{ slug: string; since: number } | null>(null);
+  /** The app whose sign-in is open in the browser, since when, and the accounts it had before. */
+  const [pending, setPending] = useState<{ slug: string; since: number; known: string[] } | null>(null);
   const appsStatus = useAppsStatus();
   const appsConfigured = appsStatus.data?.configured ?? false;
   const appAccounts = useAppsAccounts(appsConfigured, pending !== null);
@@ -65,7 +65,8 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
   // Finish a pending sign-in when Composio reports the account, or give up after five minutes.
   useEffect(() => {
     if (!pending) return;
-    const account = appAccounts.data?.accounts.find((entry) => entry.slug === pending.slug && entry.status === "connected");
+    // A new account: signing in to another account of a connected app mustn't finish at once.
+    const account = appAccounts.data?.accounts.find((entry) => entry.slug === pending.slug && entry.status === "connected" && !pending.known.includes(entry.id));
     if (account) {
       const name = appCatalog.data?.apps.find((app) => app.slug === pending.slug)?.name ?? pending.slug;
       toast.show(`Connected ${name}`, { variant: "success" });
@@ -128,10 +129,10 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
     });
 
   /** Opens Composio's sign-in page in the browser; the accounts query polls until it's done. */
-  const startConnect = async (slug: string) => {
+  const startConnect = async (slug: string, alias?: string) => {
     try {
-      const { url } = await connectApp({ slug });
-      setPending({ slug, since: Date.now() });
+      const { url } = await connectApp({ slug, ...(alias?.trim() ? { alias: alias.trim() } : {}) });
+      setPending({ slug, since: Date.now(), known: (appAccounts.data?.accounts ?? []).filter((entry) => entry.slug === slug).map((entry) => entry.id) });
       await openExternalUrl(url);
     } catch (error) {
       setPending(null);
@@ -240,6 +241,7 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
       showTitle={showTitle}
       onToggleBot={(bot, on) => toggleApp(app.slug, bot, on)}
       onDisconnected={() => setTarget(compact ? null : { kind: "apps" })}
+      onConnect={(alias) => startConnect(app.slug, alias)}
     />
   ) : (
     <AppsPage colors={colors} showTitle={showTitle} pending={pending?.slug ?? null} onConnect={(slug) => void startConnect(slug)} />

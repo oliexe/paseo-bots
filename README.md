@@ -19,7 +19,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 - **Skills & Tools**: one library of skills and MCP servers, switched on per bot. Import skills from GitHub (they stay off until you review them) and test servers to see their tools.
 - **Playbooks**: step-by-step guidance a chat gets when its first message mentions the playbook's trigger words.
 - **Learning**: send `/learn` after a task and the bot writes it up as a skill. Review it in the chat and save it.
-- **Connected apps**: 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev).
+- **Connected apps**: 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app, such as work and personal.
 - **Paseo tools**: bots can start other agents, open workspaces, set up schedules and use the browser.
 
 ## Install
@@ -39,6 +39,8 @@ Connected apps run on your own Composio account.
 3. Next to **Connected apps**, press **+**, paste the key and press **Connect**.
 4. Find an app, press **Connect** and finish signing in in your browser.
 5. Switch the app on for a bot under the bot's **Access** settings, or on the app's page.
+
+To add a second account of an app, such as a work and a personal Gmail, open the app's page and press **Connect** next to **Add another account**. Bots pick an account by its name.
 
 The key stays on the Paseo host and never reaches the agents: bots reach Composio through a local relay that only lets each bot use the apps you switched on for it.
 

@@ -227,7 +227,8 @@ export const uploadRpc = defineRpc({
 // ---------------------------------------------------------------- connected apps
 
 const AppCardSchema = z.object({ slug: z.string(), name: z.string(), description: z.string(), logo: z.string().nullable(), domain: z.string().nullable(), noAuth: z.boolean() });
-const AppAccountSchema = z.object({ id: z.string(), slug: z.string(), status: z.enum(["connected", "pending", "failed"]) });
+const AppAccountSchema = z.object({ id: z.string(), slug: z.string(), status: z.enum(["connected", "pending", "failed"]), alias: z.string().nullable(), name: z.string().nullable() });
+const Alias = z.string().max(40).regex(/^[\w .@+-]*$/, "Use letters, numbers, spaces, dots and dashes");
 const AppSlug = z.string().regex(/^[a-z0-9_-]+$/);
 
 /** Whether a Composio project key is saved on this host; only its last characters are shown. */
@@ -262,11 +263,18 @@ export const appsAccountsRpc = defineRpc({
   output: z.object({ accounts: z.array(AppAccountSchema) }),
 });
 
-/** A Composio-hosted sign-in link for an app. */
+/** A Composio-hosted sign-in link for an app; `alias` names the new account. */
 export const appsConnectRpc = defineRpc({
   name: "bots.apps.connect",
-  input: z.object({ slug: AppSlug }),
+  input: z.object({ slug: AppSlug, alias: Alias.optional() }),
   output: z.object({ url: z.string() }),
+});
+
+/** Names an account (unique per app); "" clears the name. */
+export const appsRenameRpc = defineRpc({
+  name: "bots.apps.rename",
+  input: z.object({ accountId: z.string().min(1).max(200), alias: Alias }),
+  output: z.object({ ok: z.boolean() }),
 });
 
 export const appsDisconnectRpc = defineRpc({

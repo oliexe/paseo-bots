@@ -1,6 +1,6 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
-import { APPS_MCP_NAME, appsPrompt } from "./apps";
+import { APPS_MCP_NAME, appsPrompt, type PromptApp } from "./apps";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
@@ -409,8 +409,8 @@ export interface PromptContext {
   paseoTools: boolean;
   /** Whether chats get the plugin's own tools (bots on the plugin's host). */
   botTools: boolean;
-  /** Names of the connected apps the bot may use; empty when it has none. */
-  apps: string[];
+  /** The connected apps the bot may use; empty when it has none. */
+  apps: PromptApp[];
 }
 
 export interface PromptSection {

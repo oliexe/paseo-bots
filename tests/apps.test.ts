@@ -92,10 +92,21 @@ describe("agent config and prompt", () => {
   });
 
   it("describes the meta-tools when the bot has apps", () => {
-    const sections = promptSections(bot(), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps: ["Gmail", "Slack"] });
+    const apps = [
+      { name: "Gmail", accounts: [] },
+      { name: "Slack", accounts: [] },
+    ];
+    const sections = promptSections(bot(), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps });
     expect(sections.map((section) => section.title)).toEqual(["Persona", "Connected apps"]);
-    expect(sections[1]!.text).toBe(appsPrompt(["Gmail", "Slack"]));
+    expect(sections[1]!.text).toBe(appsPrompt(apps));
     expect(sections[1]!.text).toContain("You may use: Gmail, Slack.");
+    expect(sections[1]!.text).not.toContain('"account"');
+  });
+
+  it("lists an app's accounts by what Composio takes to pick one", () => {
+    const text = appsPrompt([{ name: "Gmail", accounts: [{ account: "work", name: "me@work.com" }, { account: "ca_2", name: null }] }]);
+    expect(text).toContain('You may use: Gmail (accounts: "work" = me@work.com, "ca_2").');
+    expect(text).toContain('pass the one to use as "account"');
   });
 });
 
@@ -107,7 +118,12 @@ describe("Composio client and relay", () => {
   let origin: string;
   const calls: string[] = [];
   const forwarded: { key: string | undefined; body: string }[] = [];
-  let accountsList = [{ id: "ca_1", status: "ACTIVE", toolkit: { slug: "gmail" } }, { id: "ca_2", status: "ACTIVE", toolkit: { slug: "slack" } }];
+  let accountsList: { id: string; status: string; toolkit: { slug: string }; alias?: string | null; data?: Record<string, unknown> }[] = [
+    { id: "ca_1", status: "ACTIVE", toolkit: { slug: "gmail" }, alias: null, data: { displayName: "me@example.com", access_token: "secret-token" } },
+    { id: "ca_2", status: "ACTIVE", toolkit: { slug: "slack" } },
+  ];
+  const sessionBodies: Record<string, unknown>[] = [];
+  const linkBodies: Record<string, unknown>[] = [];
 
   beforeAll(async () => {
     home = await mkdtemp(join(tmpdir(), "paseo-bots-apps-"));
@@ -123,6 +139,7 @@ describe("Composio client and relay", () => {
         if (request.method === "POST" && url.pathname === "/api/v3.1/tool_router/session") {
           const parsed = JSON.parse(body) as { user_id: string };
           expect(parsed.user_id).toMatch(/^paseo_bots_/);
+          sessionBodies.push(parsed);
           return send(200, { session_id: "trs_1", mcp: { type: "http", url: `${origin}/mcp/trs_1` } });
         }
         if (url.pathname === "/api/v3/toolkits") {
@@ -130,7 +147,14 @@ describe("Composio client and relay", () => {
           return send(200, { items: [{ slug: "SLACK", name: "Slack", meta: {} }], next_cursor: null });
         }
         if (url.pathname === "/api/v3.1/connected_accounts" && request.method === "GET") return send(200, { items: accountsList, next_cursor: null });
-        if (url.pathname === "/api/v3.1/tool_router/session/trs_1/link") return send(200, { redirect_url: `${origin}/link/abc` });
+        if (url.pathname === "/api/v3.1/tool_router/session/trs_1/link") {
+          linkBodies.push(JSON.parse(body) as Record<string, unknown>);
+          return send(200, { redirect_url: `${origin}/link/abc` });
+        }
+        if (request.method === "PATCH" && url.pathname === "/api/v3/connected_accounts/ca_1") {
+          accountsList = accountsList.map((account) => (account.id === "ca_1" ? { ...account, alias: (JSON.parse(body) as { alias: string }).alias || null } : account));
+          return send(200, {});
+        }
         if (request.method === "DELETE" && url.pathname === "/api/v3.1/connected_accounts/ca_2") {
           accountsList = accountsList.filter((account) => account.id !== "ca_2");
           return send(200, {});
@@ -173,10 +197,24 @@ describe("Composio client and relay", () => {
       { slug: "gmail", name: "Gmail", description: "Email", logo: "https://logos/gmail", domain: "mail.google.com", noAuth: false },
       { slug: "slack", name: "Slack", description: "", logo: null, domain: null, noAuth: false },
     ]);
-    expect((await composio.accounts({ fresh: true })).accounts.map((account) => [account.slug, account.status])).toEqual([
-      ["gmail", "connected"],
-      ["slack", "connected"],
+    const { accounts } = await composio.accounts({ fresh: true });
+    expect(accounts.map((account) => [account.slug, account.status, account.alias, account.name])).toEqual([
+      ["gmail", "connected", null, "me@example.com"],
+      ["slack", "connected", null, null],
     ]);
+    // Only the display name is read from an account's data; its tokens never leave the server.
+    expect(JSON.stringify(accounts)).not.toContain("secret-token");
+    // Sessions allow several accounts per app.
+    expect(sessionBodies.at(-1)).toMatchObject({ multi_account: { enable: true } });
+  });
+
+  it("names accounts and asks for an alias when adding another one", async () => {
+    const composio = await import("../server/composio");
+    await composio.renameAccount({ accountId: "ca_1", alias: "work" });
+    expect((await composio.accounts({ fresh: true })).accounts[0]).toMatchObject({ alias: "work" });
+    await expect(composio.renameAccount({ accountId: "ca_other", alias: "x" })).rejects.toThrow("isn't connected on this host");
+    await composio.connect({ slug: "gmail", alias: "personal" });
+    expect(linkBodies.at(-1)).toEqual({ toolkit: "gmail", alias: "personal" });
   });
 
   it("returns a sign-in link and disconnects only this host's accounts", async () => {

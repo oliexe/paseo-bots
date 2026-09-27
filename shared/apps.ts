@@ -36,6 +36,15 @@ export interface AppAccount {
   id: string;
   slug: string;
   status: AppStatus;
+  /** The name the user gave it ("work"); bots pick an account by it. */
+  alias: string | null;
+  /** The provider's name for the sign-in, usually an email address. */
+  name: string | null;
+}
+
+/** How an account reads in lists: its alias, its sign-in name, or the app's name. */
+export function accountLabel(account: Pick<AppAccount, "alias" | "name">, appName: string): string {
+  return account.alias ?? account.name ?? appName;
 }
 
 export type AppStatus = "connected" | "pending" | "failed";
@@ -102,11 +111,25 @@ export function appCallRefusal(message: unknown, allowed: readonly string[], con
   return `This bot isn't allowed to use ${names}. Ask the user to switch ${blocked.size === 1 ? "it" : "them"} on under the bot's Access settings in Paseo.`;
 }
 
+/** A connected app as a bot's prompt lists it. */
+export interface PromptApp {
+  name: string;
+  /** Its accounts when it has several: what Composio takes as "account" (the alias, or the id of an unnamed one) and the sign-in name. */
+  accounts: { account: string; name: string | null }[];
+}
+
+/** `Gmail`, or `Gmail (accounts: "work" = me@work.com, "personal")` when it has several. */
+function promptAppName(app: PromptApp): string {
+  if (app.accounts.length < 2) return app.name;
+  return `${app.name} (accounts: ${app.accounts.map((entry) => `"${entry.account}"${entry.name ? ` = ${entry.name}` : ""}`).join(", ")})`;
+}
+
 /** The prompt section for a bot with connected apps. */
-export function appsPrompt(names: readonly string[]): string {
+export function appsPrompt(apps: readonly PromptApp[]): string {
   return [
-    `Connected apps are available through the MCP server "${APPS_MCP_NAME}". You may use: ${names.join(", ")}.`,
+    `Connected apps are available through the MCP server "${APPS_MCP_NAME}". You may use: ${apps.map(promptAppName).join(", ")}.`,
     "Find a tool with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL.",
+    ...(apps.some((app) => app.accounts.length > 1) ? ['When an app has several accounts, pass the one to use as "account" in each COMPOSIO_MULTI_EXECUTE_TOOL entry, and ask the user when it isn\'t clear which one they mean.'] : []),
     "If a task needs an app that isn't connected, use COMPOSIO_MANAGE_CONNECTIONS to get a sign-in link and give it to the user.",
   ].join(" ");
 }

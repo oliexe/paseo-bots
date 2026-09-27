@@ -9,7 +9,7 @@ import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
-import { accounts, catalog, connect, disconnect, removeKey, setKey, status as appsStatus } from "./server/composio";
+import { accounts, catalog, connect, disconnect, removeKey, renameAccount, setKey, status as appsStatus } from "./server/composio";
 import { BotsHost } from "./server/host";
 import { Relay } from "./server/relay";
 import { acceptProposal, dismissProposal, getProposal } from "./server/proposals";
@@ -44,6 +44,7 @@ import {
   appsCatalogRpc,
   appsConnectRpc,
   appsDisconnectRpc,
+  appsRenameRpc,
   appsRemoveKeyRpc,
   appsSetKeyRpc,
   appsStatusRpc,
@@ -123,6 +124,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(appsAccountsRpc, accounts);
   server.handle(appsConnectRpc, connect);
   server.handle(appsDisconnectRpc, disconnect);
+  server.handle(appsRenameRpc, renameAccount);
   server.handle(mountRpc, async ({ botId, agentId }) => {
     const bot = await host.bot(botId);
     return { tools: await relay.mountTools(botId, agentId), apps: bot?.apps.length ? await relay.mountApps(botId) : null };
