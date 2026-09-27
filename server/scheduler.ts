@@ -5,14 +5,13 @@ import { join } from "node:path";
 import type { PaseoApi } from "@getpaseo/client";
 import type { PluginTurnOutcome } from "@getpaseo/plugin/server";
 import { foldText } from "../shared/activity";
-import { EMPTY_LIBRARY, type Bot, type Library, type Routine } from "../shared/bot";
-import { ROUTINE_LABEL, startBotChat } from "../shared/chat";
+import type { Bot, Routine } from "../shared/bot";
+import { ROUTINE_LABEL } from "../shared/chat";
 import { ROUTINE_RUN_CARD, type RoutineRecord, type RoutineRun, type RoutineRunCard } from "../shared/rpc";
 import { decide } from "../shared/routines";
-import { newUuid } from "../shared/uuid";
-import { ensureBotHome, pluginDataPath } from "./bot-home";
+import { pluginDataPath } from "./bot-home";
+import { startChat } from "./chats";
 import type { BotsHost } from "./host";
-import { systemPrompt } from "./prompt";
 import { readBody, type Relay } from "./relay";
 
 const TICK_MS = 30_000;
@@ -151,8 +150,8 @@ export class RoutineScheduler {
   }
 
   async runNow(botId: string, routineId: string): Promise<{ run: RoutineRun }> {
-    const { bot, routine, library } = await this.find(botId, routineId);
-    return { run: await this.run(bot, routine, library, "manual", new Date()) };
+    const { bot, routine } = await this.find(botId, routineId);
+    return { run: await this.run(bot, routine, "manual", new Date()) };
   }
 
   /** The routine's webhook URL, making (or replacing) its secret. */
@@ -186,13 +185,11 @@ export class RoutineScheduler {
     if (run && routine) await this.postCard(routine, run);
   }
 
-  private async find(botId: string, routineId: string): Promise<{ bot: Bot; routine: Routine; library: Library }> {
-    const values = await this.host.values();
-    if (!values) throw new Error("Bot settings are unreadable.");
-    const bot = values.bots.find((entry) => entry.id === botId);
+  private async find(botId: string, routineId: string): Promise<{ bot: Bot; routine: Routine }> {
+    const bot = await this.host.bot(botId);
     const routine = bot?.routines.find((entry) => entry.id === routineId);
     if (!bot || !routine) throw new Error("Routine not found.");
-    return { bot, routine, library: values.library ?? EMPTY_LIBRARY };
+    return { bot, routine };
   }
 
   private async working(agentId: string | null): Promise<boolean> {
@@ -205,26 +202,12 @@ export class RoutineScheduler {
     }
   }
 
-  private async newChat(bot: Bot, routine: Routine, library: Library, prompt: string): Promise<string> {
-    if (!this.paseo) throw new Error("The scheduler isn't connected yet. Open Paseo and try again.");
-    const home = await ensureBotHome({ botId: bot.id });
-    const { systemPrompt: system } = await systemPrompt({ bot, local: true }, library, this.paseo);
-    const agentId = newUuid();
-    return startBotChat(this.paseo, {
-      bot,
-      library,
-      agentId,
-      plugin: { tools: await this.relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await this.relay.mountApps(bot.id) : null },
-      placement: bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root },
-      prompt,
-      systemPrompt: system,
-      title: routine.name,
-      labels: { [ROUTINE_LABEL]: routine.id },
-    });
+  private newChat(bot: Bot, routine: Routine, prompt: string): Promise<string> {
+    return startChat(this.host, this.relay, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id } });
   }
 
   /** Starts a run in a new chat, or records why it didn't; the results chat gets a card either way. */
-  private async run(bot: Bot, routine: Routine, library: Library, trigger: Trigger, due: Date, event?: WebhookEvent): Promise<RoutineRun> {
+  private async run(bot: Bot, routine: Routine, trigger: Trigger, due: Date, event?: WebhookEvent): Promise<RoutineRun> {
     const run = await this.update(async (records) => {
       const record = records[routine.id] ?? { ...EMPTY_RECORD, runs: [] };
       records[routine.id] = record;
@@ -239,7 +222,7 @@ export class RoutineScheduler {
         let busy = 0;
         for (const entry of recent) if (await this.working(entry.agentId)) busy++;
         if (busy >= limit) Object.assign(run, { status: "skipped-busy", endedAt: now });
-        else run.agentId = await this.newChat(bot, routine, library, runPrompt(routine, event));
+        else run.agentId = await this.newChat(bot, routine, runPrompt(routine, event));
       } catch (error) {
         Object.assign(run, { status: "failed", endedAt: now, error: error instanceof Error ? error.message : String(error) });
       }
@@ -272,7 +255,7 @@ export class RoutineScheduler {
         if (bot.archived || bot.hostId) continue;
         for (const routine of bot.routines) {
           const decision = decide(routine, routines[routine.id]?.lastRunAt ?? null, now);
-          if (decision.action === "run") await this.run(bot, routine, values.library ?? EMPTY_LIBRARY, "schedule", decision.due);
+          if (decision.action === "run") await this.run(bot, routine, "schedule", decision.due);
           else if (decision.action === "skip-missed") {
             await this.update((records) => {
               const record = records[routine.id] ?? { ...EMPTY_RECORD, runs: [] };
@@ -318,7 +301,7 @@ export class RoutineScheduler {
       return reply(413, { error: `Send at most ${WEBHOOK_BODY_MAX / 1024} KB.` }), true;
     }
     const event: WebhookEvent = { body, contentType: request.headers["content-type"] ?? null, receivedAt: new Date(now).toISOString() };
-    const run = await this.run(bot, routine, values.library ?? EMPTY_LIBRARY, "webhook", new Date(now), event);
+    const run = await this.run(bot, routine, "webhook", new Date(now), event);
     reply(run.status === "running" ? 202 : run.status === "skipped-busy" ? 429 : 500, { status: run.status, ...(run.agentId ? { chat: run.agentId } : {}), ...(run.error ? { error: run.error } : {}) });
     return true;
   }

@@ -3,6 +3,7 @@ import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSel
 import { useState } from "react";
 import { APPS_MCP_NAME } from "../../shared/apps";
 import { botMcpServers, toolGrants } from "../../shared/bot";
+import { TOOLS_MCP_NAME } from "../../shared/bot-tools";
 import { useAgentProfiles, useBotHost, useHostWorkspaces, usePaseoTools, useProviders } from "../data";
 import type { PanelProps } from "./BotPanel";
 import { InputField, SectionMeta, StatusBadge, TextAreaField } from "./controls";
@@ -34,7 +35,7 @@ export function AccessSection(props: PanelProps) {
 
   const lines = allowText.split("\n").map((line) => line.trim()).filter(Boolean);
   // Only grants for the bot's own servers are sent; Paseo rejects the rest.
-  const active = new Set([...botMcpServers(bot, props.library).map((server) => server.name), ...(host.isLocal && bot.apps.length ? [APPS_MCP_NAME] : [])]);
+  const active = new Set([...botMcpServers(bot, props.library).map((server) => server.name), ...(host.isLocal && bot.apps.length ? [APPS_MCP_NAME] : []), ...(host.isLocal ? [TOOLS_MCP_NAME] : [])]);
   const grants = toolGrants(lines).filter((grant) => active.has(grant.server));
   const ignored = lines.length - grants.length;
 
@@ -227,17 +228,36 @@ export function PermissionsSection({ bot, localHost, onPatch }: PanelProps) {
   const modes = provider?.modes ?? [];
   const current = modes.find((mode) => mode.id === (bot.modeId ?? provider?.defaultModeId));
   return (
-    <SettingsSection title="Approval" info="How much the bot may do before asking you. Also applies to its routines.">
-      <SettingsCard>
-        <SettingsSelect
-          label="Mode"
-          hint={provider ? (current?.description ? `${current.label}: ${current.description}` : undefined) : "Pick a provider under Model to see its modes"}
-          value={provider ? (bot.modeId ?? "") : "Choose a provider first"}
-          disabled={!provider}
-          options={provider ? [{ label: "Default", value: "" }, ...modes.map((mode) => ({ label: mode.label, value: mode.id }))] : []}
-          onValueChange={(value) => onPatch({ modeId: value || null })}
-        />
-      </SettingsCard>
-    </SettingsSection>
+    <>
+      <SettingsSection title="Approval" info="How much the bot may do before asking you. Also applies to its routines.">
+        <SettingsCard>
+          <SettingsSelect
+            label="Mode"
+            hint={provider ? (current?.description ? `${current.label}: ${current.description}` : undefined) : "Pick a provider under Model to see its modes"}
+            value={provider ? (bot.modeId ?? "") : "Choose a provider first"}
+            disabled={!provider}
+            options={provider ? [{ label: "Default", value: "" }, ...modes.map((mode) => ({ label: mode.label, value: mode.id }))] : []}
+            onValueChange={(value) => onPatch({ modeId: value || null })}
+          />
+        </SettingsCard>
+      </SettingsSection>
+      {host.isLocal ? (
+        <SettingsSection title="Other bots" info="Whether this bot may ask other bots on this host for help. Each request starts a chat under the other bot, which works with its own settings.">
+          <SettingsCard>
+            <SettingsSelect
+              label="Contact other bots"
+              hint={bot.contactBots === "ask" ? "You approve each request, when the mode asks before using tools" : bot.contactBots === "allow" ? "Without asking you first" : "Never"}
+              value={bot.contactBots}
+              options={[
+                { label: "Ask first", value: "ask" },
+                { label: "Allowed", value: "allow" },
+                { label: "Off", value: "off" },
+              ]}
+              onValueChange={(contactBots) => onPatch({ contactBots })}
+            />
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
+    </>
   );
 }

@@ -1,7 +1,7 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt } from "./apps";
-import { BOT_TOOLS_PROMPT, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
+import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
@@ -142,6 +142,8 @@ export const BotSchema = z.object({
   skillIds: z.array(z.string()).default([]),
   /** Connected apps (Composio toolkit slugs) this bot may use. */
   apps: z.array(z.string()).default([]),
+  /** Whether the bot may ask other bots for help: after the user approves each request, freely, or not at all. */
+  contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
   routines: z.array(RoutineSchema).default([]),
   /** Working folder. Null means the shared managed folder on the storing host. */
   cwd: z.string().nullable().default(null),
@@ -354,7 +356,7 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
     });
   }
   if (context.apps.length > 0) sections.push({ title: "Connected apps", text: appsPrompt(context.apps) });
-  if (context.botTools) sections.push({ title: "Bot tools", text: BOT_TOOLS_PROMPT });
+  if (context.botTools) sections.push({ title: "Bot tools", text: botToolsPrompt(bot.contactBots !== "off") });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });
   return sections;
 }
@@ -421,8 +423,9 @@ export function buildAgentConfig(bot: Bot, library: Library, model: string, syst
     ...(plugin.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
     ...(plugin.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
   };
-  // The plugin's quiet tools (reading, or proposing what the user confirms) run without prompts.
-  const quiet = plugin.tools ? QUIET_TOOLS.map((tool) => `${TOOLS_MCP_NAME}/${tool}`) : [];
+  // The plugin's quiet tools (reading, or proposing what the user confirms) run without prompts;
+  // asking another bot does too once the user allowed it for this bot.
+  const quiet = plugin.tools ? [...QUIET_TOOLS, ...(bot.contactBots === "allow" ? ["ask_bot"] : [])].map((tool) => `${TOOLS_MCP_NAME}/${tool}`) : [];
   // Paseo rejects the whole request when a grant names a server it doesn't carry
   // (a server switched off for the bot, or Paseo's own, which is added later),
   // and when the provider can't take exact grants at all.

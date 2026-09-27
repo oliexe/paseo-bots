@@ -53,7 +53,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
     sections: [
       { id: "access", label: "Access", icon: "KeyRound", rows: ["Working folder", "Paseo tools", "MCP servers", "Connected apps", "Always allowed"], keywords: "folder directory path mcp tools apps composio gmail slack grants library" },
       { id: "model", label: "Model", icon: "Sparkles", rows: ["Host", "Agent profile", "Provider", "Model", "Thinking"], keywords: "effort reasoning" },
-      { id: "permissions", label: "Permissions", icon: "Shield", rows: ["Mode"], keywords: "approval permissions ask auto" },
+      { id: "permissions", label: "Permissions", icon: "Shield", rows: ["Mode", "Contact other bots"], keywords: "approval permissions ask auto bots contact delegate" },
     ],
   },
   {

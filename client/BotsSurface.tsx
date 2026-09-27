@@ -62,6 +62,7 @@ function blankBot(provider: string, template?: BotTemplate): Bot {
     alwaysAllow: [],
     skillIds: [],
     apps: [],
+    contactBots: "ask",
     routines: [],
     cwd: null,
     pinned: false,

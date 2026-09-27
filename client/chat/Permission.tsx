@@ -3,7 +3,8 @@ import type { PaseoAgent, PaseoAgentPermissionResponse, PaseoApi } from "@getpas
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import type { ToolCallDetail } from "../../shared/tools";
+import { botToolName } from "../../shared/bot-tools";
+import { humanizeToolName, type ToolCallDetail } from "../../shared/tools";
 import { errorText } from "../native";
 import { ui } from "../typography";
 import { ToolCallDetailsContent } from "./stream/details";
@@ -78,7 +79,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     void respond(action.behavior === "allow" ? { behavior: "allow", selectedActionId: action.id } : { behavior: "deny", selectedActionId: action.id, message: "Denied by user" });
   };
 
-  const title = isPlan ? "Plan" : (permission.title ?? permission.name ?? "Permission Required");
+  const title = isPlan ? "Plan" : (permission.title ?? permissionTitle(permission) ?? "Permission Required");
   const description = permission.description ?? "";
 
   const footer = (
@@ -114,4 +115,12 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
       {footer}
     </View>
   );
+}
+
+/** "Ask Helper" for a request to another bot; other tools by their readable name. */
+function permissionTitle(permission: Permission): string | null {
+  if (!permission.name) return null;
+  const bot = permission.input?.bot;
+  if (botToolName(permission.name) === "ask_bot" && typeof bot === "string" && bot.trim()) return `Ask ${bot.trim()}`;
+  return humanizeToolName(permission.name);
 }

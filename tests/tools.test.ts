@@ -109,7 +109,7 @@ describe("the bots MCP server", () => {
     const { acceptProposal, dismissProposal, getProposal } = await import("../server/proposals");
     const { librarySkillPath } = await import("../server/library");
     const host = fakeHost([makeBot({ id: "bot-a" })]);
-    const caller = { bot: makeBot({ id: "bot-a" }), agentId: newUuid(), host };
+    const caller = { bot: makeBot({ id: "bot-a" }), agentId: newUuid(), host, relay: null as never };
     const reply = await proposeSkill.run({ name: "Weekly Report!", description: "Use for the\nweekly report", instructions: "1. Collect PRs." }, caller);
     const id = proposalIdOf({ name: "bots.propose_skill", status: "completed", detail: { output: reply } })!;
     expect(id).toMatch(/^p-[a-z0-9]{10}$/);

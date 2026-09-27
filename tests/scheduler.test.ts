@@ -77,7 +77,7 @@ describe("the routine scheduler", () => {
     scheduler.stop();
     let started = 0;
     const prompts: string[] = [];
-    (scheduler as unknown as { newChat: (...args: unknown[]) => Promise<string> }).newChat = async (_bot, _routine, _library, prompt) => {
+    (scheduler as unknown as { newChat: (...args: unknown[]) => Promise<string> }).newChat = async (_bot, _routine, prompt) => {
       prompts.push(prompt as string);
       return `run-chat-${++started}`;
     };

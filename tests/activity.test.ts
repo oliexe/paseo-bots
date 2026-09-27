@@ -140,7 +140,7 @@ describe("memory journal, daily log and search_chats", () => {
     const { listLogDays, recentLogEntries } = await import("../server/memory");
     const { searchChats } = await import("../server/tools/chats");
     const host = fakeHost([makeBot({ id: "bot-s", name: "Scout" })]);
-    host.chatOf = async (agentId: string) => (agentId === "other-agent" ? null : { botId: "bot-s", title: "Invoices", routineId: null });
+    host.chatOf = async (agentId: string) => (agentId === "other-agent" ? null : { botId: "bot-s", title: "Invoices", routineId: null, labels: {} });
     const scheduler = { finished: async () => {} };
     const journal = new MemoryJournal();
     const agent = { id: newUuid(), workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/", title: null };
@@ -173,7 +173,7 @@ describe("memory journal, daily log and search_chats", () => {
         ref: (id: string) => ({ timeline: { refetch: async () => ({ entries: id === past.id ? entries : [{ item: { type: "user_message", text: "q3 invoices again" }, timestamp: new Date().toISOString() }] }) } }),
       },
     } as never);
-    const caller = { bot: makeBot({ id: "bot-s" }), agentId: current, host };
+    const caller = { bot: makeBot({ id: "bot-s" }), agentId: current, host, relay: null as never };
     const found = await searchChats.run({ query: "q3 invoices" }, caller);
     expect(listed[0]).toMatchObject({ filter: { labels: { "paseo-bots.bot": "bot-s" }, includeArchived: true } });
     expect(found).toContain("Memory:\n- [memory/log/");

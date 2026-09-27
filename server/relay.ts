@@ -165,7 +165,7 @@ export class Relay {
     const bot = await this.host.bot(botId);
     const id = (parsed.message.id as string | number | undefined) ?? null;
     if (!bot || bot.archived) return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "This bot no longer exists." } });
-    const answer = await answerMcp(parsed.message, this.tools, { bot, agentId, host: this.host });
+    const answer = await answerMcp(parsed.message, this.tools, { bot, agentId, host: this.host, relay: this });
     if (!answer) return response.writeHead(202).end();
     json(response, 200, answer);
   }

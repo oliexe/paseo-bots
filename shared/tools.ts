@@ -73,7 +73,8 @@ function paseoLeafName(name: string): string | null {
   return normalized.split(".").slice(1).join(".");
 }
 
-function humanizeToolName(name: string): string {
+/** A tool's name as people read it: Paseo's and this plugin's tools get plain names, others stay as they are. */
+export function humanizeToolName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return name;
   // Paseo's own tools and this plugin's read as plain names ("Create agent", "Search chats").

@@ -56,15 +56,16 @@ export class BotsHost {
 
   private readonly chatBots = new Map<string, string | null>();
 
-  /** A bot chat's bot, its current title (Paseo names chats after their first message) and routine; null for other agents. */
-  async chatOf(agentId: string): Promise<{ botId: string; title: string | null; routineId: string | null } | null> {
+  /** A bot chat's bot, its current title (Paseo names chats after their first message), routine and labels; null for other agents. */
+  async chatOf(agentId: string): Promise<{ botId: string; title: string | null; routineId: string | null; labels: Record<string, string> } | null> {
     if (this.chatBots.get(agentId) === null) return null;
     const snapshot = await this.paseo?.agents.ref(agentId).refresh().catch(() => null);
     if (!snapshot) return null;
     const botId = snapshot.agent.labels?.[BOT_LABEL] ?? null;
     if (this.chatBots.size > 500) this.chatBots.clear();
     this.chatBots.set(agentId, botId);
-    return botId ? { botId, title: snapshot.agent.title ?? null, routineId: snapshot.agent.labels?.[ROUTINE_LABEL] ?? null } : null;
+    const labels = snapshot.agent.labels ?? {};
+    return botId ? { botId, title: snapshot.agent.title ?? null, routineId: labels[ROUTINE_LABEL] ?? null, labels } : null;
   }
 
   /** The bot a chat belongs to, from the label it was created with; null for other agents. */
