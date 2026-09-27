@@ -22,7 +22,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 paseo plugin install npm:paseo-bots
 ```
 
-Requires Paseo 0.9.2 or later.
+Or paste `npm:paseo-bots` into **Settings → Plugins → Plugin source** in Paseo. Requires Paseo 0.9.2 or later.
 
 ## Connected apps
 
