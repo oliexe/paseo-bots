@@ -431,6 +431,16 @@ function sameEntry(a: MergeableEntry, b: MergeableEntry): boolean {
  * first seq: a re-sent entry (a message still streaming, a tool that finished)
  * replaces the old one, unchanged ones keep their identity.
  */
+/** Rows whose text contains `needle` (lower-case), by index: what the user and the bot wrote. */
+export function findRows(items: readonly StreamLayoutItem[], needle: string): number[] {
+  if (!needle) return [];
+  return items.flatMap((item, index) => {
+    const row = item.row;
+    const text = row.kind === "user" || row.kind === "assistant" || row.kind === "speak" ? row.text : "";
+    return text.toLowerCase().includes(needle) ? [index] : [];
+  });
+}
+
 export function mergeEntries<T extends MergeableEntry>(current: readonly T[], incoming: readonly T[]): T[] {
   if (incoming.length === 0) return current as T[];
   const bySeq = new Map<number, T>();

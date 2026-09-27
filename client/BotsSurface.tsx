@@ -11,8 +11,9 @@ import { randomSeed } from "../shared/avatar";
 import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library, type Preset } from "../shared/bot";
 import { saveTeam, withoutBot } from "../shared/groups";
 import { addImportedBots } from "../shared/library";
-import { startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
+import { displayTitle, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
+import { chatTranscript } from "../shared/transcript";
 import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
 import type { BotTemplate } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
@@ -34,7 +35,7 @@ import { useKeyboardHeight } from "./keyboard";
 import { newMessageId } from "./sent-attachments";
 import { BotPanel, type SectionId } from "./panel/BotPanel";
 import { useBotSettings } from "./useBotSettings";
-import { useChat } from "./useChat";
+import { fullTimeline, useChat } from "./useChat";
 import { newUuid } from "../shared/uuid";
 import { ui, useTypeScale } from "./typography";
 
@@ -448,6 +449,19 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         pinned: context.pinned,
         onCopyPath: () => (chat.cwd ? copy(chat.cwd, "Path copied") : toast.error("Chat path not available")),
         onCopyId: () => copy(chat.id, "Chat ID copied"),
+        onCopyTranscript: async () => {
+          if (!botHost.api) {
+            toast.error("Host is not connected");
+            return;
+          }
+          try {
+            const entries = await fullTimeline(botHost.api, chat.id);
+            await copyText(chatTranscript({ title: displayTitle(chat.title), botName: bot.name, entries, exportedAt: new Date() }));
+            toast.show("Transcript copied", { variant: "success" });
+          } catch (error) {
+            toast.error(`Couldn't copy the transcript: ${errorText(error)}`);
+          }
+        },
         onTogglePin: () =>
           updateUi((current) =>
             context.pinned ? unpin(current) : { ...current, pinnedChats: [...current.pinnedChats, { botId: bot.id, chatId: chat.id }] },

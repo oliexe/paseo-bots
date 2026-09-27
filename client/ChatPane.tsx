@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View, type LayoutRectangle } from "react-native";
 import type { toWire } from "../shared/attachments";
 import type { Bot } from "../shared/bot";
@@ -12,6 +12,7 @@ import type { BotHost } from "./data";
 import { nativeTokens, useHover } from "./native";
 import { ui } from "./typography";
 import { measureAnchor } from "./ui/Menu";
+import { listenForFind } from "./web";
 import type { ChatState } from "./useChat";
 
 type Colors = PluginTheme["colors"];
@@ -48,6 +49,11 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
   const running = chat.agent?.status === "running" || chat.agent?.status === "initializing";
   const empty = chat.entries.length === 0 && !chat.loading && !chat.error && (chat.agent?.pendingPermissions.length ?? 0) === 0;
   const title = chatId ? displayTitle(chat.agent?.title) : "New chat";
+  const canFind = chatId !== null && !empty;
+  const [findOpen, setFindOpen] = useState(false);
+  useEffect(() => setFindOpen(false), [chatId]);
+  // ⌘F / Ctrl+F finds in the open chat on the desktop.
+  useEffect(() => (canFind ? listenForFind(() => setFindOpen(true)) : undefined), [canFind]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
@@ -61,6 +67,7 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
         onBack={onBack}
         onMenu={onBotMenu}
         onTogglePanel={onTogglePanel}
+        onFind={canFind ? () => setFindOpen((open) => !open) : undefined}
       />
       {chatId === null || empty ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24 }}>
@@ -71,7 +78,7 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
           ) : null}
         </View>
       ) : (
-        <ChatStream key={chatId} colors={colors} chat={chat} api={host.api} agentId={chatId} compact={layout.compact} platform={layout.platform} typeVersion={typeVersion} onOpenChat={onOpenChat} voice={bot.voice} {...(host.isLocal ? { botId: bot.id } : {})} />
+        <ChatStream key={chatId} colors={colors} chat={chat} api={host.api} agentId={chatId} compact={layout.compact} platform={layout.platform} typeVersion={typeVersion} onOpenChat={onOpenChat} voice={bot.voice} findOpen={findOpen} onCloseFind={() => setFindOpen(false)} {...(host.isLocal ? { botId: bot.id } : {})} />
       )}
       <Composer colors={colors} bot={bot} host={host} agentId={chatId} agent={chat.agent} running={running} layout={layout} keyboardOpen={keyboardOpen} onStart={onStart} />
     </View>
@@ -91,13 +98,15 @@ interface HeaderProps {
   onBack?(): void;
   onMenu(anchor: LayoutRectangle | null): void;
   onTogglePanel(): void;
+  /** Opens or closes find in chat; absent while there's nothing to find. */
+  onFind?: () => void;
 }
 
 // Paseo's workspace header (components/headers/screen-header.tsx, workspace-screen.tsx):
 // 36 high on desktop with the title (weight 300) and project name inline; 56 on phones
 // with the title (weight 400) over a 12pt subtitle row. Icon buttons are 26 (desktop) or
 // 32 (phones) with 16pt glyphs; the back arrow is Paseo's BackHeader (ArrowLeft 20, 44pt box).
-function Header({ colors, title, subtitle, hostBadge, compact, panelOpen, onBack, onMenu, onTogglePanel }: HeaderProps) {
+function Header({ colors, title, subtitle, hostBadge, compact, panelOpen, onBack, onMenu, onTogglePanel, onFind }: HeaderProps) {
   const tokens = nativeTokens(colors);
   const menuButton = useRef<View>(null);
   const openMenu = () => void measureAnchor(menuButton).then(onMenu);
@@ -149,6 +158,7 @@ function Header({ colors, title, subtitle, hostBadge, compact, panelOpen, onBack
           <HeaderButton colors={colors} compact icon="Ellipsis" label="Bot actions" onPress={openMenu} />
         </View>
       ) : null}
+      {onFind ? <HeaderButton colors={colors} compact={compact} icon="Search" label="Find in chat" onPress={onFind} /> : null}
       {/* On desktop the open panel owns its close button, so the toggle hides (workspace-explorer-toggle.tsx). */}
       {compact || !panelOpen ? (
         <HeaderButton colors={colors} compact={compact} icon="PanelRight" label="Show bot settings" expanded={panelOpen} onPress={onTogglePanel} />

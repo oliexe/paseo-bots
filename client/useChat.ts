@@ -26,6 +26,21 @@ export interface ChatState {
 /** Paseo's TIMELINE_FETCH_PAGE_SIZE (timeline/timeline-fetch-policy.ts). */
 export const TIMELINE_PAGE_SIZE = 40;
 
+/** A chat's whole timeline, oldest first, page by page (a transcript needs all of it). */
+export async function fullTimeline(api: PaseoApi, agentId: string): Promise<ChatEntry[]> {
+  const handle = api.agents.ref(agentId);
+  let page = await handle.timeline.refetch({ direction: "tail", projection: "projected", limit: 200 });
+  if (page.error) throw new Error(page.error);
+  let entries = page.entries;
+  for (let pages = 0; pages < 100 && page.hasOlder && page.startCursor; pages++) {
+    page = await handle.timeline.refetch({ direction: "before", cursor: page.startCursor, projection: "projected", limit: 200 });
+    if (page.error) throw new Error(page.error);
+    if (page.entries.length === 0) break;
+    entries = mergeEntries(entries, page.entries);
+  }
+  return entries;
+}
+
 const noop = () => {};
 const EMPTY: ChatState = { entries: [], agent: null, loading: false, error: null, hasOlder: false, loadingOlder: false, retrying: false, loadOlder: noop, retry: noop };
 

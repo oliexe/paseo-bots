@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, deriveTurnTiming, gapBetween, layoutStream, mergeEntries, retainLayout, type StreamEntry, type StreamRow } from "../client/chat/stream/model";
+import { buildRows, deriveTurnTiming, findRows, gapBetween, layoutStream, mergeEntries, retainLayout, type StreamEntry, type StreamRow } from "../client/chat/stream/model";
 import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
@@ -278,5 +278,25 @@ describe("question forms", () => {
     expect(resolveDismissLabel(questions)).toBe("Dismiss");
     expect(shouldSubmitEmptyOnDismiss(questions)).toBe(false);
     expect(parseQuestionFormQuestions({ questions: [{ question: 1 }] })).toBeNull();
+  });
+});
+
+describe("find in chat", () => {
+  it("matches what the user and the bot wrote, not tools or thoughts", () => {
+    const items = layoutStream(
+      buildRows(
+        [
+          entry({ type: "user_message", text: "Where is the Invoice?" }, { seqStart: 1 }),
+          entry({ type: "reasoning", text: "invoice lookup" }, { seqStart: 2 }),
+          entry({ type: "tool_call", name: "invoice_search", status: "completed", callId: "c1" }, { seqStart: 3 }),
+          entry({ type: "assistant_message", text: "The invoice is in Drive." }, { seqStart: 4 }),
+        ],
+        false,
+      ),
+      false,
+    ).items;
+    const matched = findRows(items, "invoice").map((index) => items[index]!.row.kind);
+    expect(matched).toEqual(["user", "assistant"]);
+    expect(findRows(items, "")).toEqual([]);
   });
 });

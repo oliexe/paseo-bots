@@ -183,6 +183,35 @@ export function domNode(ref: unknown): DomElement | null {
   return inner && typeof (inner as DomElement).addEventListener === "function" ? (inner as DomElement) : null;
 }
 
+/** Scrolls a React Native view's element to the middle of its scroller (web; list estimates can be off for tall rows). */
+export function scrollIntoView(ref: unknown): void {
+  const node = domNode(ref) as (DomElement & { scrollIntoView?(options: { block: string; behavior: string }): void }) | null;
+  node?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+}
+
+/** Calls `onFind` for ⌘F / Ctrl+F instead of the browser's own find. */
+export function listenForFind(onFind: () => void): () => void {
+  const target = globalThis as { addEventListener?(type: "keydown", listener: (event: KeyEventLike) => void, capture: boolean): void; removeEventListener?(type: "keydown", listener: (event: KeyEventLike) => void, capture: boolean): void };
+  if (!web || !target.addEventListener) return () => {};
+  const handler = (event: KeyEventLike) => {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f" || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onFind();
+  };
+  target.addEventListener("keydown", handler, true);
+  return () => target.removeEventListener?.("keydown", handler, true);
+}
+interface KeyEventLike {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  preventDefault(): void;
+  stopPropagation(): void;
+}
+
 // ---------------------------------------------------------------- clipboard images
 
 function clipboardFiles(data: DataTransferLike | null | undefined): DomFile[] {

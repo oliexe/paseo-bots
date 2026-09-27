@@ -23,7 +23,8 @@ import { canSpeak, speak, stopSpeaking } from "../speech";
 import { ui } from "../typography";
 import type { ChatState } from "../useChat";
 import { PermissionCard } from "./Permission";
-import { buildRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
+import { FindBar } from "./FindBar";
+import { buildRows, findRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
 
@@ -53,6 +54,9 @@ export interface ChatStreamProps {
   botId?: string;
   /** How the bot's turns are read aloud. */
   voice?: BotVoice;
+  /** Whether the find bar is open. */
+  findOpen?: boolean;
+  onCloseFind?(): void;
 }
 
 /** Whether a turn is running, as the stream shows it. */
@@ -60,7 +64,7 @@ export function isTurnRunning(chat: ChatState): boolean {
   return chat.agent?.status === "running" || chat.agent?.status === "initializing";
 }
 
-export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId, voice }: ChatStreamProps) {
+export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId, voice, findOpen = false, onCloseFind }: ChatStreamProps) {
   const running = isTurnRunning(chat);
   const inverted = platform !== "web";
   const list = useRef<NativeFlatList<StreamLayoutItem>>(null);
@@ -153,6 +157,64 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
     lastKey.current = key;
   }, [layout.items, scrollToBottom]);
 
+  // ---------------------------------------------------------------- find
+
+  const [query, setQuery] = useState("");
+  /** The current match's row key. */
+  const [found, setFound] = useState<string | null>(null);
+  /** Pages loaded so far looking for an older match; 0 when not looking. */
+  const [olderPages, setOlderPages] = useState(0);
+  const needle = findOpen ? query.trim().toLowerCase() : "";
+  const matches = useMemo(() => findRows(layout.items, needle), [layout.items, needle]);
+  const position = matches.findIndex((index) => layout.items[index]?.row.key === found);
+
+  const reveal = (itemIndex: number) => {
+    const item = layout.items[itemIndex];
+    if (!item) return;
+    setFound(item.row.key);
+    // A first jump near the row; on the web the row then centres itself once it renders.
+    list.current?.scrollToIndex({ index: inverted ? layout.items.length - 1 - itemIndex : itemIndex, animated: inverted, viewPosition: 0.3 });
+  };
+
+  // A new search starts at the newest match.
+  useEffect(() => {
+    setOlderPages(0);
+    const newest = matches[matches.length - 1];
+    if (newest === undefined) setFound(null);
+    else reveal(newest);
+  }, [needle]);
+
+  useEffect(() => {
+    if (findOpen) return;
+    setQuery("");
+    setFound(null);
+  }, [findOpen]);
+
+  const findOlder = () => {
+    if (position > 0) reveal(matches[position - 1]!);
+    else if (needle && chat.hasOlder && !olderPages) {
+      setOlderPages(1);
+      chat.loadOlder();
+    }
+  };
+  const findNewer = () => {
+    if (position >= 0 && position < matches.length - 1) reveal(matches[position + 1]!);
+  };
+
+  // Once an older page arrives, go to the closest older match, or look one page further (ten at most).
+  useEffect(() => {
+    if (!olderPages || chat.loadingOlder) return;
+    const current = layout.items.findIndex((item) => item.row.key === found);
+    const earlier = matches.filter((index) => current === -1 || index < current);
+    if (earlier.length) {
+      setOlderPages(0);
+      reveal(earlier[earlier.length - 1]!);
+    } else if (chat.hasOlder && olderPages < 10) {
+      setOlderPages(olderPages + 1);
+      chat.loadOlder();
+    } else setOlderPages(0);
+  }, [olderPages, chat.loadingOlder, layout.items]);
+
   // ---------------------------------------------------------------- rows
 
   const context = useMemo<RowContext>(
@@ -168,8 +230,9 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       agentId,
       botId: botId ?? null,
       voice: canSpeak && voice ? voice.name : undefined,
+      highlightKey: findOpen ? found : null,
     }),
-    [colors, compact, cwd, onOpenChat, agentId, botId, voice],
+    [colors, compact, cwd, onOpenChat, agentId, botId, voice, findOpen, found],
   );
 
   // A bot that reads its replies aloud reads each one as it finishes, while its chat is open.
@@ -208,6 +271,19 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
+      {findOpen ? (
+        <FindBar
+          colors={colors}
+          query={query}
+          position={position + 1}
+          total={matches.length}
+          busy={olderPages > 0}
+          onQuery={setQuery}
+          onOlder={findOlder}
+          onNewer={findNewer}
+          onClose={() => onCloseFind?.()}
+        />
+      ) : null}
       <FlatList
         ref={list}
         data={data}
@@ -227,6 +303,11 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
         initialNumToRender={12}
         windowSize={10}
         removeClippedSubviews={false}
+        onScrollToIndexFailed={({ index, averageItemLength }) => {
+          // Rows outside the rendered window: jump near it, then land on it once it renders.
+          list.current?.scrollToOffset({ offset: averageItemLength * index, animated: false });
+          setTimeout(() => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }), 100);
+        }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={platform === "ios" ? "interactive" : "on-drag"}
         showsVerticalScrollIndicator
@@ -248,7 +329,7 @@ const StreamItem = memo(function StreamItem({ item, context, typeVersion }: { it
   return (
     <>
       {/* Rows read Paseo's font sizes while rendering; a size change remounts them. */}
-      <RowFrame key={typeVersion} gapBelow={item.gapBelow}>
+      <RowFrame key={typeVersion} gapBelow={item.gapBelow} highlight={context.highlightKey === item.row.key ? context.colors.surface2 : undefined}>
         <RowContent row={item.row} context={context} compactBottom={item.compactBottom} />
       </RowFrame>
       {item.footer ? <CompletedTurnFooter colors={context.colors} footer={item.footer} voice={context.voice} /> : null}

@@ -287,6 +287,7 @@ export interface ChatMenuActions {
   pinned: boolean;
   onCopyPath(): void;
   onCopyId(): void;
+  onCopyTranscript(): Promise<void>;
   onTogglePin(): void;
   /** Present in manual order; undefined at an edge. `null` hides the pair (pinned chats, activity order). */
   move: { up?: () => void; down?: () => void } | null;
@@ -299,6 +300,7 @@ export function chatMenuEntries(actions: ChatMenuActions): MenuEntry[] {
   const entries: MenuEntry[] = [
     { label: "Copy path", icon: "Copy", onSelect: actions.onCopyPath },
     { label: "Copy chat ID", icon: "Copy", onSelect: actions.onCopyId },
+    { label: "Copy transcript", icon: "FileText", pendingLabel: "Copying...", onSelect: actions.onCopyTranscript },
     { label: actions.pinned ? "Unpin" : "Pin to top", icon: actions.pinned ? "PinOff" : "Pin", onSelect: actions.onTogglePin },
   ];
   if (actions.move) {

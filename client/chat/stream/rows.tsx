@@ -11,6 +11,7 @@ import { AttachmentPill } from "../../AttachmentPill";
 import { Markdown } from "../../Markdown";
 import { CONTENT_MAX_WIDTH, nativeTokens } from "../../native";
 import { canSpeak } from "../../speech";
+import { scrollIntoView } from "../../web";
 import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
 import type { StreamRow, TurnFooterInfo } from "./model";
@@ -40,11 +41,21 @@ export interface RowContext {
   botId: string | null;
   /** The bot's device voice for reading turns aloud; undefined hides the button. */
   voice?: string | null;
+  /** The row of the current find match. */
+  highlightKey?: string | null;
 }
 
 /** One stream item, laid out like Paseo's StreamItemWrapper (820 wide, 8 inset). */
-export function RowFrame({ gapBelow, children }: { gapBelow: number; children: ReactNode }) {
-  return <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center", paddingHorizontal: 8, marginBottom: gapBelow }}>{children}</View>;
+export function RowFrame({ gapBelow, highlight, children }: { gapBelow: number; /** Background of the current find match, which scrolls into view. */ highlight?: string; children: ReactNode }) {
+  const ref = useRef<View>(null);
+  useEffect(() => {
+    if (highlight) scrollIntoView(ref.current);
+  }, [highlight]);
+  return (
+    <View ref={ref} style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center", paddingHorizontal: 8, marginBottom: gapBelow, ...(highlight ? { backgroundColor: highlight, borderRadius: 8 } : {}) }}>
+      {children}
+    </View>
+  );
 }
 
 export function RowContent({ row, context, compactBottom }: { row: StreamRow; context: RowContext; compactBottom: boolean }) {
