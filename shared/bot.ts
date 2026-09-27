@@ -192,6 +192,35 @@ export type BotListUi = z.infer<typeof BotListUiSchema>;
 
 export const DEFAULT_BOT_LIST_UI: BotListUi = BotListUiSchema.parse({});
 
+/** What a new bot starts with, from the plugin's settings. An empty provider picks one that's ready. */
+export const BotDefaultsSchema = z.object({
+  provider: z.string().default(""),
+  model: z.string().nullable().default(null),
+  modeId: z.string().nullable().default(null),
+  thinkingOptionId: z.string().nullable().default(null),
+  contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
+});
+export type BotDefaults = z.infer<typeof BotDefaultsSchema>;
+export const DEFAULT_BOT_DEFAULTS: BotDefaults = BotDefaultsSchema.parse({});
+
+/**
+ * A bot saved as a starting point, as OpenMausBot's presets: who it is and how
+ * it works (instructions, playbooks, skills). Access (MCP servers, connected
+ * apps, folder), routines and the agent come from the defaults instead.
+ */
+export const PresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  title: z.string().default(""),
+  description: z.string().default(""),
+  avatar: BotAvatarSchema,
+  soul: z.string().default(""),
+  playbooks: z.array(PlaybookSchema).default([]),
+  skillIds: z.array(z.string()).default([]),
+  createdAt: z.string(),
+});
+export type Preset = z.infer<typeof PresetSchema>;
+
 export const botSettings = defineSettings({
   id: "bots",
   scope: "host",
@@ -202,6 +231,8 @@ export const botSettings = defineSettings({
     /** Optional so documents written before it existed (and by older clients) stay valid. */
     ui: BotListUiSchema.optional(),
     library: LibrarySchema.optional(),
+    defaults: BotDefaultsSchema.optional(),
+    presets: z.array(PresetSchema).optional(),
   }),
   migrate: (values, fromVersion) => {
     let migrated = values;
@@ -303,6 +334,35 @@ export function pushHistory(history: readonly HistoryEntry[], previous: Bot, now
 
 export function newBotId(): string {
   return "bot-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+export function newPresetId(): string {
+  return "pr-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+export function presetFromBot(bot: Bot, now: string = new Date().toISOString()): Preset {
+  return { id: newPresetId(), name: bot.name, title: bot.title, description: bot.description, avatar: bot.avatar, soul: bot.soul, playbooks: bot.playbooks, skillIds: bot.skillIds, createdAt: now };
+}
+
+/** "Inbox", or "Inbox 2", "Inbox 3"... when a bot already has the name (OpenMausBot's import naming). */
+export function numberedName(name: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(name)) return name;
+  for (let n = 2; ; n++) if (!taken.has(`${name} ${n}`)) return `${name} ${n}`;
+}
+
+/** A new bot's agent settings from the defaults; `provider` is the one to use when the defaults leave it open. */
+export function applyDefaults(bot: Bot, defaults: BotDefaults, provider: string): Bot {
+  const chosen = defaults.provider || provider;
+  // A model, mode or thinking level only means something for the provider it was picked for.
+  const same = !!defaults.provider;
+  return {
+    ...bot,
+    provider: chosen,
+    model: same ? defaults.model : null,
+    modeId: same ? defaults.modeId : null,
+    thinkingOptionId: same ? defaults.thinkingOptionId : null,
+    contactBots: defaults.contactBots,
+  };
 }
 
 export function newPlaybookId(): string {

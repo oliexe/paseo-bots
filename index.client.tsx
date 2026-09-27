@@ -4,6 +4,7 @@ import { BotsSurface } from "./client/BotsSurface";
 import { ProposalCard } from "./client/chat/stream/ProposalCard";
 import { RoutineRunCard } from "./client/chat/stream/RoutineRunCard";
 import { requestIntent } from "./client/intent";
+import { BotsSettings } from "./client/settings/BotsSettings";
 import { BOT_LABEL } from "./shared/bot";
 import { proposalIdOf } from "./shared/proposals";
 import { helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
@@ -14,6 +15,7 @@ export default function contribute(client: PluginClientContext) {
   void client.rpc(helloRpc, {}).catch(() => {});
   client.addSurface("bots", BotsSurface);
   client.addSidebarItem({ id: "bots", title: "Bots", icon: "Bot", surface: "bots" });
+  client.addSettingsScreen({ id: "bots", title: "Bots", icon: "Bot", Component: BotsSettings });
   client.addCommandCenterItem({
     id: "open-bots",
     title: "Open Bots",

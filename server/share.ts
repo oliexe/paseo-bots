@@ -1,7 +1,7 @@
 import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
-import { BotMcpServerSchema, BotSchema, botMcpServers, botSkills, newRoutineId, type Bot, type BotMcpServer, type Library } from "../shared/bot";
+import { BotMcpServerSchema, BotSchema, botMcpServers, botSkills, newBotId, newRoutineId, type Bot, type BotMcpServer, type Library } from "../shared/bot";
 import { sanitizeSkillName } from "../shared/skills";
 import { botDataPath } from "./bot-home";
 import { librarySkillPath, type ImportedSkill } from "./library";
@@ -184,4 +184,36 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     updatedAt: now,
   };
   return { bot, skills, mcpServers: parsed.mcpServers };
+}
+
+// ---------------------------------------------------------------- team files
+
+const TEAM_FORMAT = "paseo-bots-team";
+const MAX_TEAM = 50;
+
+const TeamSchema = z.object({ format: z.literal(TEAM_FORMAT), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM) });
+
+export function isTeamFile(json: string): boolean {
+  try {
+    return (JSON.parse(json) as { format?: unknown }).format === TEAM_FORMAT;
+  } catch {
+    return false;
+  }
+}
+
+/** Several bots in one file, each as its own bot export. */
+export async function exportTeam({ bots, includeMemory }: { bots: Bot[]; includeMemory: boolean }, library: Library) {
+  const entries: unknown[] = [];
+  for (const bot of bots.slice(0, MAX_TEAM)) entries.push(JSON.parse((await exportBot({ bot, includeMemory }, library)).json));
+  return { json: JSON.stringify({ format: TEAM_FORMAT, version: 1, bots: entries }, null, 2) };
+}
+
+/** Imports every bot of a team file (or a single bot file) as new bots. */
+export async function importTeam({ json }: { json: string }) {
+  if (!isTeamFile(json)) return { bots: [await importBot({ botId: newBotId(), json })] };
+  const parsed = TeamSchema.safeParse(JSON.parse(json));
+  if (!parsed.success) throw new Error("That team file is damaged or from a newer version.");
+  const bots = [];
+  for (const entry of parsed.data.bots) bots.push(await importBot({ botId: newBotId(), json: JSON.stringify(entry) }));
+  return { bots };
 }

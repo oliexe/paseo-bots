@@ -201,6 +201,22 @@ export const importBotRpc = defineRpc({
   output: z.object({ bot: BotSchema, skills: z.array(ImportedSkillSchema), mcpServers: z.array(BotMcpServerSchema) }),
 });
 
+const ImportedBotSchema = z.object({ bot: BotSchema, skills: z.array(ImportedSkillSchema), mcpServers: z.array(BotMcpServerSchema) });
+
+/** Several bots in one team file; secrets are redacted as in single exports. */
+export const exportTeamRpc = defineRpc({
+  name: "bots.export-team",
+  input: z.object({ bots: z.array(BotSchema).min(1).max(50), includeMemory: z.boolean() }),
+  output: z.object({ json: z.string() }),
+});
+
+/** Imports a team file, or a single bot file, as new bots. */
+export const importTeamRpc = defineRpc({
+  name: "bots.import-team",
+  input: z.object({ json: z.string().max(20_000_000) }),
+  output: z.object({ bots: z.array(ImportedBotSchema) }),
+});
+
 /** Stores a picked file on this host so it can be sent as an `uploaded_file` attachment. */
 export const uploadRpc = defineRpc({
   name: "bots.upload",

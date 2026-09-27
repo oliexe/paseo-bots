@@ -9,6 +9,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 ## Features
 
 - **Bots with a job**: instructions, provider and model, host, approval mode and a pixel-art avatar. Start blank or from a role such as Email triage or Researcher.
+- **Presets and team files**: save a bot as a preset for new ones, set defaults for new bots, and share several bots in one file (Settings → Plugins → paseo-bots → Bots).
 - **A workspace per bot**: every chat is a thread in that bot's workspace.
 - **Approvals**: allow a command once or always for a bot, exactly as it ran. Each bot's Overview lists what it won't do.
 - **Memory**: each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. Every change to its memory can be undone, and bots can search their past chats.

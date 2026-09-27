@@ -8,11 +8,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
-import { DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, pushHistory, type Bot, type BotListUi, type BotMcpServer, type Library } from "../shared/bot";
-import { addMcpServers, upsertSkills } from "../shared/library";
+import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, presetFromBot, pushHistory, type Bot, type BotListUi, type Library, type Preset } from "../shared/bot";
+import { addImportedBots } from "../shared/library";
 import { startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
-import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, systemPromptRpc } from "../shared/rpc";
+import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
 import type { BotTemplate } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
@@ -73,6 +73,12 @@ function blankBot(provider: string, template?: BotTemplate): Bot {
   };
 }
 
+/** A new bot from a preset: its identity, instructions, playbooks and skills. */
+function presetBot(provider: string, preset: Preset): Bot {
+  const { id: _id, createdAt: _createdAt, ...fields } = preset;
+  return { ...blankBot(provider), ...fields };
+}
+
 export function BotsSurface(props: PluginSurfaceProps) {
   const { colors } = props.theme;
   return (
@@ -96,6 +102,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const resolveHost = useHostResolver(localHost);
   const exportBot = useRpc(exportBotRpc);
   const importBot = useRpc(importBotRpc);
+  const importTeam = useRpc(importTeamRpc);
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [panel, setPanel] = useState<{ open: boolean; section: SectionId | null }>({ open: false, section: null });
@@ -286,15 +293,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
    * library (reusing a server of the same name) and are switched on for the bot;
    * imported skills join it unless the library already has them.
    */
-  const addBot = async (bot: Bot, section: SectionId = "identity", extras: { mcpServers?: BotMcpServer[]; skills?: { id: string; description: string; source: string }[] } = {}) => {
-    const saved = await commit((values) => {
-      let library = values.library ?? EMPTY_LIBRARY;
-      const known = new Set(library.skills.map((skill) => skill.id));
-      library = upsertSkills(library, (extras.skills ?? []).filter((skill) => !known.has(skill.id)));
-      const added = addMcpServers(library, extras.mcpServers ?? [], { reuseByName: true });
-      const withServers = { ...bot, mcpServerIds: [...new Set([...bot.mcpServerIds, ...added.ids])] };
-      return { ...values, bots: [...values.bots, withServers], library: added.library };
-    });
+  const addBot = async (bot: Bot, section: SectionId = "identity") => {
+    const saved = await commit((values) => ({ ...values, bots: [...values.bots, bot] }));
     if (saved) {
       select({ botId: bot.id, chatId: null });
       setPanel({ open: true, section });
@@ -384,6 +384,10 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         onDuplicate: () => duplicate(bot).catch((error: unknown) => toast.error(`Couldn't duplicate: ${errorText(error)}`)),
         onExport: () => setExporting(bot),
         onCopyId: () => copy(bot.id, "Bot ID copied"),
+        onSaveAsPreset: () =>
+          void flush()
+            .then(() => commit((values) => ({ ...values, presets: [...(values.presets ?? []), presetFromBot(values.bots.find((entry) => entry.id === bot.id) ?? bot)] })))
+            .then((saved) => saved && toast.show(`Saved ${bot.name} as a preset. It's under New bot.`, { variant: "success" })),
         onToggleArchive: () => void updateBot(bot.id, { archived: !bot.archived }),
         onDelete: async () => {
           const confirmed = await confirmDialog({
@@ -592,14 +596,23 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         <NewBotDialog
           colors={colors}
           onClose={() => setCreating(false)}
-          onCreate={(template) => {
+          presets={settings.status === "ready" ? (settings.values.presets ?? []) : []}
+          onCreate={(start) => {
             setCreating(false);
-            void addBot(blankBot(defaultProvider(), template), template ? "overview" : "identity");
+            const bot = start?.preset ? presetBot(defaultProvider(), start.preset) : blankBot(defaultProvider(), start?.template);
+            const defaults = (settings.status === "ready" ? settings.values.defaults : undefined) ?? DEFAULT_BOT_DEFAULTS;
+            void addBot(applyDefaults(bot, defaults, defaultProvider()), start ? "overview" : "identity");
           }}
           onImport={async (json) => {
-            const { bot, skills, mcpServers } = await importBot({ botId: newBotId(), json });
+            const { bots } = await importTeam({ json });
             setCreating(false);
-            await addBot(bot, "overview", { skills, mcpServers });
+            const saved = await commit((values) => addImportedBots(values, bots));
+            const first = bots[0]?.bot;
+            if (saved && first) {
+              select({ botId: first.id, chatId: null });
+              setPanel({ open: true, section: "overview" });
+              if (bots.length > 1) toast.show(`Added ${bots.length} bots`, { variant: "success" });
+            }
           }}
         />
       ) : null}

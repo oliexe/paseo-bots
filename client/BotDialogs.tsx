@@ -4,7 +4,7 @@ import { Icon, Modal, TextInput, copyText, useToast } from "@getpaseo/plugin/cli
 import { SettingsAction, SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { Bot } from "../shared/bot";
+import type { Bot, BotAvatar, Preset } from "../shared/bot";
 import { exportBotRpc } from "../shared/rpc";
 import { BOT_TEMPLATES, type BotTemplate } from "../shared/templates";
 import { Avatar } from "./Avatar";
@@ -17,7 +17,19 @@ type Colors = PluginTheme["colors"];
 
 // ------------------------------------------------------------------ new bot
 
-export function NewBotDialog({ colors, onClose, onCreate, onImport }: { colors: Colors; onClose(): void; onCreate(template?: BotTemplate): void; onImport(json: string): Promise<void> }) {
+export function NewBotDialog({
+  colors,
+  presets,
+  onClose,
+  onCreate,
+  onImport,
+}: {
+  colors: Colors;
+  presets: readonly Preset[];
+  onClose(): void;
+  onCreate(start?: { template?: BotTemplate; preset?: Preset }): void;
+  onImport(json: string): Promise<void>;
+}) {
   const [json, setJson] = useState("");
   const [importing, setImporting] = useState(false);
   const toast = useToast();
@@ -28,15 +40,24 @@ export function NewBotDialog({ colors, onClose, onCreate, onImport }: { colors: 
           <SettingsCard>
             <StartRow colors={colors} label="Blank bot" hint="Set everything up yourself in the settings panel." onPress={() => onCreate()} />
             {BOT_TEMPLATES.map((template) => (
-              <StartRow key={template.id} colors={colors} label={template.title} hint={template.description} avatarSeed={template.avatarSeed} onPress={() => onCreate(template)} />
+              <StartRow key={template.id} colors={colors} label={template.title} hint={template.description} avatar={{ seed: template.avatarSeed }} onPress={() => onCreate({ template })} />
             ))}
           </SettingsCard>
         </SettingsSection>
-        <SettingsSection title="Import" info="Paste a bot exported from paseo-bots. Routines arrive paused and secrets must be filled in again.">
+        {presets.length ? (
+          <SettingsSection title="Your presets" info="Bots you saved as presets from their menu. Manage them in Settings, Plugins, paseo-bots.">
+            <SettingsCard>
+              {presets.map((preset) => (
+                <StartRow key={preset.id} colors={colors} label={preset.name} hint={preset.title || preset.description} avatar={preset.avatar} onPress={() => onCreate({ preset })} />
+              ))}
+            </SettingsCard>
+          </SettingsSection>
+        ) : null}
+        <SettingsSection title="Import" info="Paste a bot or team file from paseo-bots. Routines arrive paused, skills need a review and secrets must be filled in again.">
           <FormTextArea
             colors={colors}
             monospace
-            accessibilityLabel="Exported bot JSON"
+            accessibilityLabel="Bot or team file"
             value={json}
             onChangeText={setJson}
             autoCapitalize="none"
@@ -66,7 +87,7 @@ export function NewBotDialog({ colors, onClose, onCreate, onImport }: { colors: 
 }
 
 /** A whole-row pressable settings row (settings card geometry: 16 padding, 14/12 text). */
-function StartRow({ colors, label, hint, avatarSeed, onPress }: { colors: Colors; label: string; hint: string; avatarSeed?: string; onPress(): void }) {
+function StartRow({ colors, label, hint, avatar, onPress }: { colors: Colors; label: string; hint: string; avatar?: Partial<BotAvatar> & { seed: string }; onPress(): void }) {
   const { hovered, hoverProps } = useHover();
   return (
     <Pressable
@@ -84,8 +105,8 @@ function StartRow({ colors, label, hint, avatarSeed, onPress }: { colors: Colors
         backgroundColor: pressed || hovered ? colors.surface2 : "transparent",
       })}
     >
-      {avatarSeed ? (
-        <Avatar avatar={{ seed: avatarSeed }} size={28} />
+      {avatar ? (
+        <Avatar avatar={avatar} size={28} />
       ) : (
         <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface2 }}>
           <Icon name="Plus" size={14} color={colors.foregroundMuted} />
@@ -234,6 +255,7 @@ export interface BotMenuActions {
   onDuplicate(): Promise<void>;
   onExport(): void;
   onCopyId(): void;
+  onSaveAsPreset(): void;
   onToggleArchive(): void;
   onDelete(): Promise<void>;
 }
@@ -251,6 +273,7 @@ export function botMenuEntries(actions: BotMenuActions): MenuEntry[] {
   entries.push(
     { label: "Rename bot", icon: "Pencil", onSelect: actions.onRename },
     { label: "Duplicate", icon: "CopyPlus", pendingLabel: "Duplicating...", onSelect: actions.onDuplicate },
+    { label: "Save as preset", icon: "BookmarkPlus", onSelect: actions.onSaveAsPreset },
     { label: "Export", icon: "Share", onSelect: actions.onExport },
     { label: "Copy bot ID", icon: "Copy", onSelect: actions.onCopyId },
     { kind: "separator" },

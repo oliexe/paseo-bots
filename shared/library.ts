@@ -1,4 +1,4 @@
-import { joinArgs, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type Library, type LibraryMcpServer, type LibrarySkill } from "./bot";
+import { EMPTY_LIBRARY, joinArgs, numberedName, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill } from "./bot";
 
 // The shared library of skills and MCP servers. Bots only hold ids; these
 // helpers keep the ids, names and bot references consistent.
@@ -50,7 +50,6 @@ export function addMcpServers(library: Library, drafts: readonly BotMcpServer[],
   return { library: { ...library, mcpServers: servers }, ids };
 }
 
-/** Adds or refreshes skills after an import; a re-imported skill keeps its switches and creation date. */
 /**
  * Adds or refreshes skills. Fetched skills arrive switched off and unreviewed,
  * and a refreshed one needs a new review; a skill written here carries the
@@ -107,4 +106,25 @@ export function mcpTarget(config: BotMcpServer["config"]): string {
 export function matchesQuery(query: string, ...fields: (string | null | undefined)[]): boolean {
   const needle = query.trim().toLowerCase();
   return !needle || fields.some((field) => field?.toLowerCase().includes(needle));
+}
+
+export interface ImportedBot {
+  bot: Bot;
+  skills: readonly Pick<LibrarySkill, "id" | "description" | "source">[];
+  mcpServers: readonly BotMcpServer[];
+}
+
+/** Adds imported bots, numbering names already in use; their skills (unreviewed, so off) and MCP servers join the library. */
+export function addImportedBots(values: BotSettingsValues, imported: readonly ImportedBot[]): BotSettingsValues {
+  let library = values.library ?? EMPTY_LIBRARY;
+  const bots = [...values.bots];
+  for (const entry of imported) {
+    const name = numberedName(entry.bot.name, new Set(bots.map((bot) => bot.name)));
+    const known = new Set(library.skills.map((skill) => skill.id));
+    library = upsertSkills(library, entry.skills.filter((skill) => !known.has(skill.id)));
+    const added = addMcpServers(library, entry.mcpServers, { reuseByName: true });
+    library = added.library;
+    bots.push({ ...entry.bot, name, mcpServerIds: [...new Set([...entry.bot.mcpServerIds, ...added.ids])] });
+  }
+  return { ...values, bots, library };
 }

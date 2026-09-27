@@ -6,7 +6,7 @@ import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
 import { RoutineScheduler } from "./server/scheduler";
-import { exportBot, importBot } from "./server/share";
+import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
 import { accounts, catalog, connect, disconnect, removeKey, setKey, status as appsStatus } from "./server/composio";
@@ -23,8 +23,10 @@ import {
   commandRemoveRpc,
   ensureBotHomeRpc,
   exportBotRpc,
+  exportTeamRpc,
   helloRpc,
   importBotRpc,
+  importTeamRpc,
   memoryDeleteRpc,
   memoryJournalRpc,
   memoryListRpc,
@@ -142,6 +144,8 @@ export default function contribute(server: PluginServerContext) {
   server.handle(commandRemoveRpc, async ({ botId, id }) => ({ ok: await commands.remove(botId, id) }));
   server.handle(exportBotRpc, async (input) => exportBot(input, await library()));
   server.handle(importBotRpc, importBot);
+  server.handle(exportTeamRpc, async (input) => exportTeam(input, await library()));
+  server.handle(importTeamRpc, importTeam);
   server.handle(uploadRpc, saveUpload);
   server.on("agent.turn_started", async (event, context) => {
     host.attach(context.paseo);
