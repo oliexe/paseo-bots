@@ -5,7 +5,7 @@ Personal bots for [Paseo](https://paseo.sh). Give each bot instructions, a model
 ## Install
 
 ```bash
-paseo plugin install github:oliexe/paseo-bot
+paseo plugin install github:oliexe/paseo-bots
 ```
 
 Requires Paseo 0.9.2 or later.
