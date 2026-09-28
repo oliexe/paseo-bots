@@ -44,5 +44,14 @@ export function connectedApps(accounts: readonly AppAccount[], catalog: readonly
     if (!current || rank[account.status] < rank[current]) bySlug.set(account.slug, account.status);
   }
   const cards = new Map(catalog.map((app) => [app.slug, app]));
-  return [...bySlug].map(([slug, status]) => ({ ...(cards.get(slug) ?? { slug, name: slug, description: "", logo: null, domain: null, noAuth: false }), status })).sort((a, b) => a.name.localeCompare(b.name));
+  return [...bySlug].map(([slug, status]) => ({ ...(cards.get(slug) ?? { slug, name: slugName(slug), description: "", logo: null, domain: null, noAuth: false }), status })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** "google_calendar" as "Google Calendar", until the catalog has the app's own name. */
+function slugName(slug: string): string {
+  return slug
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((word) => word[0]!.toUpperCase() + word.slice(1))
+    .join(" ");
 }
