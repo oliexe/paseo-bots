@@ -7,7 +7,7 @@ import { randomSeed } from "../../shared/avatar";
 import type { Bot, BotGroup, TeamLogo as Logo } from "../../shared/bot";
 import { teamLogoOf, teamOf, type TeamDraft } from "../../shared/groups";
 import { TeamLogo } from "../Avatar";
-import { errorText } from "../native";
+import { errorText, nativeTokens } from "../native";
 import { Button, InputField, SheetActions, TextAreaField } from "../panel/controls";
 import { ColourRow, pickPicture, PictureSource } from "../panel/picture";
 import { canPickFiles } from "../web";
@@ -65,7 +65,7 @@ export function TeamSheet({
         <SettingsSection title="Logo">
           <SettingsCard>
             <SettingsRow label="Picture" hint={logo.imageUrl?.startsWith("data:") ? "Your picture" : logo.imageUrl ? "Showing the image from Image URL" : "Pixel art drawn for this team"}>
-              <TeamLogo group={{ id: group?.id ?? "", logo }} size={56} />
+              <TeamLogo group={{ id: group?.id ?? "", logo }} size={56} dark={nativeTokens(colors).dark} />
             </SettingsRow>
             <SettingsAction label="New logo" hint="Draws a different one" actionLabel="Reroll" onPress={() => patchLogo({ seed: randomSeed(), imageUrl: null })} />
             {canPickFiles ? <SettingsAction label="Upload a picture" hint="Cropped to a square" actionLabel="Upload" onPress={upload} /> : null}

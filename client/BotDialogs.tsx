@@ -106,7 +106,7 @@ function StartRow({ colors, label, hint, avatar, onPress }: { colors: Colors; la
       })}
     >
       {avatar ? (
-        <Avatar avatar={avatar} size={28} />
+        <Avatar avatar={avatar} size={28} dark={nativeTokens(colors).dark} />
       ) : (
         <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface2 }}>
           <Icon name="Plus" size={14} color={colors.foregroundMuted} />

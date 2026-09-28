@@ -9,7 +9,7 @@ import { LOGO_SIZE, teamLogo } from "../shared/team-logo";
 interface AvatarProps {
   avatar: Pick<BotAvatar, "seed"> & Partial<BotAvatar>;
   size: number;
-  /** Overrides the surrounding AvatarTheme. */
+  /** Overrides the surrounding AvatarTheme; sheets need it, as Paseo draws them outside the plugin's tree on phones. */
   dark?: boolean;
 }
 
@@ -37,8 +37,9 @@ export function Avatar({ avatar, size, dark: darkProp }: AvatarProps) {
 }
 
 /** A team's logo: its picture, or the generated pixel-art motif on a rounded tile. */
-export function TeamLogo({ group, size }: { group: Pick<BotGroup, "id" | "logo">; size: number }) {
-  const dark = useContext(AvatarThemeContext);
+export function TeamLogo({ group, size, dark: darkProp }: { group: Pick<BotGroup, "id" | "logo">; size: number; dark?: boolean }) {
+  const themeDark = useContext(AvatarThemeContext);
+  const dark = darkProp ?? themeDark;
   const logo = teamLogoOf(group);
   const image = useMemo(() => teamLogo(logo.seed, logo.palette, { dark }), [logo.seed, logo.palette, dark]);
   const radius = size / 4;

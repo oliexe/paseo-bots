@@ -18,6 +18,10 @@ export type MenuEntry =
       kind?: "item";
       label: string;
       icon?: string;
+      /** Replaces the icon, e.g. a team's logo. */
+      leading?: ReactNode;
+      /** The current choice in a switcher; gets Paseo's trailing check. */
+      selected?: boolean;
       destructive?: boolean;
       disabled?: boolean;
       /** Shown on the right, e.g. a shortcut or current value. */
@@ -192,7 +196,7 @@ function MenuRow({ colors, entry, compact, onClose }: { colors: Colors; entry: E
     <Pressable
       accessibilityRole="menuitem"
       accessibilityLabel={entry.label}
-      accessibilityState={{ disabled: !!entry.disabled || pending }}
+      accessibilityState={{ disabled: !!entry.disabled || pending, selected: entry.selected }}
       disabled={entry.disabled || pending}
       onPress={select}
       {...hoverProps}
@@ -211,15 +215,20 @@ function MenuRow({ colors, entry, compact, onClose }: { colors: Colors; entry: E
         opacity: entry.disabled ? 0.5 : 1,
       })}
     >
-      {entry.icon || pending ? (
+      {entry.icon || entry.leading || pending ? (
         <View style={{ width: 16, alignItems: "center", justifyContent: "center" }}>
-          {pending ? <ActivityIndicator size="small" color={colors.foregroundMuted} /> : <Icon name={entry.icon!} size={14} color={entry.destructive ? colors.statusDanger : colors.foregroundMuted} />}
+          {pending ? <ActivityIndicator size="small" color={colors.foregroundMuted} /> : (entry.leading ?? <Icon name={entry.icon!} size={14} color={entry.destructive ? colors.statusDanger : colors.foregroundMuted} />)}
         </View>
       ) : null}
       <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: ui(14), lineHeight: 18, color: tint }}>
         {pending && entry.pendingLabel ? entry.pendingLabel : entry.label}
       </Text>
       {entry.trailing ? <Text style={{ marginLeft: "auto", fontSize: ui(12), color: colors.foregroundMuted }}>{entry.trailing}</Text> : null}
+      {entry.selected ? (
+        <View style={{ marginLeft: "auto", width: 16, alignItems: "center", justifyContent: "center" }}>
+          <Icon name="Check" size={16} color={colors.foregroundMuted} />
+        </View>
+      ) : null}
     </Pressable>
   );
 }

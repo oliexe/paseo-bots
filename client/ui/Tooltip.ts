@@ -54,8 +54,8 @@ interface TooltipExtras {
   lines?: string[];
   /** Muted 12pt lines at the end. */
   details?: string[];
-  /** Opens at once instead of after 300ms (Paseo's context meter). */
-  instant?: boolean;
+  /** Milliseconds before it opens: Paseo's icon buttons wait 300, its tabs 400, its context meter 0. */
+  delay?: number;
 }
 
 /** Props that give an icon button Paseo's tooltip. Spread them on the Pressable next to its accessibilityLabel. */
@@ -64,7 +64,7 @@ export function tooltip(label: string, side: Side = "top", extras: TooltipExtras
   const dataSet: Record<string, string> = { pbTip: label, pbTipSide: side };
   if (extras.lines?.length) dataSet.pbTipLines = extras.lines.join("\n");
   if (extras.details?.length) dataSet.pbTipDetails = extras.details.join("\n");
-  if (extras.instant) dataSet.pbTipInstant = "";
+  if (extras.delay !== undefined) dataSet.pbTipDelay = String(extras.delay);
   return { dataSet };
 }
 
@@ -168,7 +168,7 @@ export function installTooltips(): () => void {
         timer = null;
         if (anchor === target) show(target);
       },
-      target.getAttribute("data-pb-tip-instant") === null ? DELAY_MS : 0,
+      Number(target.getAttribute("data-pb-tip-delay") ?? DELAY_MS),
     );
   };
   const out = (event: PointerEventLike) => {

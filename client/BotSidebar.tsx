@@ -7,7 +7,7 @@ import type { Bot, BotGroup, BotListUi } from "../shared/bot";
 import { displayTitle } from "../shared/chat";
 import type { TeamTab } from "../shared/groups";
 import { aggregateBuckets, BUCKET_LABELS, chatBucket, orderChats, SIDEBAR_GROUP_LIMIT, type ChatBucket } from "../shared/sidebar";
-import { Avatar, TeamLogo } from "./Avatar";
+import { Avatar } from "./Avatar";
 import { useBotChats, useBotHost, type LocalHost } from "./data";
 import { openLibrary } from "./navigation";
 import { nativeTokens, useHover, type NativeTokens } from "./native";
@@ -40,8 +40,7 @@ export interface ChatMenuContext {
 interface BotSidebarProps {
   colors: Colors;
   bots: readonly Bot[];
-  /** With teams, a tab per team (and Other bots); the list shows the open one's bots. */
-  tabs: readonly TeamTab[];
+  /** With teams, the open team tab: the list shows its bots. */
   openTab: TeamTab | null;
   /** Archived bots hidden by the display preferences. Keeps the header (and its menu) up when they're all that's left. */
   hiddenArchivedCount: number;
@@ -62,9 +61,6 @@ interface BotSidebarProps {
   onBotMenu(bot: Bot, anchor: LayoutRectangle, source: MenuSource): void;
   onChatMenu(bot: Bot, chat: PaseoAgent, anchor: LayoutRectangle, source: MenuSource, context: ChatMenuContext): void;
   onDisplayMenu(anchor: LayoutRectangle): void;
-  onTab(tabId: string): void;
-  onTeamMenu(group: BotGroup, anchor: LayoutRectangle): void;
-  onNewTeam(): void;
   onEditTeam(group: BotGroup): void;
   onTeamMap(): void;
 }
@@ -74,14 +70,14 @@ const noSelect = { userSelect: "none" } as object;
 const CHEVRON_COLOR = "#9ca3af";
 
 export function BotSidebar(props: BotSidebarProps) {
-  const { colors, bots, tabs, openTab, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onTeamMap, onEditTeam } = props;
+  const { colors, bots, openTab, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onTeamMap, onEditTeam } = props;
   const tokens = nativeTokens(colors);
   const shown = openTab?.bots ?? bots;
   const pinnedIds = new Set(listUi.pinnedChats.map((pin) => pin.chatId));
   const listedBots = new Map(shown.map((bot) => [bot.id, bot]));
   const pins = listUi.pinnedChats.filter((pin) => listedBots.has(pin.botId));
   const leadId = openTab?.group?.leadId ?? null;
-  if (props.splash && bots.length === 0 && hiddenArchivedCount === 0 && pins.length === 0 && tabs.length === 0) {
+  if (props.splash && bots.length === 0 && hiddenArchivedCount === 0 && pins.length === 0 && !openTab) {
     return (
       <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
         <Splash colors={colors} background={tokens.surfaceSidebar} />
@@ -91,7 +87,6 @@ export function BotSidebar(props: BotSidebarProps) {
   }
   return (
     <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
-      {tabs.length > 0 ? <TeamTabs {...props} tokens={tokens} /> : null}
       <ScrollView
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
@@ -120,60 +115,6 @@ export function BotSidebar(props: BotSidebarProps) {
       </ScrollView>
       <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
     </View>
-  );
-}
-
-// ------------------------------------------------------------------ team tabs
-
-/**
- * Paseo's explorer tab rail (explorer-sidebar-tab-rail.tsx): a 36pt strip over a divider,
- * scrolling sideways, of 26pt tabs with the team's logo and name, muted until open, with
- * the team's menu on right-click or long-press and a trailing + for a new team.
- */
-function TeamTabs({ colors, tokens, tabs, openTab, onTab, onTeamMenu, onNewTeam }: BotSidebarProps & { tokens: NativeTokens }) {
-  const add = useHover();
-  return (
-    <View accessibilityRole="tablist" style={[{ height: 36, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.border }, noSelect]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ alignItems: "center", paddingHorizontal: 4 }}>
-        {tabs.map((tab) => (
-          <TeamTabButton key={tab.id} colors={colors} tokens={tokens} tab={tab} active={tab.id === openTab?.id} onPress={() => onTab(tab.id)} onMenu={tab.group ? (anchor) => onTeamMenu(tab.group!, anchor) : undefined} />
-        ))}
-      </ScrollView>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="New team"
-        {...tooltip("New team", "bottom")}
-        hitSlop={8}
-        onPress={onNewTeam}
-        {...add.hoverProps}
-        style={({ pressed }) => ({ width: 26, height: 26, marginRight: 4, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: add.hovered || pressed ? tokens.interactionHighlight : "transparent" })}
-      >
-        <Icon name="Plus" size={14} color={add.hovered ? colors.foreground : colors.foregroundMuted} />
-      </Pressable>
-    </View>
-  );
-}
-
-function TeamTabButton({ colors, tokens, tab, active, onPress, onMenu }: { colors: Colors; tokens: NativeTokens; tab: TeamTab; active: boolean; onPress(): void; onMenu?: (anchor: LayoutRectangle) => void }) {
-  const { hovered, hoverProps } = useHover();
-  const label = tab.group ? tab.group.name || "Untitled team" : "Other bots";
-  const tint = active ? colors.foreground : colors.foregroundMuted;
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityLabel={label}
-      accessibilityState={{ selected: active }}
-      {...tooltip(label, "bottom")}
-      onPress={onPress}
-      {...(onMenu ? contextMenuProps(onMenu) : {})}
-      {...hoverProps}
-      style={{ height: 26, maxWidth: 180, marginHorizontal: 2, paddingHorizontal: 8, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: active || hovered ? tokens.interactionHighlight : "transparent" }}
-    >
-      {tab.group ? <TeamLogo group={tab.group} size={16} /> : <Icon name="Bot" size={14} color={tint} />}
-      <Text numberOfLines={1} style={{ minWidth: 0, flexShrink: 1, fontSize: ui(14), color: tint }}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 

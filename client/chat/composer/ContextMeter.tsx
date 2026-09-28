@@ -58,7 +58,7 @@ export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Co
       ref={anchor}
       accessibilityRole="button"
       accessibilityLabel={`Context window ${rounded}% used`}
-      {...tooltip("Context window", "top", { lines: [`${rounded}% used`], details: costLine ? [tokensLine, costLine] : [tokensLine], instant: true })}
+      {...tooltip("Context window", "top", { lines: [`${rounded}% used`], details: costLine ? [tokensLine, costLine] : [tokensLine], delay: 0 })}
       onPress={() => void open()}
       style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" }}
     >

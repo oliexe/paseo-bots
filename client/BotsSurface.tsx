@@ -27,6 +27,7 @@ import { onLibraryTarget, type LibraryTarget } from "./navigation";
 import { Splash } from "./Splash";
 import { TeamMap } from "./teams/TeamMap";
 import { TeamSheet } from "./teams/TeamSheet";
+import { TeamTabsRow, TeamTabSwitcher } from "./teams/TeamTabs";
 import { ResizeHandle, SlideOver } from "./ui/Columns";
 import { fitColumns } from "../shared/layout";
 import { confirmDialog, errorText, nativeTokens } from "./native";
@@ -534,7 +535,6 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     <BotSidebar
       colors={colors}
       bots={listed}
-      tabs={tabs}
       openTab={openTab}
       hiddenArchivedCount={listUi.showArchived ? 0 : archivedCount}
       selection={selection}
@@ -556,13 +556,14 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       onBotMenu={openBotMenu}
       onChatMenu={openChatMenu}
       onDisplayMenu={openDisplayMenu}
-      onTab={(tab) => updateUi((current) => ({ ...current, tab }))}
-      onTeamMenu={openTeamMenu}
-      onNewTeam={() => setEditingTeam("new")}
       onEditTeam={setEditingTeam}
       onTeamMap={() => setTeamMap(true)}
     />
   );
+
+  const tabProps = openTab
+    ? { colors, tabs, openTab, onTab: (tab: string) => updateUi((current) => ({ ...current, tab })), onTeamMenu: openTeamMenu, onNewTeam: () => setEditingTeam("new" as const) }
+    : null;
 
   const pane = teamMap ? (
     <TeamMap
@@ -654,11 +655,12 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     <>
     {/* The host gives plugin surfaces no keyboard handling; lift everything above the keyboard. */}
     <View
-      style={{ flex: 1, flexDirection: "row", backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}
+      style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}
       onLayout={(event) => setSurfaceWidth(event.nativeEvent.layout.width)}
     >
       {layout.compact ? (
         <View ref={paneRef} collapsable={false} style={{ flex: 1 }}>
+          {tabProps ? <TeamTabSwitcher {...tabProps} /> : null}
           {sidebar}
           {selection || teamMap ? <SlideOver onClose={() => (teamMap ? setTeamMap(false) : setSelection(null))}>{pane}</SlideOver> : null}
           {settingsPanel ? (
@@ -670,17 +672,20 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         </View>
       ) : (
         <>
-          <View style={{ width: columns.list, borderRightWidth: 1, borderRightColor: colors.border, backgroundColor: nativeTokens(colors).surfaceSidebar }}>
-            {sidebar}
-            <ResizeHandle side="right" width={columns.list} onResize={(width) => setDragWidths((current) => ({ ...current, list: width }))} onCommit={(width) => commitWidth("listWidth", width)} />
-          </View>
-          <View ref={paneRef} collapsable={false} style={{ flex: 1, minWidth: 0 }}>{pane}</View>
-          {settingsPanel && columns.panel !== null ? (
-            <View style={{ width: columns.panel, borderLeftWidth: 1, borderLeftColor: colors.border }}>
-              {settingsPanel}
-              <ResizeHandle side="left" width={columns.panel} onResize={(width) => setDragWidths((current) => ({ ...current, panel: width }))} onCommit={(width) => commitWidth("panelWidth", width)} />
+          {tabProps ? <TeamTabsRow {...tabProps} /> : null}
+          <View style={{ flex: 1, flexDirection: "row" }}>
+            <View style={{ width: columns.list, borderRightWidth: 1, borderRightColor: colors.border, backgroundColor: nativeTokens(colors).surfaceSidebar }}>
+              {sidebar}
+              <ResizeHandle side="right" width={columns.list} onResize={(width) => setDragWidths((current) => ({ ...current, list: width }))} onCommit={(width) => commitWidth("listWidth", width)} />
             </View>
-          ) : null}
+            <View ref={paneRef} collapsable={false} style={{ flex: 1, minWidth: 0 }}>{pane}</View>
+            {settingsPanel && columns.panel !== null ? (
+              <View style={{ width: columns.panel, borderLeftWidth: 1, borderLeftColor: colors.border }}>
+                {settingsPanel}
+                <ResizeHandle side="left" width={columns.panel} onResize={(width) => setDragWidths((current) => ({ ...current, panel: width }))} onCommit={(width) => commitWidth("panelWidth", width)} />
+              </View>
+            ) : null}
+          </View>
         </>
       )}
 
