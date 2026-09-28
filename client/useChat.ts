@@ -1,4 +1,4 @@
-import type { PaseoAgent, PaseoApi } from "@getpaseo/client";
+import type { PaseoAgent, PaseoApi } from "./paseo";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mergeEntries } from "./chat/stream/model";
 

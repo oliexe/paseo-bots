@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import type { PaseoAgent, PaseoAgentSendOptions } from "@getpaseo/client";
+import type { PaseoAgent, PaseoAgentSendOptions } from "../paseo";
 import { useRpc } from "@getpaseo/plugin/client";
 import { Icon, Modal, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow } from "@getpaseo/plugin/client/ui";

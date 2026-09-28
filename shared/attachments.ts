@@ -54,7 +54,7 @@ export function rejectReason(kind: AttachmentKind, size: number, canUpload: bool
 }
 
 type WireImage = { data: string; mimeType: string };
-type WireAttachment =
+export type WireAttachment =
   | { type: "text"; mimeType: "text/plain"; title: string; text: string }
   | { type: "uploaded_file"; id: string; fileName: string; mimeType: string; size: number; path: string };
 

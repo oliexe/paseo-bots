@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "../paseo";
 import { FlatList, Icon } from "@getpaseo/plugin/client/react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

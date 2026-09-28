@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import type { PaseoAgent } from "@getpaseo/client";
+import type { PaseoAgent } from "./paseo";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Animated, Easing, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";

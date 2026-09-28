@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import type { PaseoAgentPermissionResponse } from "@getpaseo/client";
+import type { PaseoAgentPermissionResponse } from "../../paseo";
 import { Icon, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View, type TextStyle } from "react-native";

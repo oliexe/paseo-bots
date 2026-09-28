@@ -1,5 +1,5 @@
 import { getPaseoClient, usePaseo, useHosts } from "@getpaseo/plugin/client";
-import type { PaseoAgent, PaseoApi } from "@getpaseo/client";
+import type { PaseoAgent, PaseoApi } from "./paseo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { BOT_LABEL } from "../shared/bot";

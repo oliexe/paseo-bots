@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import type { PaseoAgent, PaseoAgentPermissionResponse, PaseoApi } from "@getpaseo/client";
+import type { PaseoAgent, PaseoAgentPermissionResponse, PaseoApi } from "../paseo";
 import { useRpc } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useMemo, useState } from "react";

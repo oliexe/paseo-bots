@@ -1,4 +1,4 @@
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "../paseo";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
 import { BOT_LABEL } from "../../shared/bot";

@@ -1,4 +1,4 @@
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "./paseo";
 import type { PluginSettings } from "@getpaseo/plugin/server";
 import { BOT_LABEL, EMPTY_LIBRARY, type Bot, type BotSettingsValues, type botSettings, type Library } from "../shared/bot";
 import { ROUTINE_LABEL } from "../shared/chat";

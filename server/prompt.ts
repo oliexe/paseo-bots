@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "./paseo";
 import { recentWork } from "../shared/activity";
 import { selectPlaybooks } from "../shared/playbooks";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
