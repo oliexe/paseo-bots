@@ -424,6 +424,25 @@ export function DrillRow({ colors, label, hint, error, trailing, onPress, hintLi
   );
 }
 
+/**
+ * Paseo's "Advanced" disclosure (add-host-modal.tsx advancedToggle): a chevron (right, down
+ * when open) and the medium-weight label. Settings people rarely need wait behind it.
+ */
+export function AdvancedToggle({ colors, open, onToggle }: { colors: Colors; open: boolean; onToggle(): void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={open ? "Hide advanced" : "Show advanced"}
+      accessibilityState={{ expanded: open }}
+      onPress={onToggle}
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start", paddingVertical: 4, marginBottom: open ? 16 : 0 }}
+    >
+      <Icon name={open ? "ChevronDown" : "ChevronRight"} size={16} color={colors.foregroundMuted} />
+      <Text style={{ fontSize: ui(14), fontWeight: "500", color: colors.foreground }}>Advanced</Text>
+    </Pressable>
+  );
+}
+
 /** A card row whose control needs the full width under its label (e.g. colour swatches). */
 export function StackedRow({ colors, label, hint, children }: { colors: Colors; label: string; hint?: string; children: ReactNode }) {
   return (

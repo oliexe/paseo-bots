@@ -1,69 +1,41 @@
-import { useToast } from "@getpaseo/plugin/client/react-native";
+import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { randomSeed } from "../../shared/avatar";
-import type { BotAvatar, BotVoice } from "../../shared/bot";
+import type { Bot, BotAvatar, BotVoice } from "../../shared/bot";
 import { Avatar } from "../Avatar";
 import type { PanelProps } from "./BotPanel";
 import { errorText } from "../native";
 import { canSpeak, speak, useVoices } from "../speech";
 import { canPickFiles } from "../web";
 import { AvatarSheet } from "./AvatarSheet";
-import { InputField, TextAreaField } from "./controls";
+import { Button, DrillRow, InputField, SheetActions, TextAreaField } from "./controls";
 import { ColourRow, pickPicture, PictureSource } from "./picture";
 
 const DESCRIPTION_MAX = 4000;
 
 export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
   const setAvatar = (patch: Partial<BotAvatar>) => onPatch({ avatar: { ...bot.avatar, ...patch } });
-  const toast = useToast();
-  // An uploaded or generated picture is stored with the bot as a data URL.
-  const stored = !!bot.avatar.imageUrl?.startsWith("data:");
-  const [generating, setGenerating] = useState(false);
+  const [sheet, setSheet] = useState<"avatar" | "generate" | null>(null);
   const [nameEmpty, setNameEmpty] = useState(!bot.name.trim());
   const length = bot.description.length;
-
-  const upload = () =>
-    void pickPicture()
-      .then((imageUrl) => imageUrl && setAvatar({ imageUrl }))
-      .catch((error: unknown) => toast.error(errorText(error)));
 
   return (
     <>
       <SettingsSection title="Avatar">
         <SettingsCard>
-          <SettingsRow label="Picture" hint={stored ? "Your picture" : bot.avatar.imageUrl ? "Showing the image from Image URL" : "A pixel-art face generated for this bot"}>
-            <Avatar avatar={bot.avatar} size={56} />
-          </SettingsRow>
-          <SettingsAction label="New face" hint="Picks a different face" actionLabel="Reroll" onPress={() => setAvatar({ seed: randomSeed(), imageUrl: null })} />
-          {canPickFiles ? (
-            <>
-              <SettingsAction label="Upload a picture" hint="Cropped to a square" actionLabel="Upload" onPress={upload} />
-              <SettingsAction label="Generate a picture" hint="Drawn by OpenAI with your key" actionLabel="Generate" onPress={() => setGenerating(true)} />
-            </>
-          ) : null}
-          <ColourRow colors={colors} value={bot.avatar.palette} onChange={(palette) => setAvatar({ palette })} />
-          <SettingsSelect
-            label="Shape"
-            value={bot.avatar.shape}
-            options={[
-              { label: "Circle", value: "circle" },
-              { label: "Rounded", value: "rounded" },
-              { label: "Square", value: "square" },
-            ]}
-            onValueChange={(shape) => setAvatar({ shape })}
-          />
-          <PictureSource colors={colors} imageUrl={bot.avatar.imageUrl} hint="Optional. Replaces the pixel face" placeholder="https://example.com/avatar.png" onChange={(imageUrl) => setAvatar({ imageUrl })} />
+          <DrillRow colors={colors} label="Picture" hint={pictureHint(bot)} hintLines={2} trailing={<Avatar avatar={bot.avatar} size={40} />} onPress={() => setSheet("avatar")} />
         </SettingsCard>
       </SettingsSection>
-      {generating ? (
+      {sheet === "avatar" ? <AvatarEditor colors={colors} bot={bot} setAvatar={setAvatar} onGenerate={() => setSheet("generate")} onClose={() => setSheet(null)} /> : null}
+      {sheet === "generate" ? (
         <AvatarSheet
           colors={colors}
           bot={bot}
-          onClose={() => setGenerating(false)}
+          onClose={() => setSheet("avatar")}
           onPicture={(imageUrl) => {
-            setGenerating(false);
             setAvatar({ imageUrl });
+            setSheet("avatar");
           }}
         />
       ) : null}
@@ -100,6 +72,53 @@ export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
       </SettingsSection>
       {canSpeak ? <VoiceSection bot={bot} onPatch={onPatch} /> : null}
     </>
+  );
+}
+
+function pictureHint(bot: Bot): string {
+  if (bot.avatar.imageUrl?.startsWith("data:")) return "Your picture";
+  return bot.avatar.imageUrl ? "The image from its URL" : "A pixel-art face drawn for this bot";
+}
+
+/** Everything about the picture: the face, its colour and shape, or a picture of your own. */
+function AvatarEditor({ colors, bot, setAvatar, onGenerate, onClose }: { colors: PanelProps["colors"]; bot: Bot; setAvatar(patch: Partial<BotAvatar>): void; onGenerate(): void; onClose(): void }) {
+  const toast = useToast();
+  const upload = () =>
+    void pickPicture()
+      .then((imageUrl) => imageUrl && setAvatar({ imageUrl }))
+      .catch((error: unknown) => toast.error(errorText(error)));
+  return (
+    <Modal title="Avatar" open onOpenChange={(open) => !open && onClose()}>
+      <Modal.Content>
+        <SettingsCard>
+          <SettingsRow label="Picture" hint={pictureHint(bot)}>
+            <Avatar avatar={bot.avatar} size={56} />
+          </SettingsRow>
+          <SettingsAction label="New face" hint="Draws a different one" actionLabel="Reroll" onPress={() => setAvatar({ seed: randomSeed(), imageUrl: null })} />
+          {canPickFiles ? (
+            <>
+              <SettingsAction label="Upload a picture" hint="Cropped to a square" actionLabel="Upload" onPress={upload} />
+              <SettingsAction label="Generate a picture" hint="Drawn by OpenAI with your key" actionLabel="Generate" onPress={onGenerate} />
+            </>
+          ) : null}
+          <ColourRow colors={colors} value={bot.avatar.palette} onChange={(palette) => setAvatar({ palette })} />
+          <SettingsSelect
+            label="Shape"
+            value={bot.avatar.shape}
+            options={[
+              { label: "Circle", value: "circle" },
+              { label: "Rounded", value: "rounded" },
+              { label: "Square", value: "square" },
+            ]}
+            onValueChange={(shape) => setAvatar({ shape })}
+          />
+          <PictureSource colors={colors} imageUrl={bot.avatar.imageUrl} hint="Optional. Replaces the pixel face" placeholder="https://example.com/avatar.png" onChange={(imageUrl) => setAvatar({ imageUrl })} />
+        </SettingsCard>
+        <SheetActions>
+          <Button colors={colors} variant="default" label="Done" onPress={onClose} />
+        </SheetActions>
+      </Modal.Content>
+    </Modal>
   );
 }
 

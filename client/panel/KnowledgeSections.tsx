@@ -1,5 +1,5 @@
 import { useRpc } from "@getpaseo/plugin/client";
-import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
+import { copyText, Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -12,7 +12,7 @@ import { confirmDialog, errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { LibraryPicker } from "./LibraryPicker";
 import { Alert, Button, CardNote, DrillRow, FormTextArea, InputField, SectionLink, SectionMeta, SheetActions, TextAreaField } from "./controls";
-import { DailyLog, MemoryChanges } from "./MemoryActivity";
+import { ChangesSheet, LogSheet, useDailyLog, useMemoryJournal } from "./MemoryActivity";
 
 type Colors = PanelProps["colors"];
 
@@ -109,65 +109,99 @@ const MEMORY_BYTES = 24_000;
 export function MemorySection({ colors, bot, localHost }: PanelProps) {
   const host = useBotHost(bot.hostId, localHost);
   const list = useRpc(memoryListRpc);
-  const write = useRpc(memoryWriteRpc);
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [open, setOpen] = useState<string | null>(null);
-  const [topic, setTopic] = useState("");
-  const [topicKey, setTopicKey] = useState(0);
+  const [sheet, setSheet] = useState<"topic" | "changes" | "log" | null>(null);
   const files = useQuery({ queryKey: ["paseo-bots", "memory", bot.id], queryFn: () => list({ botId: bot.id }), refetchInterval: 20_000 });
+  const journal = useMemoryJournal(bot.id);
+  const log = useDailyLog(bot.id);
   const refresh = () =>
     Promise.all([queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory", bot.id] }), queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory-journal", bot.id] })]);
 
   const data = files.data;
   const over = data ? data.injectedLines > MEMORY_LINES || data.injectedBytes > MEMORY_BYTES : false;
-  const topicName = topic.trim().replace(/\.md$/, "");
-  const topicError = topicName && !TOPIC_NAME.test(topicName) ? "Use letters, numbers, spaces, dots and dashes" : null;
+  const changes = journal.data?.entries.length ?? 0;
+  const days = log.data?.days.length ?? 0;
 
   return (
     <>
       {!host.isLocal ? <LocalOnly colors={colors} what="Memory files" /> : null}
-      <SettingsSection title="Files" info="The bot updates these itself as it learns; edit them to correct or add facts. MEMORY.md is loaded into every chat, topic files are read on demand.">
+      <SettingsSection
+        title="Files"
+        info="The bot updates these itself as it learns; edit them to correct or add facts. MEMORY.md is loaded into every chat, topic files are read on demand."
+        trailing={<SectionLink colors={colors} label="New topic file" onPress={() => setSheet("topic")} />}
+      >
         <SettingsCard>
-          <SettingsRow
-            label="Loaded into every chat"
-            hint={data ? `${data.injectedLines} of ${MEMORY_LINES} lines · ${kb(data.injectedBytes)} of ${MEMORY_BYTES / 1000} KB` : "Loading..."}
-            error={over ? "Over the budget, so the end of MEMORY.md is left out" : null}
-          />
           {(data?.files ?? [{ name: "MEMORY.md", bytes: 0, lines: 0, topic: false }]).map((file) => (
             <DrillRow
               key={file.name}
               colors={colors}
               label={file.topic ? `memory/${file.name}` : file.name}
-              hint={data ? `${file.lines} lines · ${kb(file.bytes)} KB` : "Loading..."}
+              hint={!data ? "Loading..." : file.topic ? `${file.lines} lines · ${kb(file.bytes)} KB` : `${data.injectedLines} of ${MEMORY_LINES} lines · ${kb(data.injectedBytes)} of ${MEMORY_BYTES / 1000} KB loaded into every chat`}
+              error={!file.topic && over ? "Over the budget, so the end is left out" : null}
+              hintLines={2}
               onPress={() => setOpen(file.name)}
             />
           ))}
-          {data ? <SettingsRow label="Folder" hint={data.folder} /> : null}
+          {data ? (
+            <SettingsAction
+              label="Folder"
+              hint={data.folder.replace(/^\/(?:Users|home)\/[^/]+/, "~")}
+              actionLabel="Copy"
+              onPress={() => void copyText(data.folder).then(() => toast.show("Path copied", { variant: "success" }))}
+            />
+          ) : null}
         </SettingsCard>
       </SettingsSection>
-      <MemoryChanges colors={colors} bot={bot} onUndone={() => void refresh()} />
-      <DailyLog colors={colors} bot={bot} />
-      <SettingsSection title="New topic file">
+      <SettingsSection title="Activity">
         <SettingsCard>
-          <InputField colors={colors} key={topicKey} label="Name" hint="Letters, numbers, spaces, dots and dashes" error={topicError} initialValue="" placeholder="projects" onChangeText={setTopic} />
-          <SettingsAction
-            label="Create the topic file"
-            actionLabel="Create"
-            disabled={!topicName || !!topicError}
-            onPress={() => {
-              const name = `${topicName}.md`;
-              void write({ botId: bot.id, name, text: `# ${topicName}\n` }).then(() => {
-                setTopic("");
-                setTopicKey((key) => key + 1);
-                setOpen(name);
-                void refresh();
-              });
-            }}
-          />
+          <DrillRow colors={colors} label="Changes" hint={journal.isLoading ? "Loading..." : changes ? `${changes} ${changes === 1 ? "change" : "changes"}, with undo` : "No changes yet"} onPress={() => setSheet("changes")} />
+          <DrillRow colors={colors} label="Daily log" hint={log.isLoading ? "Loading..." : days ? `${days} ${days === 1 ? "day" : "days"}` : "No entries yet"} onPress={() => setSheet("log")} />
         </SettingsCard>
       </SettingsSection>
+      {sheet === "topic" ? (
+        <TopicSheet
+          colors={colors}
+          botId={bot.id}
+          onClose={() => setSheet(null)}
+          onCreated={(name) => {
+            setSheet(null);
+            setOpen(name);
+            void refresh();
+          }}
+        />
+      ) : null}
+      {sheet === "changes" ? <ChangesSheet colors={colors} bot={bot} onUndone={() => void refresh()} onClose={() => setSheet(null)} /> : null}
+      {sheet === "log" ? <LogSheet colors={colors} bot={bot} onClose={() => setSheet(null)} /> : null}
       {open ? <MemorySheet colors={colors} botId={bot.id} name={open} onChanged={() => void refresh()} onClose={() => setOpen(null)} /> : null}
     </>
+  );
+}
+
+/** A new topic file: its name, then it opens to write in. */
+function TopicSheet({ colors, botId, onClose, onCreated }: { colors: Colors; botId: string; onClose(): void; onCreated(name: string): void }) {
+  const write = useRpc(memoryWriteRpc);
+  const toast = useToast();
+  const [topic, setTopic] = useState("");
+  const name = topic.trim().replace(/\.md$/, "");
+  const error = name && !TOPIC_NAME.test(name) ? "Use letters, numbers, spaces, dots and dashes" : null;
+  const create = () =>
+    void write({ botId, name: `${name}.md`, text: `# ${name}\n` })
+      .then(() => onCreated(`${name}.md`))
+      .catch((caught: unknown) => toast.error(errorText(caught)));
+  return (
+    <Modal title="New topic file" open onOpenChange={(value) => !value && onClose()}>
+      <Modal.Content>
+        <SettingsCard>
+          <InputField colors={colors} label="Name" hint="Letters, numbers, spaces, dots and dashes" error={error} initialValue="" placeholder="projects" onChangeText={setTopic} />
+        </SettingsCard>
+        <SheetActions>
+          <Button colors={colors} variant="ghost" label="Cancel" onPress={onClose} />
+          <Button colors={colors} variant="default" label="Create" disabled={!name || !!error} onPress={create} />
+        </SheetActions>
+      </Modal.Content>
+    </Modal>
   );
 }
 

@@ -79,6 +79,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
   const queryClient = useQueryClient();
   const records = useQuery({ queryKey: ROUTINES_KEY, queryFn: () => status({}), refetchInterval: 15_000, enabled: host.isLocal });
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
+  const [runs, setRuns] = useState(false);
 
   const setRoutines = (routines: Routine[]) => onPatch({ routines });
   const update = (id: string, patch: Partial<Routine>) => setRoutines(bot.routines.map((routine) => (routine.id === id ? { ...routine, ...patch } : routine)));
@@ -188,29 +189,55 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
           })}
         </SettingsCard>
       </SettingsSection>
-      {upcoming.length ? (
-        <SettingsSection title="Upcoming" info={`The next runs over the coming ${UPCOMING_DAYS} days, in this host's local time.`}>
+      {bot.routines.length ? (
+        <SettingsSection title="Activity">
           <SettingsCard>
-            {upcoming.map(({ at, routine }) => (
-              <SettingsRow key={`${routine.id}:${at.getTime()}`} label={runTime(at, now)} hint={routine.name} />
-            ))}
+            <DrillRow
+              colors={colors}
+              label="Runs"
+              hint={[upcoming[0] ? `Next ${runTime(upcoming[0].at, now)}` : null, recent[0] ? `last ${runTime(new Date(recent[0].run.startedAt), now)}` : null].filter(Boolean).join(", ") || "None yet"}
+              onPress={() => setRuns(true)}
+            />
           </SettingsCard>
         </SettingsSection>
       ) : null}
-      {recent.length ? (
-        <SettingsSection title="Recent runs" info="The latest runs of this bot's routines. Open one to see its chat.">
-          <SettingsCard>
-            {recent.map(({ run: entry, routine }) => {
-              const hint = [`${runTime(new Date(entry.startedAt), now)} · ${RUN_LABELS[entry.status]} · ${TRIGGER_LABELS[entry.trigger]}`, entry.error ?? entry.output].filter(Boolean).join("\n");
-              const agentId = entry.agentId;
-              return agentId ? (
-                <DrillRow key={entry.id} colors={colors} label={routine.name} hint={hint} hintLines={2} onPress={() => onOpenChat(agentId)} />
-              ) : (
-                <SettingsRow key={entry.id} label={routine.name} hint={hint} />
-              );
-            })}
-          </SettingsCard>
-        </SettingsSection>
+      {runs ? (
+        <Modal title="Runs" open onOpenChange={(next) => !next && setRuns(false)}>
+          <Modal.Content contentContainerStyle={{ gap: 0 }}>
+            <SettingsSection title="Upcoming" info={`The next runs over the coming ${UPCOMING_DAYS} days, in this host's local time.`}>
+              <SettingsCard>
+                {upcoming.length === 0 ? <CardNote colors={colors} text="Nothing scheduled" /> : null}
+                {upcoming.map(({ at, routine }) => (
+                  <SettingsRow key={`${routine.id}:${at.getTime()}`} label={runTime(at, now)} hint={routine.name} />
+                ))}
+              </SettingsCard>
+            </SettingsSection>
+            <SettingsSection title="Recent runs" info="The latest runs of this bot's routines. Open one to see its chat.">
+              <SettingsCard>
+                {recent.length === 0 ? <CardNote colors={colors} text="No runs yet" /> : null}
+                {recent.map(({ run: entry, routine }) => {
+                  const hint = [`${runTime(new Date(entry.startedAt), now)} · ${RUN_LABELS[entry.status]} · ${TRIGGER_LABELS[entry.trigger]}`, entry.error ?? entry.output].filter(Boolean).join("\n");
+                  const agentId = entry.agentId;
+                  return agentId ? (
+                    <DrillRow
+                      key={entry.id}
+                      colors={colors}
+                      label={routine.name}
+                      hint={hint}
+                      hintLines={2}
+                      onPress={() => {
+                        setRuns(false);
+                        onOpenChat(agentId);
+                      }}
+                    />
+                  ) : (
+                    <SettingsRow key={entry.id} label={routine.name} hint={hint} />
+                  );
+                })}
+              </SettingsCard>
+            </SettingsSection>
+          </Modal.Content>
+        </Modal>
       ) : null}
       {editing ? (
         <RoutineForm

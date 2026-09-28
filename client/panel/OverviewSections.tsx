@@ -3,7 +3,7 @@ import { Modal } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { botLimits, botMcpServers, botSkills, estimateTokens, utf8Bytes, type Bot } from "../../shared/bot";
 import { teamOf } from "../../shared/groups";
 import { describeSchedule } from "../../shared/routines";
@@ -11,7 +11,7 @@ import { systemPromptRpc } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
 import { useBotChats, useBotHost } from "../data";
 import { MONO_FONT, MONO_PROPS } from "../native";
-import { code, codeLine } from "../typography";
+import { code, codeLine, ui } from "../typography";
 import { useAppsCatalog, useAppsStatus } from "../library/apps";
 import type { PanelProps } from "./BotPanel";
 import { CardNote, DrillRow, SectionMeta } from "./controls";
@@ -50,7 +50,7 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
     // Keep the previous composition while edits recompose it, so the card doesn't jump.
     placeholderData: (previous) => previous,
   });
-  const [open, setOpen] = useState<{ title: string; text: string } | null>(null);
+  const [sheet, setSheet] = useState<"summary" | "prompt" | null>(null);
 
   const appsStatus = useAppsStatus();
   const appNames = new Map((useAppsCatalog(appsStatus.data?.configured ?? false).data?.apps ?? []).map((app) => [app.slug, app.name]));
@@ -68,33 +68,43 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
           <SettingsAction label="Set up with the bot" hint="Starts a chat where the bot interviews you and proposes its own instructions and memory" actionLabel="Start" onPress={onSetup} />
         </SettingsCard>
       </SettingsSection>
-      <SettingsSection title="Summary">
+      <SettingsSection title="About this bot">
         <SettingsCard>
-          <SettingsRow label="Does" hint={bot.title || bot.description || "No title yet. Add one under Identity."} />
-          <SettingsRow label="Team" hint={teamLine(bot, groups)} />
-          <SettingsRow label="Can reach" hint={tools.length ? tools.join(", ") : "Only its provider's built-in tools and Paseo's tools"} />
-          <SettingsRow label="Runs" hint={bot.routines.length ? bot.routines.map((routine) => `${routine.name}: ${describeSchedule(routine.schedule)}${routine.enabled ? "" : " (paused)"}`).join("\n") : "Only when you message it"} />
-          <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal, appsConfigured: !!appsStatus.data?.configured }).join("\n")} />
+          <DrillRow colors={colors} label="Summary" hint="What it does, reaches and won't do" onPress={() => setSheet("summary")} />
+          <DrillRow colors={colors} label="System prompt" hint={prompt.data ? size(prompt.data.systemPrompt) : prompt.isError ? "Unable to compose the prompt" : "Loading..."} onPress={() => setSheet("prompt")} />
         </SettingsCard>
       </SettingsSection>
-      <SettingsSection
-        title="System prompt"
-        info="Sent with every new chat. Open a part to read it."
-        trailing={<SectionMeta colors={colors} text={prompt.data ? size(prompt.data.systemPrompt) : "Loading..."} />}
-      >
-        <SettingsCard>
-          {sections.length === 0 ? <CardNote colors={colors} text={prompt.isError ? "Unable to compose the prompt" : "Loading..."} loading={!prompt.isError} /> : null}
-          {sections.map((section) => (
-            <DrillRow key={section.title} colors={colors} label={section.title} hint={size(section.text)} onPress={() => setOpen(section)} />
-          ))}
-        </SettingsCard>
-      </SettingsSection>
-      {open ? (
-        <Modal title={open.title} open onOpenChange={(next) => !next && setOpen(null)}>
+      {sheet === "summary" ? (
+        <Modal title="Summary" open onOpenChange={(next) => !next && setSheet(null)}>
           <Modal.Content>
-            <Text selectable {...MONO_PROPS} style={{ fontFamily: MONO_FONT, fontSize: code(), lineHeight: codeLine(), color: colors.foreground }}>
-              {open.text}
-            </Text>
+            <SettingsCard>
+              <SettingsRow label="Does" hint={bot.title || bot.description || "No title yet. Add one under Identity."} />
+              <SettingsRow label="Team" hint={teamLine(bot, groups)} />
+              <SettingsRow label="Can reach" hint={tools.length ? tools.join(", ") : "Only its provider's built-in tools and Paseo's tools"} />
+              <SettingsRow label="Runs" hint={bot.routines.length ? bot.routines.map((routine) => `${routine.name}: ${describeSchedule(routine.schedule)}${routine.enabled ? "" : " (paused)"}`).join("\n") : "Only when you message it"} />
+              <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal, appsConfigured: !!appsStatus.data?.configured }).join("\n")} />
+            </SettingsCard>
+          </Modal.Content>
+        </Modal>
+      ) : null}
+      {sheet === "prompt" ? (
+        <Modal title="System prompt" open onOpenChange={(next) => !next && setSheet(null)}>
+          <Modal.Content>
+            <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>Sent with every new chat{prompt.data ? `: ${size(prompt.data.systemPrompt)}` : "."}</Text>
+            {sections.length === 0 ? <CardNote colors={colors} text={prompt.isError ? "Unable to compose the prompt" : "Loading..."} loading={!prompt.isError} /> : null}
+            {sections.map((section) => (
+              <View key={section.title} style={{ gap: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+                  <Text style={{ fontSize: ui(14), color: colors.foreground }}>{section.title}</Text>
+                  <SectionMeta colors={colors} text={size(section.text)} />
+                </View>
+                <View style={{ padding: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1 }}>
+                  <Text selectable {...MONO_PROPS} style={{ fontFamily: MONO_FONT, fontSize: code(), lineHeight: codeLine(), color: colors.foreground }}>
+                    {section.text}
+                  </Text>
+                </View>
+              </View>
+            ))}
           </Modal.Content>
         </Modal>
       ) : null}
@@ -157,7 +167,7 @@ export function UsageSection({ bot, localHost }: PanelProps) {
   const working = list.filter((chat) => chat.status === "running").length;
   const loading = chats.isLoading;
   return (
-    <SettingsSection title="Usage" info="From each chat's latest turn as reported by the provider. Archived chats aren't counted.">
+    <SettingsSection title="All chats" info="From each chat's latest turn as reported by the provider. Archived chats aren't counted.">
       <SettingsCard>
         <SettingsRow label="Chats" hint={loading ? "Loading..." : `${list.length} open${working ? `, ${working} working now` : ""}`} />
         <SettingsRow label="Tokens" hint={loading ? "Loading..." : `${input.toLocaleString()} in · ${output.toLocaleString()} out`} />

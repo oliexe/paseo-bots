@@ -64,10 +64,12 @@ export function TeamSheet({
         </View>
         <SettingsSection title="Logo">
           <SettingsCard>
-            <SettingsRow label="Picture" hint={logo.imageUrl?.startsWith("data:") ? "Your picture" : logo.imageUrl ? "Showing the image from Image URL" : "Pixel art drawn for this team"}>
-              <TeamLogo group={{ id: group?.id ?? "", logo }} size={56} dark={nativeTokens(colors).dark} />
+            <SettingsRow label="Picture" hint={logo.imageUrl?.startsWith("data:") ? "Your picture" : logo.imageUrl ? "The image from its URL" : "Pixel art drawn for this team"}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <TeamLogo group={{ id: group?.id ?? "", logo }} size={40} dark={nativeTokens(colors).dark} />
+                <Button colors={colors} variant="outline" size="sm" label="Reroll" onPress={() => patchLogo({ seed: randomSeed(), imageUrl: null })} />
+              </View>
             </SettingsRow>
-            <SettingsAction label="New logo" hint="Draws a different one" actionLabel="Reroll" onPress={() => patchLogo({ seed: randomSeed(), imageUrl: null })} />
             {canPickFiles ? <SettingsAction label="Upload a picture" hint="Cropped to a square" actionLabel="Upload" onPress={upload} /> : null}
             <ColourRow colors={colors} value={logo.palette} onChange={(palette) => patchLogo({ palette })} />
             <PictureSource colors={colors} imageUrl={logo.imageUrl} hint="Optional. Replaces the pixel logo" placeholder="https://example.com/logo.png" onChange={(imageUrl) => patchLogo({ imageUrl })} />

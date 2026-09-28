@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { botProblems, type Bot, type BotGroup, type HistoryEntry, type Library } from "../../shared/bot";
@@ -25,6 +25,8 @@ interface SectionEntry {
   /** Setting names inside the section; search matches and lists them. */
   rows: string[];
   keywords: string;
+  /** Browsing rather than settings: opens as a modal instead of a page. */
+  modal?: boolean;
 }
 
 // OpenMausBot's order (bot-settings/sections.ts), minus sections Paseo has no equivalent for,
@@ -61,8 +63,8 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
   {
     label: "Activity",
     sections: [
-      { id: "history", label: "History", icon: "History", rows: ["Earlier versions"], keywords: "undo restore changes" },
-      { id: "usage", label: "Usage", icon: "ChartNoAxesColumn", rows: ["Chats", "Tokens", "Cost"], keywords: "usage" },
+      { id: "history", label: "History", icon: "History", rows: ["Earlier versions"], keywords: "undo restore changes", modal: true },
+      { id: "usage", label: "Usage", icon: "ChartNoAxesColumn", rows: ["Chats", "Tokens", "Cost"], keywords: "usage", modal: true },
     ],
   },
 ];
@@ -107,7 +109,9 @@ export function BotPanel(props: BotPanelProps) {
   const [query, setQuery] = useState("");
   const host = useBotHost(bot.hostId, localHost);
   const problems = botProblems(bot, host.isLocal);
-  const open = section ? SECTIONS.find((entry) => entry.id === section) : undefined;
+  const open = section ? SECTIONS.find((entry) => entry.id === section && !entry.modal) : undefined;
+  const [sheet, setSheet] = useState<SectionEntry | null>(null);
+  const choose = (entry: SectionEntry) => (entry.modal ? setSheet(entry) : onSection(entry.id));
 
   if (open) {
     return (
@@ -140,7 +144,7 @@ export function BotPanel(props: BotPanelProps) {
         {needle ? (
           <View style={{ paddingVertical: 8, paddingHorizontal: 8, gap: 2 }}>
             {matches.map(({ entry, rows }) => (
-              <SectionRow key={entry.id} colors={colors} compact={compact} entry={entry} hint={rows.join(", ")} onPress={() => onSection(entry.id)} />
+              <SectionRow key={entry.id} colors={colors} compact={compact} entry={entry} hint={rows.join(", ")} onPress={() => choose(entry)} />
             ))}
             {matches.length === 0 ? (
               <Text style={{ fontSize: ui(14), color: colors.foregroundMuted, textAlign: "center", paddingVertical: 32 }}>No settings match "{query.trim()}"</Text>
@@ -151,12 +155,17 @@ export function BotPanel(props: BotPanelProps) {
             <View key={group.label} style={{ paddingVertical: 8, paddingHorizontal: 8, gap: 2 }}>
               <Text style={{ fontSize: ui(14), color: nativeTokens(colors).foregroundExtraMuted, paddingHorizontal: 8, paddingVertical: 4 }}>{group.label}</Text>
               {group.sections.map((entry) => (
-                <SectionRow key={entry.id} colors={colors} compact={compact} entry={entry} onPress={() => onSection(entry.id)} />
+                <SectionRow key={entry.id} colors={colors} compact={compact} entry={entry} onPress={() => choose(entry)} />
               ))}
             </View>
           ))
         )}
       </ScrollView>
+      {sheet ? (
+        <Modal title={sheet.label} open onOpenChange={(next) => !next && setSheet(null)}>
+          <Modal.Content>{renderSection(sheet.id, props)}</Modal.Content>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -193,7 +202,7 @@ function renderSection(id: SectionId, props: PanelProps): ReactNode {
 /**
  * Paseo's settings sidebar item (settings-screen.tsx sidebarStyles.item: 28 min height, 4/8
  * padding, radius 8, 16pt icon, muted 14pt label, surfaceSidebarHover on hover) with a
- * drill-in chevron, since the detail replaces the list here. Touch-sized (36) on compact.
+ * drill-in chevron when the detail replaces the list. Touch-sized (36) on compact.
  */
 function SectionRow({ colors, compact, entry, hint, onPress }: { colors: Colors; compact: boolean; entry: SectionEntry; hint?: string; onPress(): void }) {
   const { hovered, hoverProps } = useHover();
@@ -225,7 +234,7 @@ function SectionRow({ colors, compact, entry, hint, onPress }: { colors: Colors;
           </Text>
         ) : null}
       </View>
-      <Icon name="ChevronRight" size={14} color={colors.foregroundMuted} />
+      {entry.modal ? null : <Icon name="ChevronRight" size={14} color={colors.foregroundMuted} />}
     </Pressable>
   );
 }
