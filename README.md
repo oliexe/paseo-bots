@@ -10,10 +10,10 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 
 | Feature | Description |
 | --- | --- |
-| **Bots** | Instructions, provider and model, host, approval mode and an avatar. Start blank or from a role such as Email triage or Researcher. |
+| **Bots** | Instructions, provider and model, host, approval mode and an avatar. Start blank or from a role such as Email triage or Researcher, or ask a bot to set them up. |
 | **Memory** | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. |
 | **Routines** | Runs on a schedule, such as every weekday at 9:00, or when its webhook is called. |
-| **Teams** | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. |
+| **Teams** | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. Each team gets a tab and a pixel-art logo. |
 | **Skills & Tools** | One library of skills and MCP servers, switched on per bot. Import skills from GitHub and MCP servers from Claude Code, Claude Desktop or Cursor. |
 | **Learning** | Send `/learn` after a task and the bot writes it up as a skill. |
 | **Connected apps** | 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. |
@@ -46,6 +46,8 @@ Or paste `npm:@oliexe/paseo-bots` into **Settings → Plugins → Plugin source*
 2. Chat with it. Every chat is a thread in the bot's workspace; **Open in Paseo** in a chat's menu shows it in Paseo's own view.
 3. Open its settings with the panel button at the top right of a chat, or **Open bot settings** in the bot's menu. **Identity** holds the name, avatar and voice, **Soul** its standing instructions, **Model** the provider and model, and **Permissions** the approval mode.
 
+Bots can do the setting up too. Ask one in a chat, for example "Create a research team of three bots with Scout as Chief of Staff", and it shows every change on one card; **Apply changes** makes them. A bot can create, edit and delete bots, teams, routines, library skills and MCP servers, and change what new bots start with. Each bot's earlier settings stay under **History** in its settings.
+
 ### Memory
 
 A bot updates its `MEMORY.md` when it learns something worth keeping, for example when you say "Remember that I prefer short answers". New chats start with it.
@@ -64,8 +66,10 @@ Bots can propose routines too: ask in a chat, then press **Create routine** on t
 ### Teams
 
 1. Press **Team map** at the bottom of the bot list, then **New team**.
-2. Name the team, switch on its members, pick a **Lead** as its Chief of Staff, and add shared instructions for every member.
+2. Name the team, switch on its members, pick a **Lead** as its Chief of Staff, and add shared instructions for every member. The team gets a pixel-art logo; **Reroll** draws another, or use your own picture.
 3. Send your requests to the Chief of Staff. It hands parts of the work to its teammates.
+
+With teams, the Bots screen gets a tab for each team, and **Other bots** for bots without one (a menu on phones); **+** next to the tabs adds a team, and right-clicking a tab edits it. A team file carries your bots and their teams: find it in **Settings → Plugins**, under **Bots** in the paseo-bots menu.
 
 Whether a bot may ask others for help is set in its settings under **Permissions → Contact other bots**: **Ask first**, **Allowed** or **Off**.
 
