@@ -6,6 +6,7 @@ import { ProposalCard } from "./client/chat/stream/ProposalCard";
 import { RoutineRunCard } from "./client/chat/stream/RoutineRunCard";
 import { requestIntent } from "./client/intent";
 import { BotsSettings } from "./client/settings/BotsSettings";
+import { installTooltips } from "./client/ui/Tooltip";
 import { appSignIns } from "./shared/apps";
 import { BOT_LABEL } from "./shared/bot";
 import { proposalIdOf } from "./shared/proposals";
@@ -15,6 +16,7 @@ import { LEARN_COMMAND, learnPrompt } from "./shared/skills";
 export default function contribute(client: PluginClientContext) {
   // Hands the daemon side its Paseo API so bot routines can run.
   void client.rpc(helloRpc, {}).catch(() => {});
+  const removeTooltips = installTooltips();
   client.addSurface("bots", BotsSurface);
   client.addSidebarItem({ id: "bots", title: "Bots", icon: "Bot", surface: "bots" });
   client.addSettingsScreen({ id: "bots", title: "Bots", icon: "Bot", Component: BotsSettings });
@@ -82,5 +84,5 @@ export default function contribute(client: PluginClientContext) {
     schema: RoutineRunCardSchema,
     Component: ({ item, theme }) => <RoutineRunCard colors={theme.colors} card={item.data} />,
   });
-  return () => {};
+  return removeTooltips;
 }

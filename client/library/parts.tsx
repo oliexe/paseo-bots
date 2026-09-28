@@ -9,6 +9,7 @@ import { Avatar } from "../Avatar";
 import { confirmDialog, nativeTokens, useHover } from "../native";
 import { CardNote, RowText, Switch } from "../panel/controls";
 import { ui } from "../typography";
+import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -32,6 +33,7 @@ export function BackBar({ colors, title, backLabel = "Back to Skills & Tools", o
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={backLabel}
+        {...tooltip(backLabel, "bottom")}
         hitSlop={8}
         onPress={onBack}
         {...hoverProps}

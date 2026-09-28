@@ -13,6 +13,7 @@ import { nativeTokens, useHover, type NativeTokens } from "./native";
 import { Splash } from "./Splash";
 import { ui } from "./typography";
 import { contextMenuProps, measureAnchor } from "./ui/Menu";
+import { tooltip } from "./ui/Tooltip";
 
 // Paseo's sidebar, reproduced from components/left-sidebar.tsx, sidebar-workspace-list.tsx
 // and components/sidebar/*: bot rows are project rows, chat rows are workspace rows.
@@ -99,7 +100,7 @@ export function BotSidebar(props: BotSidebarProps) {
         contentContainerStyle={{ paddingHorizontal: 8, paddingTop: 2, paddingBottom: 16 }}
       >
         {pins.length > 0 ? <PinnedSection {...props} pins={pins} botById={listedBots} tokens={tokens} /> : null}
-        {bots.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} tokens={tokens} onDisplayMenu={props.onDisplayMenu} /> : null}
+        {bots.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} onDisplayMenu={props.onDisplayMenu} /> : null}
         {teams.map(({ group, lead, members }) => (
           <TeamSection key={group.id} {...props} tokens={tokens} group={group}>
             {lead ? <BotGroup {...props} tokens={tokens} bot={lead} lead pinnedIds={pinnedIds} /> : null}
@@ -134,28 +135,23 @@ export function BotSidebar(props: BotSidebarProps) {
 
 // ------------------------------------------------------------------ header / footer / empty
 
-function SectionHeader({ colors, tokens, onDisplayMenu }: { colors: Colors; tokens: NativeTokens; onDisplayMenu(anchor: LayoutRectangle): void }) {
+function SectionHeader({ colors, onDisplayMenu }: { colors: Colors; onDisplayMenu(anchor: LayoutRectangle): void }) {
   const ref = useRef<View>(null);
-  const tip = useTooltip(300);
+  const { hovered, hoverProps } = useHover();
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, paddingLeft: 8, paddingRight: 4, paddingTop: 4, paddingBottom: 4, zIndex: tip.visible ? 2 : 0 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, paddingLeft: 8, paddingRight: 4, paddingTop: 4, paddingBottom: 4 }}>
       <Text style={[{ fontSize: ui(12), color: colors.foregroundMuted }, noSelect]}>Bots</Text>
-      <View>
-        <Pressable
-          ref={ref}
-          accessibilityRole="button"
-          accessibilityLabel="Display preferences"
-          onPress={() => {
-            tip.hide();
-            void measureAnchor(ref).then((anchor) => anchor && onDisplayMenu(anchor));
-          }}
-          {...tip.hoverProps}
-          style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: tip.hovered ? colors.surface1 : "transparent" }}
-        >
-          <Icon name="Settings2" size={14} color={colors.foregroundMuted} />
-        </Pressable>
-        {tip.visible ? <Tooltip colors={colors} tokens={tokens} label="Display preferences" align="end" /> : null}
-      </View>
+      <Pressable
+        ref={ref}
+        accessibilityRole="button"
+        accessibilityLabel="Display preferences"
+        {...tooltip("Display preferences", "bottom")}
+        onPress={() => void measureAnchor(ref).then((anchor) => anchor && onDisplayMenu(anchor))}
+        {...hoverProps}
+        style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: hovered ? colors.surface1 : "transparent" }}
+      >
+        <Icon name="Settings2" size={14} color={colors.foregroundMuted} />
+      </Pressable>
     </View>
   );
 }
@@ -203,6 +199,7 @@ function FooterIconButton({ colors, icon, label, onPress }: { colors: Colors; ic
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label)}
       onPress={onPress}
       {...hoverProps}
       style={({ pressed }) => [
@@ -404,7 +401,7 @@ function BotGroup(props: GroupProps) {
 function BotRow({ colors, tokens, bot, lead, touch, isOpen, aggregate, hostLabel, onToggle, onSelect, onBotMenu }: GroupProps & { isOpen: boolean; aggregate: ChatBucket | null; hostLabel: string | null }) {
   const [hovered, setHovered] = useState(false);
   const kebabRef = useRef<View>(null);
-  const plusTip = useTooltip(0);
+  const plus = useHover();
   const actionsVisible = hovered || touch;
   const backdrop = hovered ? colors.surface1 : tokens.surfaceSidebar;
   // The row's press target sits behind its content and the + / ⋮ buttons are its siblings,
@@ -426,7 +423,6 @@ function BotRow({ colors, tokens, bot, lead, touch, isOpen, aggregate, hostLabel
           justifyContent: "space-between",
           gap: 8,
           backgroundColor: hovered ? colors.surface1 : "transparent",
-          zIndex: plusTip.visible ? 2 : 0,
         },
         noSelect,
       ]}
@@ -461,24 +457,21 @@ function BotRow({ colors, tokens, bot, lead, touch, isOpen, aggregate, hostLabel
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`New chat with ${bot.name}`}
+            {...tooltip("New chat", "bottom")}
             hitSlop={8}
-            onPress={() => {
-              plusTip.hide();
-              onSelect({ botId: bot.id, chatId: null });
-            }}
-            {...plusTip.hoverProps}
+            onPress={() => onSelect({ botId: bot.id, chatId: null })}
+            {...plus.hoverProps}
             style={({ pressed: down }) => ({
               width: 24,
               height: 24,
               borderRadius: 6,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: plusTip.hovered || down ? colors.surface1 : "transparent",
+              backgroundColor: plus.hovered || down ? colors.surface1 : "transparent",
             })}
           >
-            {({ pressed: down }) => <Icon name="Plus" size={15} color={plusTip.hovered || down ? colors.foreground : colors.foregroundMuted} />}
+            {({ pressed: down }) => <Icon name="Plus" size={15} color={plus.hovered || down ? colors.foreground : colors.foregroundMuted} />}
           </Pressable>
-          {plusTip.visible && actionsVisible ? <Tooltip colors={colors} tokens={tokens} label="New chat" align="end" /> : null}
         </View>
         <View style={{ opacity: actionsVisible ? 1 : 0 }} pointerEvents={actionsVisible ? "auto" : "none"}>
           <KebabButton
@@ -677,6 +670,7 @@ function KebabButton({ colors, buttonRef, label, box, onPress }: { colors: Color
       ref={buttonRef}
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label, "bottom")}
       hitSlop={8}
       onPress={onPress}
       {...hoverProps}
@@ -849,73 +843,6 @@ function SkeletonRows({ colors }: { colors: Colors }) {
           <Animated.View style={{ flex: 1, height: 12, borderRadius: 2, backgroundColor: colors.surface2, opacity }} />
         </View>
       ))}
-    </View>
-  );
-}
-
-// ------------------------------------------------------------------ tooltip
-
-/** Hover state plus a delayed tooltip flag (Paseo's Tooltip delayDuration). Desktop only: touch never hovers. */
-function useTooltip(delayMs: number) {
-  const [hovered, setHovered] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clear = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-  };
-  useEffect(() => clear, []);
-  return {
-    hovered,
-    visible,
-    hide: () => {
-      clear();
-      setVisible(false);
-    },
-    hoverProps: {
-      onHoverIn: () => {
-        setHovered(true);
-        clear();
-        if (delayMs <= 0) setVisible(true);
-        else timer.current = setTimeout(() => setVisible(true), delayMs);
-      },
-      onHoverOut: () => {
-        setHovered(false);
-        clear();
-        setVisible(false);
-      },
-    },
-  };
-}
-
-/** Paseo's TooltipContent (side bottom, offset 8): popover surface, borderAccent frame, radius 12. */
-function Tooltip({ colors, tokens, label, align }: { colors: Colors; tokens: NativeTokens; label: string; align: "end" | "center" }) {
-  return (
-    <View
-      pointerEvents="none"
-      style={[
-        {
-          position: "absolute",
-          top: "100%",
-          marginTop: 8,
-          zIndex: 10,
-          paddingVertical: 4,
-          paddingHorizontal: 8,
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: tokens.borderAccent,
-          backgroundColor: tokens.dark ? colors.surface2 : colors.surface0,
-          shadowColor: tokens.dark ? "rgba(0, 0, 0, 0.20)" : "rgba(0, 0, 0, 0.04)",
-          shadowOffset: { width: 0, height: 4 },
-          shadowRadius: tokens.dark ? 8 : 16,
-          elevation: 8,
-        },
-        align === "end" ? { right: 0 } : { left: "50%", transform: [{ translateX: "-50%" }] },
-        // Size to the label rather than to the 24pt trigger it hangs from.
-        { width: "max-content" } as object,
-      ]}
-    >
-      <Text style={{ fontSize: ui(14), color: colors.foreground }}>{label}</Text>
     </View>
   );
 }

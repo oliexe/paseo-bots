@@ -6,6 +6,7 @@ import { Platform, Pressable, Text, View, type TextStyle } from "react-native";
 import { parseMarkdown, type Block, type Inline, type ListItem } from "../shared/markdown";
 import { MONO_FONT, MONO_PROPS, nativeTokens } from "./native";
 import { code, codeLine, content, contentLine } from "./typography";
+import { tooltip } from "./ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -296,6 +297,7 @@ function CodeBlock({ colors, text }: { colors: Colors; text: string }) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={copied ? "Copied" : "Copy code"}
+        {...tooltip(copied ? "Copied" : "Copy code")}
         onPress={copy}
         onHoverIn={() => setButtonHovered(true)}
         onHoverOut={() => setButtonHovered(false)}

@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { Pressable, View } from "react-native";
 import { nativeTokens } from "../../native";
 import { measureAnchor, useMenu } from "../../ui/Menu";
+import { tooltip, tooltipsShown } from "../../ui/Tooltip";
 import { formatSessionCost, formatTokenCount, meterTone, ringRotations, type ContextUsage } from "./logic";
 
 type Colors = PluginTheme["colors"];
@@ -14,8 +15,8 @@ const AMBER_500 = "#f59e0b";
  * Paseo's context window meter (components/context-window-meter.tsx): a 28pt slot with a
  * ring glyph, surface3 track, muted progress that turns amber from 70% and destructive
  * above 90%. While a turn runs before any usage arrives it reserves the slot with the
- * track alone. Paseo's hover tooltip becomes a small anchored panel here (no tooltips in
- * plugin surfaces).
+ * track alone. Hovering shows Paseo's tooltip at once; where there are no tooltips (touch,
+ * compact) pressing opens the same lines in a small anchored panel.
  */
 export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Colors; usage: ContextUsage | null; pending: boolean; glyphSize: number }) {
   const tokens = nativeTokens(colors);
@@ -33,7 +34,10 @@ export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Co
   const tone = meterTone(usage.percent);
   const progress = tone === "danger" ? colors.statusDanger : tone === "warning" ? AMBER_500 : colors.foregroundMuted;
   const cost = usage.costUsd !== null ? formatSessionCost(usage.costUsd) : null;
+  const tokensLine = `${formatTokenCount(usage.used)} / ${formatTokenCount(usage.max)} tokens`;
+  const costLine = cost ? `Session cost ${cost}` : null;
   const open = async () => {
+    if (tooltipsShown()) return;
     const rect = await measureAnchor(anchor);
     if (!rect) return;
     const noop = () => {};
@@ -44,8 +48,8 @@ export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Co
       title: "Context window",
       entries: [
         { label: `${rounded}% used`, onSelect: noop },
-        { label: `${formatTokenCount(usage.used)} / ${formatTokenCount(usage.max)} tokens`, onSelect: noop },
-        ...(cost ? [{ label: `Session cost ${cost}`, onSelect: noop }] : []),
+        { label: tokensLine, onSelect: noop },
+        ...(costLine ? [{ label: costLine, onSelect: noop }] : []),
       ],
     });
   };
@@ -54,6 +58,7 @@ export function ContextMeter({ colors, usage, pending, glyphSize }: { colors: Co
       ref={anchor}
       accessibilityRole="button"
       accessibilityLabel={`Context window ${rounded}% used`}
+      {...tooltip("Context window", "top", { lines: [`${rounded}% used`], details: costLine ? [tokensLine, costLine] : [tokensLine], instant: true })}
       onPress={() => void open()}
       style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" }}
     >

@@ -48,6 +48,7 @@ import {
   withPluginCommands,
 } from "./composer/logic";
 import { useSendBehavior } from "./composer/storage";
+import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 type Permission = PaseoAgent["pendingPermissions"][number];
@@ -585,6 +586,7 @@ function AttachButton({ colors, anchorRef, iconSize, disabled, onPress }: { colo
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Add attachment"
+      {...tooltip("Add attachment")}
       disabled={disabled}
       onPress={onPress}
       {...hoverProps}
@@ -603,6 +605,7 @@ function RoundButton({ label, background, disabled, onPress, children }: { label
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label)}
       disabled={disabled}
       onPress={onPress}
       style={{ width: 28, height: 28, borderRadius: 14, marginLeft: 4, alignItems: "center", justifyContent: "center", backgroundColor: background, opacity: disabled ? 0.5 : 1 }}
@@ -643,6 +646,7 @@ function QueuedRow({ colors, item, onEdit, onSendNow }: { colors: Colors; item: 
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Edit queued message"
+          {...tooltip("Edit")}
           onPress={onEdit}
           style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface2 }}
         >
@@ -651,6 +655,7 @@ function QueuedRow({ colors, item, onEdit, onSendNow }: { colors: Colors; item: 
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send queued message now"
+          {...tooltip("Send now")}
           onPress={onSendNow}
           style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.accent }}
         >

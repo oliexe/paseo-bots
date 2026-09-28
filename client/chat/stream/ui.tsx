@@ -5,6 +5,7 @@ import { ActivityIndicator, Animated, Easing, Platform, Pressable, Text, View, t
 import { nativeTokens, useHover } from "../../native";
 import { speak, stopSpeaking, useSpeaking } from "../../speech";
 import { ui } from "../../typography";
+import { tooltip } from "../../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -133,7 +134,7 @@ export const CopyButton = memo(function CopyButton({
     });
   };
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={copied ? "Copied" : label} onPress={copy} {...hoverProps} style={[{ padding: 4 }, style]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={copied ? "Copied" : label} {...tooltip(copied ? "Copied" : "Copy")} onPress={copy} {...hoverProps} style={[{ padding: 4 }, style]}>
       <Icon name={copied ? "Check" : "Copy"} size={14} color={hovered ? colors.foreground : colors.foregroundMuted} />
     </Pressable>
   );
@@ -147,6 +148,7 @@ export function SpeakButton({ colors, text, voice }: { colors: Colors; text: str
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={speaking ? "Stop reading" : "Read aloud"}
+      {...tooltip(speaking ? "Stop reading" : "Read aloud")}
       onPress={() => (speaking ? stopSpeaking() : speak(text, text, voice))}
       {...hoverProps}
       style={{ padding: 4, alignSelf: "center" }}

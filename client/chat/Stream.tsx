@@ -27,6 +27,7 @@ import { FindBar } from "./FindBar";
 import { buildRows, findRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
+import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -360,6 +361,7 @@ function ScrollToBottomButton({ colors, visible, onPress }: { colors: Colors; vi
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Scroll to bottom"
+          {...tooltip("Scroll to bottom")}
           onPress={onPress}
           style={{
             width: 48,

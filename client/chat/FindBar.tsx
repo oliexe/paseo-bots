@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, TextInput, View, type NativeSyntheticEvent, type TextInputKeyPressEventData } from "react-native";
 import { CONTENT_MAX_WIDTH, nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
+import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -98,6 +99,7 @@ function FindButton({ colors, icon, label, onPress }: { colors: Colors; icon: st
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label, "bottom")}
       onPress={onPress}
       {...hoverProps}
       style={({ pressed }) => ({ width: 24, height: 24, borderRadius: 4, alignItems: "center", justifyContent: "center", backgroundColor: hovered || pressed ? tokens.interactionHighlight : "transparent" })}

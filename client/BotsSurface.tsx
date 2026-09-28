@@ -31,6 +31,7 @@ import { ResizeHandle, SlideOver } from "./ui/Columns";
 import { fitColumns } from "../shared/layout";
 import { confirmDialog, errorText, nativeTokens } from "./native";
 import { measureAnchor, MenuProvider, useMenu } from "./ui/Menu";
+import { useTooltipTheme } from "./ui/Tooltip";
 import { homeIndicatorInset, useKeyboardHeight } from "./keyboard";
 import { newMessageId } from "./sent-attachments";
 import { BotPanel, type SectionId } from "./panel/BotPanel";
@@ -87,6 +88,7 @@ function presetBot(provider: string, preset: Preset): Bot {
 
 export function BotsSurface(props: PluginSurfaceProps) {
   const { colors } = props.theme;
+  useTooltipTheme(colors);
   return (
     <MenuProvider colors={colors} compact={props.layout.compact}>
       <AvatarTheme dark={nativeTokens(colors).dark}>

@@ -12,6 +12,7 @@ import { IdentitySection } from "./IdentitySection";
 import { MemorySection, PlaybooksSection, SkillsSection, SoulSection } from "./KnowledgeSections";
 import { HistorySection, OverviewSection, UsageSection } from "./OverviewSections";
 import { RoutinesSection } from "./RoutinesSection";
+import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -266,6 +267,7 @@ function HeaderButton({ colors, compact, icon, label, iconSize, onPress }: { col
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label, "bottom")}
       hitSlop={8}
       onPress={onPress}
       {...hoverProps}

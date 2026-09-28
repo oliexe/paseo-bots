@@ -11,6 +11,7 @@ import { connectedApps, useAppsAccounts, useAppsCatalog, useAppsStatus } from ".
 import { AppLogo } from "./parts";
 import { ui } from "../typography";
 import { measureAnchor } from "../ui/Menu";
+import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -145,6 +146,7 @@ function AddButton({ colors, label, onPress }: { colors: Colors; label: string; 
       ref={ref}
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label, "bottom")}
       hitSlop={8}
       onPress={() => void measureAnchor(ref).then((anchor) => anchor && onPress(anchor))}
       {...hoverProps}

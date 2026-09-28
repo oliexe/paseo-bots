@@ -14,6 +14,7 @@ import { ui } from "./typography";
 import { measureAnchor } from "./ui/Menu";
 import { listenForFind } from "./web";
 import type { ChatState } from "./useChat";
+import { tooltip } from "./ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -175,6 +176,7 @@ function HeaderButton({ colors, compact, icon, label, expanded, onPress }: { col
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label, "bottom")}
       accessibilityState={expanded === undefined ? undefined : { expanded }}
       onPress={onPress}
       {...hoverProps}

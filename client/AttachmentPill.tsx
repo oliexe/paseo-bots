@@ -5,6 +5,7 @@ import { ActivityIndicator, Image, Platform, Pressable, Text, View, useWindowDim
 import { getFileTypeLabel, type ComposerAttachment } from "../shared/attachments";
 import { MONO_FONT, MONO_PROPS, nativeTokens } from "./native";
 import { code, codeLine, ui } from "./typography";
+import { tooltip } from "./ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -53,6 +54,7 @@ export function AttachmentPill({ colors, attachment, onRemove, disabled, alwaysS
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={removeLabel}
+          {...tooltip("Remove")}
           onPress={onRemove}
           disabled={disabled || !showRemove}
           onHoverIn={() => setCloseHovered(true)}

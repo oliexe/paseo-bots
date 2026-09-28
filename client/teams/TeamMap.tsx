@@ -10,6 +10,7 @@ import { useBotChats, useBotHost, type LocalHost } from "../data";
 import { CONTENT_MAX_WIDTH, nativeTokens, useHover } from "../native";
 import { Button } from "../panel/controls";
 import { ui } from "../typography";
+import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
@@ -52,7 +53,7 @@ export function TeamMap({
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
       <View style={{ height: compact ? 56 : 36, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: compact ? 4 : 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
         {onBack ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Back to bots" onPress={onBack} style={({ pressed }) => ({ padding: 12, borderRadius: 8, backgroundColor: pressed ? tokens.interactionHighlight : "transparent" })}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back to bots" {...tooltip("Back to bots", "bottom")} onPress={onBack} style={({ pressed }) => ({ padding: 12, borderRadius: 8, backgroundColor: pressed ? tokens.interactionHighlight : "transparent" })}>
             <Icon name="ArrowLeft" size={20} color={colors.foregroundMuted} />
           </Pressable>
         ) : null}

@@ -6,6 +6,7 @@ import { MONO_FONT, MONO_PROPS, nativeTokens, useHover, withAlpha } from "../nat
 import { fieldStateStyle, multilineStyle } from "../theme";
 import { code, ui } from "../typography";
 import { measureAnchor } from "../ui/Menu";
+import { tooltip } from "../ui/Tooltip";
 
 // Paseo primitives the plugin SDK doesn't hand out, rebuilt from their source:
 // Button (components/ui/button.tsx), FormTextInput (form-field.tsx), SettingsTextArea
@@ -261,7 +262,7 @@ export function SearchField({ colors, value, onChangeText, placeholder }: { colo
         style={{ flex: 1, minWidth: 0, padding: 0, height: 20, fontSize: ui(14), color: colors.foreground, outlineWidth: 0 }}
       />
       {value.length > 0 ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={8} onPress={() => onChangeText("")}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Clear search" {...tooltip("Clear search")} hitSlop={8} onPress={() => onChangeText("")}>
           <Icon name="X" size={14} color={colors.foregroundMuted} />
         </Pressable>
       ) : null}
@@ -454,6 +455,7 @@ export function KebabButton({ colors, label, onOpen }: { colors: Colors; label: 
       ref={ref}
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...tooltip(label)}
       hitSlop={8}
       onPressIn={(event) => event.stopPropagation()}
       onPress={() => void measureAnchor(ref).then((anchor) => anchor && onOpen(anchor))}
