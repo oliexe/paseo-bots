@@ -331,19 +331,31 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     });
   };
 
-  /** Swaps a bot with its neighbour in the list (pinned and unpinned bots stay in their own runs). */
+  /**
+   * Swaps a bot with its neighbour as the list shows it: on a team's tab within the team,
+   * whose Chief of Staff stays first; otherwise among the listed bots, where pinned and
+   * unpinned bots keep their own runs.
+   */
   const moveBot = (bot: Bot, delta: -1 | 1): (() => void) | undefined => {
-    const index = listed.findIndex((entry) => entry.id === bot.id);
-    const neighbour = listed[index + delta];
-    if (index === -1 || !neighbour || neighbour.pinned !== bot.pinned) return undefined;
+    const shown = openTab?.bots ?? listed;
+    const index = shown.findIndex((entry) => entry.id === bot.id);
+    const neighbour = shown[index + delta];
+    if (index === -1 || !neighbour) return undefined;
+    const swap = (ids: readonly string[]) => ids.map((id) => (id === bot.id ? neighbour.id : id === neighbour.id ? bot.id : id));
+    const group = openTab?.group;
+    if (group) {
+      if (bot.id === group.leadId || neighbour.id === group.leadId) return undefined;
+      return () =>
+        void commit((values) => ({
+          ...values,
+          groups: (values.groups ?? []).map((entry) => (entry.id === group.id ? { ...entry, memberIds: swap(entry.memberIds), updatedAt: new Date().toISOString() } : entry)),
+        }));
+    }
+    if (neighbour.pinned !== bot.pinned) return undefined;
     return () =>
       void commit((values) => {
-        const bots = [...values.bots];
-        const a = bots.findIndex((entry) => entry.id === bot.id);
-        const b = bots.findIndex((entry) => entry.id === neighbour.id);
-        if (a === -1 || b === -1) return values;
-        [bots[a], bots[b]] = [bots[b]!, bots[a]!];
-        return { ...values, bots };
+        const order = swap(values.bots.map((entry) => entry.id));
+        return { ...values, bots: order.map((id) => values.bots.find((entry) => entry.id === id)!) };
       });
   };
 
