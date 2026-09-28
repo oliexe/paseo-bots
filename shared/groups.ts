@@ -1,10 +1,15 @@
-import type { Bot, BotGroup } from "./bot";
+import type { Bot, BotGroup, TeamLogo } from "./bot";
 
 // OpenMausBot's teams: a bot belongs to at most one team, every member gets the
 // team's roster and shared instructions in its prompt, and the team's Chief of
 // Staff (its lead) is the user's main contact who hands work to the others.
 
 const ROSTER_MAX = 40;
+
+/** The team's logo; teams from before logos draw one from their id. */
+export function teamLogoOf(group: Pick<BotGroup, "id" | "logo">): TeamLogo {
+  return group.logo ?? { seed: group.id, palette: null, imageUrl: null };
+}
 
 /** The team a bot is on, if any. */
 export function teamOf(botId: string, groups: readonly BotGroup[]): BotGroup | null {
@@ -42,6 +47,7 @@ export function teamPrompt(group: BotGroup, bot: Bot, bots: readonly Bot[]): str
 
 export interface TeamDraft {
   name: string;
+  logo: TeamLogo | null;
   leadId: string | null;
   memberIds: string[];
   instructions: string;
@@ -67,4 +73,39 @@ export function withoutBot(groups: readonly BotGroup[], botId: string, now: stri
   return groups.map((group) =>
     group.memberIds.includes(botId) || group.leadId === botId ? { ...group, memberIds: group.memberIds.filter((id) => id !== botId), leadId: group.leadId === botId ? null : group.leadId, updatedAt: now } : group,
   );
+}
+
+// ------------------------------------------------------------------ tabs
+
+/** The tab of the bots that aren't on a team. */
+export const OTHER_BOTS_TAB = "other";
+
+export interface TeamTab {
+  /** A team id, or OTHER_BOTS_TAB. */
+  id: string;
+  group: BotGroup | null;
+  /** The listed bots on it; a team's lead comes first. */
+  bots: Bot[];
+}
+
+/**
+ * With teams the bot list splits into tabs: one per team, then "Other bots"
+ * when some listed bots have no team. Without teams there are none.
+ */
+export function teamTabs(groups: readonly BotGroup[], bots: readonly Bot[]): TeamTab[] {
+  if (groups.length === 0) return [];
+  const byId = new Map(bots.map((bot) => [bot.id, bot]));
+  const teamed = new Set<string>();
+  const tabs: TeamTab[] = groups.map((group) => {
+    const ids = [...(group.leadId ? [group.leadId] : []), ...group.memberIds.filter((id) => id !== group.leadId)];
+    for (const id of ids) teamed.add(id);
+    return { id: group.id, group, bots: ids.flatMap((id) => byId.get(id) ?? []) };
+  });
+  const others = bots.filter((bot) => !teamed.has(bot.id));
+  return others.length > 0 ? [...tabs, { id: OTHER_BOTS_TAB, group: null, bots: others }] : tabs;
+}
+
+/** The tab a bot is listed under. */
+export function tabOf(botId: string, groups: readonly BotGroup[]): string {
+  return teamOf(botId, groups)?.id ?? OTHER_BOTS_TAB;
 }

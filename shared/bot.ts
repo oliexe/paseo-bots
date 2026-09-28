@@ -205,6 +205,8 @@ export const BotListUiSchema = z.object({
   chatOrder: z.record(z.string(), z.array(z.string())).default({}),
   chatSort: z.enum(["manual", "activity"]).default("manual"),
   showArchived: z.boolean().default(false),
+  /** The open team tab: a team id, or OTHER_BOTS_TAB. Null opens the first. */
+  tab: z.string().nullable().default(null),
   /** Desktop column widths, like Paseo's resizable sidebar (default 320) and explorer (default 320). */
   listWidth: z.number().default(320),
   panelWidth: z.number().default(320),
@@ -213,10 +215,23 @@ export type BotListUi = z.infer<typeof BotListUiSchema>;
 
 export const DEFAULT_BOT_LIST_UI: BotListUi = BotListUiSchema.parse({});
 
+/** A team's logo: a generated pixel-art motif, or a picture instead. */
+export const TeamLogoSchema = z.object({
+  /** Seed for the generated logo. */
+  seed: z.string(),
+  /** Palette override for the generated logo; null lets the seed pick. */
+  palette: z.number().int().nullable().default(null),
+  /** An http(s) or data: image shown instead of the generated logo. */
+  imageUrl: z.string().nullable().default(null),
+});
+export type TeamLogo = z.infer<typeof TeamLogoSchema>;
+
 /** A team of bots, after OpenMausBot's teams: its members, its lead (Chief of Staff) and shared instructions. */
 export const BotGroupSchema = z.object({
   id: z.string(),
   name: z.string(),
+  /** Null draws a logo from the team's id. */
+  logo: TeamLogoSchema.nullable().default(null),
   /** The user's main contact for the team, who hands work to the others; null until one is picked. */
   leadId: z.string().nullable().default(null),
   /** The team's bots; the lead is one of them. */

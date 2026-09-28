@@ -1,7 +1,10 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Image, View } from "react-native";
-import { pixelAvatar, SPRITE_SIZE, type PixelAvatar } from "../shared/avatar";
-import type { BotAvatar } from "../shared/bot";
+import { pixelAvatar, SPRITE_SIZE } from "../shared/avatar";
+import type { BotAvatar, BotGroup } from "../shared/bot";
+import { teamLogoOf } from "../shared/groups";
+import type { PixelRun } from "../shared/pixel";
+import { LOGO_SIZE, teamLogo } from "../shared/team-logo";
 
 interface AvatarProps {
   avatar: Pick<BotAvatar, "seed"> & Partial<BotAvatar>;
@@ -33,11 +36,27 @@ export function Avatar({ avatar, size, dark: darkProp }: AvatarProps) {
   return <PixelSprite sprite={sprite} size={size} radius={radius} />;
 }
 
-/** Draws a generated sprite: one View per same-coloured run on a rounded background. */
-export function PixelSprite({ sprite, size, radius = size / 2 }: { sprite: PixelAvatar; size: number; radius?: number }) {
+/** A team's logo: its picture, or the generated pixel-art motif on a rounded tile. */
+export function TeamLogo({ group, size }: { group: Pick<BotGroup, "id" | "logo">; size: number }) {
+  const dark = useContext(AvatarThemeContext);
+  const logo = teamLogoOf(group);
+  const image = useMemo(() => teamLogo(logo.seed, logo.palette, { dark }), [logo.seed, logo.palette, dark]);
+  const radius = size / 4;
+  if (logo.imageUrl) {
+    return <Image accessibilityIgnoresInvertColors source={{ uri: logo.imageUrl }} style={{ width: size, height: size, borderRadius: radius }} />;
+  }
+  // The motif has its margin drawn in, so it fills the tile.
+  return <PixelSprite sprite={image} size={size} radius={radius} grid={LOGO_SIZE} inset={false} />;
+}
+
+/**
+ * Draws a generated sprite: one View per same-coloured run on a rounded background. Avatars
+ * sit inset in their frame except when small; `inset` false fills it (team logos).
+ */
+export function PixelSprite({ sprite, size, radius = size / 2, grid = SPRITE_SIZE, inset = true }: { sprite: { background: string; rows: PixelRun[][] }; size: number; radius?: number; grid?: number; inset?: boolean }) {
   // Small avatars (sidebar rows) use the full frame so each sprite pixel stays about one point.
-  const inner = size <= 24 ? size : size * 0.82;
-  const pixel = inner / SPRITE_SIZE;
+  const inner = !inset || size <= 24 ? size : size * 0.82;
+  const pixel = inner / grid;
   return (
     <View
       accessibilityElementsHidden

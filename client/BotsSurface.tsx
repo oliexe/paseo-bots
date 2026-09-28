@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
 import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library, type Preset } from "../shared/bot";
-import { saveTeam, withoutBot } from "../shared/groups";
+import { saveTeam, tabOf, teamTabs, withoutBot } from "../shared/groups";
 import { addImportedBots } from "../shared/library";
 import { displayTitle, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
@@ -296,14 +296,18 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     .sort((a, b) => Number(b.pinned) - Number(a.pinned));
   const selectedBot = selection ? allBots.find((bot) => bot.id === selection.botId) : undefined;
   const archivedCount = allBots.filter((bot) => bot.archived).length;
+  const tabs = teamTabs(groups, listed);
+  const openTab = tabs.find((tab) => tab.id === listUi.tab) ?? tabs[0] ?? null;
 
   // ------------------------------------------------------------ actions
 
+  /** Opens a chat, showing its bot in the list: expanded, and its team's tab open. */
   const select = (next: Selection) => {
     setSelection(next);
     setTeamMap(false);
-    if (currentUi().collapsed.includes(next.botId)) {
-      updateUi((current) => ({ ...current, collapsed: current.collapsed.filter((id) => id !== next.botId) }));
+    const tab = openTab && tabOf(next.botId, groups) !== openTab.id ? tabOf(next.botId, groups) : null;
+    if (tab || currentUi().collapsed.includes(next.botId)) {
+      updateUi((current) => ({ ...current, tab: tab ?? current.tab, collapsed: current.collapsed.filter((id) => id !== next.botId) }));
     }
   };
 
@@ -530,7 +534,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     <BotSidebar
       colors={colors}
       bots={listed}
-      groups={groups}
+      tabs={tabs}
+      openTab={openTab}
       hiddenArchivedCount={listUi.showArchived ? 0 : archivedCount}
       selection={selection}
       ui={listUi}
@@ -551,7 +556,10 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       onBotMenu={openBotMenu}
       onChatMenu={openChatMenu}
       onDisplayMenu={openDisplayMenu}
+      onTab={(tab) => updateUi((current) => ({ ...current, tab }))}
       onTeamMenu={openTeamMenu}
+      onNewTeam={() => setEditingTeam("new")}
+      onEditTeam={setEditingTeam}
       onTeamMap={() => setTeamMap(true)}
     />
   );
@@ -685,8 +693,10 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           onClose={() => setEditingTeam(null)}
           onSave={(draft) => {
             const id = editingTeam === "new" ? null : editingTeam.id;
+            const teamId = id ?? newGroupId();
             setEditingTeam(null);
-            void commit((values) => ({ ...values, groups: saveTeam(values.groups ?? [], id, draft, newGroupId(), new Date().toISOString()) }));
+            // A new team opens in its tab.
+            void commit((values) => ({ ...values, groups: saveTeam(values.groups ?? [], id, draft, teamId, new Date().toISOString()) })).then((saved) => saved && !id && updateUi((current) => ({ ...current, tab: teamId })));
           }}
           onDelete={editingTeam === "new" ? undefined : () => void deleteTeam(editingTeam).then((deleted) => deleted && setEditingTeam(null))}
         />

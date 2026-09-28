@@ -5,8 +5,9 @@ import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } fro
 import { Animated, Easing, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";
 import type { Bot, BotGroup, BotListUi } from "../shared/bot";
 import { displayTitle } from "../shared/chat";
+import type { TeamTab } from "../shared/groups";
 import { aggregateBuckets, BUCKET_LABELS, chatBucket, orderChats, SIDEBAR_GROUP_LIMIT, type ChatBucket } from "../shared/sidebar";
-import { Avatar } from "./Avatar";
+import { Avatar, TeamLogo } from "./Avatar";
 import { useBotChats, useBotHost, type LocalHost } from "./data";
 import { openLibrary } from "./navigation";
 import { nativeTokens, useHover, type NativeTokens } from "./native";
@@ -39,8 +40,9 @@ export interface ChatMenuContext {
 interface BotSidebarProps {
   colors: Colors;
   bots: readonly Bot[];
-  /** Teams, each listed as a section with its Chief of Staff first. */
-  groups: readonly BotGroup[];
+  /** With teams, a tab per team (and Other bots); the list shows the open one's bots. */
+  tabs: readonly TeamTab[];
+  openTab: TeamTab | null;
   /** Archived bots hidden by the display preferences. Keeps the header (and its menu) up when they're all that's left. */
   hiddenArchivedCount: number;
   selection: Selection | null;
@@ -60,7 +62,10 @@ interface BotSidebarProps {
   onBotMenu(bot: Bot, anchor: LayoutRectangle, source: MenuSource): void;
   onChatMenu(bot: Bot, chat: PaseoAgent, anchor: LayoutRectangle, source: MenuSource, context: ChatMenuContext): void;
   onDisplayMenu(anchor: LayoutRectangle): void;
+  onTab(tabId: string): void;
   onTeamMenu(group: BotGroup, anchor: LayoutRectangle): void;
+  onNewTeam(): void;
+  onEditTeam(group: BotGroup): void;
   onTeamMap(): void;
 }
 
@@ -69,21 +74,14 @@ const noSelect = { userSelect: "none" } as object;
 const CHEVRON_COLOR = "#9ca3af";
 
 export function BotSidebar(props: BotSidebarProps) {
-  const { colors, bots, groups, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onTeamMap } = props;
+  const { colors, bots, tabs, openTab, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onTeamMap, onEditTeam } = props;
   const tokens = nativeTokens(colors);
+  const shown = openTab?.bots ?? bots;
   const pinnedIds = new Set(listUi.pinnedChats.map((pin) => pin.chatId));
-  const listedBots = new Map(bots.map((bot) => [bot.id, bot]));
+  const listedBots = new Map(shown.map((bot) => [bot.id, bot]));
   const pins = listUi.pinnedChats.filter((pin) => listedBots.has(pin.botId));
-  // OpenMausBot's sidebar: each team is a section with its Chief of Staff first; bots without a team follow under Bots.
-  const teamed = new Set<string>();
-  const teams = groups.map((group) => {
-    const lead = group.leadId ? listedBots.get(group.leadId) : undefined;
-    const members = group.memberIds.filter((id) => id !== group.leadId).flatMap((id) => listedBots.get(id) ?? []);
-    for (const bot of [lead, ...members]) if (bot) teamed.add(bot.id);
-    return { group, lead, members };
-  });
-  const loose = bots.filter((bot) => !teamed.has(bot.id));
-  if (props.splash && bots.length === 0 && hiddenArchivedCount === 0 && pins.length === 0) {
+  const leadId = openTab?.group?.leadId ?? null;
+  if (props.splash && bots.length === 0 && hiddenArchivedCount === 0 && pins.length === 0 && tabs.length === 0) {
     return (
       <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
         <Splash colors={colors} background={tokens.surfaceSidebar} />
@@ -93,6 +91,7 @@ export function BotSidebar(props: BotSidebarProps) {
   }
   return (
     <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
+      {tabs.length > 0 ? <TeamTabs {...props} tokens={tokens} /> : null}
       <ScrollView
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
@@ -100,22 +99,13 @@ export function BotSidebar(props: BotSidebarProps) {
         contentContainerStyle={{ paddingHorizontal: 8, paddingTop: 2, paddingBottom: 16 }}
       >
         {pins.length > 0 ? <PinnedSection {...props} pins={pins} botById={listedBots} tokens={tokens} /> : null}
-        {bots.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} onDisplayMenu={props.onDisplayMenu} /> : null}
-        {teams.map(({ group, lead, members }) => (
-          <TeamSection key={group.id} {...props} tokens={tokens} group={group}>
-            {lead ? <BotGroup {...props} tokens={tokens} bot={lead} lead pinnedIds={pinnedIds} /> : null}
-            {members.map((bot) => (
-              <BotGroup key={bot.id} {...props} tokens={tokens} bot={bot} pinnedIds={pinnedIds} />
-            ))}
-          </TeamSection>
+        {shown.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} onDisplayMenu={props.onDisplayMenu} /> : null}
+        {shown.map((bot) => (
+          <BotGroup key={bot.id} {...props} tokens={tokens} bot={bot} lead={bot.id === leadId} pinnedIds={pinnedIds} />
         ))}
-        {teams.length > 0 && loose.length > 0 ? (
-          <Text style={[{ fontSize: ui(12), color: colors.foregroundMuted, paddingHorizontal: 8, paddingTop: 8, paddingBottom: 8 }, noSelect]}>Other bots</Text>
-        ) : null}
-        {loose.map((bot) => (
-          <BotGroup key={bot.id} {...props} tokens={tokens} bot={bot} pinnedIds={pinnedIds} />
-        ))}
-        {bots.length === 0 ? (
+        {openTab?.group && shown.length === 0 ? (
+          <EmptyState colors={colors} title="No bots on this team" description="Add bots to it in the team's settings." action={{ icon: "Pencil", label: "Edit team", onPress: () => onEditTeam(openTab.group!) }} />
+        ) : bots.length === 0 ? (
           hiddenArchivedCount > 0 ? (
             <EmptyState
               colors={colors}
@@ -130,6 +120,60 @@ export function BotSidebar(props: BotSidebarProps) {
       </ScrollView>
       <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
     </View>
+  );
+}
+
+// ------------------------------------------------------------------ team tabs
+
+/**
+ * Paseo's explorer tab rail (explorer-sidebar-tab-rail.tsx): a 36pt strip over a divider,
+ * scrolling sideways, of 26pt tabs with the team's logo and name, muted until open, with
+ * the team's menu on right-click or long-press and a trailing + for a new team.
+ */
+function TeamTabs({ colors, tokens, tabs, openTab, onTab, onTeamMenu, onNewTeam }: BotSidebarProps & { tokens: NativeTokens }) {
+  const add = useHover();
+  return (
+    <View accessibilityRole="tablist" style={[{ height: 36, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.border }, noSelect]}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ alignItems: "center", paddingHorizontal: 4 }}>
+        {tabs.map((tab) => (
+          <TeamTabButton key={tab.id} colors={colors} tokens={tokens} tab={tab} active={tab.id === openTab?.id} onPress={() => onTab(tab.id)} onMenu={tab.group ? (anchor) => onTeamMenu(tab.group!, anchor) : undefined} />
+        ))}
+      </ScrollView>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="New team"
+        {...tooltip("New team", "bottom")}
+        hitSlop={8}
+        onPress={onNewTeam}
+        {...add.hoverProps}
+        style={({ pressed }) => ({ width: 26, height: 26, marginRight: 4, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: add.hovered || pressed ? tokens.interactionHighlight : "transparent" })}
+      >
+        <Icon name="Plus" size={14} color={add.hovered ? colors.foreground : colors.foregroundMuted} />
+      </Pressable>
+    </View>
+  );
+}
+
+function TeamTabButton({ colors, tokens, tab, active, onPress, onMenu }: { colors: Colors; tokens: NativeTokens; tab: TeamTab; active: boolean; onPress(): void; onMenu?: (anchor: LayoutRectangle) => void }) {
+  const { hovered, hoverProps } = useHover();
+  const label = tab.group ? tab.group.name || "Untitled team" : "Other bots";
+  const tint = active ? colors.foreground : colors.foregroundMuted;
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+      {...tooltip(label, "bottom")}
+      onPress={onPress}
+      {...(onMenu ? contextMenuProps(onMenu) : {})}
+      {...hoverProps}
+      style={{ height: 26, maxWidth: 180, marginHorizontal: 2, paddingHorizontal: 8, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: active || hovered ? tokens.interactionHighlight : "transparent" }}
+    >
+      {tab.group ? <TeamLogo group={tab.group} size={16} /> : <Icon name="Bot" size={14} color={tint} />}
+      <Text numberOfLines={1} style={{ minWidth: 0, flexShrink: 1, fontSize: ui(14), color: tint }}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -304,39 +348,6 @@ function PinnedChatRow({ colors, tokens, bot, chatId, selection, localHost, touc
       onPress={() => onSelect({ botId: bot.id, chatId: chat.id })}
       onMenu={(anchor, source) => onChatMenu(bot, chat, anchor, source, { siblings: [], pinned: true })}
     />
-  );
-}
-
-// ------------------------------------------------------------------ team
-
-/** A team's section: its name like the Pinned header, collapsible, with the team menu on hover. */
-function TeamSection({ colors, group, ui: listUi, touch, onToggle, onTeamMenu, children }: BotSidebarProps & { tokens: NativeTokens; group: BotGroup; children: ReactNode }) {
-  const key = `team:${group.id}`;
-  const collapsed = listUi.collapsed.includes(key);
-  const [hovered, setHovered] = useState(false);
-  const kebabRef = useRef<View>(null);
-  return (
-    <View role="group" accessibilityLabel={group.name} style={{ marginBottom: 4 }}>
-      <View onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={[{ minHeight: 36, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 4 }, noSelect]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${group.name} team`}
-          accessibilityState={{ expanded: !collapsed }}
-          onPress={() => onToggle(key)}
-          {...contextMenuProps((anchor) => onTeamMenu(group, anchor))}
-          style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, flexShrink: 1, minWidth: 0 }}
-        >
-          <Text numberOfLines={1} style={{ fontSize: ui(12), color: colors.foregroundMuted, flexShrink: 1 }}>
-            {group.name || "Untitled team"}
-          </Text>
-          {hovered || touch ? <Icon name={collapsed ? "ChevronRight" : "ChevronDown"} size={12} color={colors.foregroundMuted} /> : null}
-        </Pressable>
-        <View style={{ opacity: hovered || touch ? 1 : 0 }} pointerEvents={hovered || touch ? "auto" : "none"}>
-          <KebabButton colors={colors} buttonRef={kebabRef} label="Team actions" box onPress={() => void measureAnchor(kebabRef).then((anchor) => anchor && onTeamMenu(group, anchor))} />
-        </View>
-      </View>
-      {collapsed ? null : children}
-    </View>
   );
 }
 

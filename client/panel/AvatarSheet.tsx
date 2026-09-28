@@ -10,11 +10,10 @@ import { avatarGenerateRpc, avatarKeyStatusRpc, avatarRemoveKeyRpc, avatarSetKey
 import { errorText } from "../native";
 import { squareImage } from "../web";
 import { Alert, Button, InputField, SheetActions, TextAreaField } from "./controls";
+import { PICTURE_SIZE } from "./picture";
 
 type Colors = PluginTheme["colors"];
 
-/** Avatars are stored with the bot, so pictures are scaled down to this many pixels. */
-export const AVATAR_SIZE = 192;
 const KEY_QUERY = ["paseo-bots", "avatar-key"];
 
 /** Draws an avatar with OpenAI from the bot's name, title and blurb, plus an optional direction. */
@@ -40,7 +39,7 @@ export function AvatarSheet({ colors, bot, onClose, onPicture }: { colors: Color
         await queryClient.invalidateQueries({ queryKey: KEY_QUERY });
       }
       const { image } = await generate({ name: bot.name, title: bot.title, description: bot.description, direction });
-      onPicture(await squareImage(image, AVATAR_SIZE));
+      onPicture(await squareImage(image, PICTURE_SIZE));
     } catch (caught) {
       setError(errorText(caught));
     } finally {

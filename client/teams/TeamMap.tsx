@@ -5,7 +5,7 @@ import { Pressable, Text, View } from "react-native";
 import type { Bot, BotGroup } from "../../shared/bot";
 import { groupBots } from "../../shared/groups";
 import { aggregateBuckets, chatBucket } from "../../shared/sidebar";
-import { Avatar } from "../Avatar";
+import { Avatar, TeamLogo } from "../Avatar";
 import { useBotChats, useBotHost, type LocalHost } from "../data";
 import { CONTENT_MAX_WIDTH, nativeTokens, useHover } from "../native";
 import { Button } from "../panel/controls";
@@ -76,7 +76,7 @@ export function TeamMap({
           {groups.map((group) => {
             const { lead, members } = groupBots(group, live);
             return (
-              <Tile key={group.id} colors={colors} title={group.name || "Untitled team"} meta={`${members.length + (lead ? 1 : 0)} ${members.length + (lead ? 1 : 0) === 1 ? "bot" : "bots"}`} onEdit={() => onEditTeam(group)}>
+              <Tile key={group.id} colors={colors} logo={<TeamLogo group={group} size={24} />} title={group.name || "Untitled team"} meta={`${members.length + (lead ? 1 : 0)} ${members.length + (lead ? 1 : 0) === 1 ? "bot" : "bots"}`} onEdit={() => onEditTeam(group)}>
                 <View style={compact ? { gap: 8 } : { flexDirection: "row", alignItems: "center", gap: 12 }}>
                   <View style={compact ? undefined : { width: 240 }}>
                     {lead ? card(lead, true) : <Placeholder colors={colors} text="No Chief of Staff yet" />}
@@ -100,10 +100,11 @@ export function TeamMap({
   );
 }
 
-function Tile({ colors, title, meta, onEdit, children }: { colors: Colors; title: string; meta: string; onEdit?: () => void; children: ReactNode }) {
+function Tile({ colors, logo, title, meta, onEdit, children }: { colors: Colors; logo?: ReactNode; title: string; meta: string; onEdit?: () => void; children: ReactNode }) {
   return (
     <View style={{ padding: 16, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, gap: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        {logo}
         <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: ui(14), color: colors.foreground }}>
           {title}
         </Text>

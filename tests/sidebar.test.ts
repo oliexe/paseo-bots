@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { darkAvatarBackground, pixelAvatar } from "../shared/avatar";
+import { pixelAvatar } from "../shared/avatar";
+import { darkBackground } from "../shared/pixel";
 import { botSettings, BotListUiSchema, DEFAULT_BOT_LIST_UI } from "../shared/bot";
 import { aggregateBuckets, applyStoredOrdering, chatBucket, moveKey, orderChats } from "../shared/sidebar";
 
@@ -72,7 +73,7 @@ describe("bot list UI state", () => {
   it("is optional in the settings document and fills its defaults", () => {
     expect(botSettings.schema.parse({}).ui).toBeUndefined();
     expect(botSettings.schema.parse({ ui: {} }).ui).toEqual(DEFAULT_BOT_LIST_UI);
-    expect(DEFAULT_BOT_LIST_UI).toEqual({ collapsed: [], pinnedCollapsed: false, pinnedChats: [], chatOrder: {}, chatSort: "manual", showArchived: false, listWidth: 320, panelWidth: 320 });
+    expect(DEFAULT_BOT_LIST_UI).toEqual({ collapsed: [], pinnedCollapsed: false, pinnedChats: [], chatOrder: {}, chatSort: "manual", showArchived: false, tab: null, listWidth: 320, panelWidth: 320 });
   });
 
   it("rejects an unknown sort", () => {
@@ -96,7 +97,7 @@ describe("dark avatar backgrounds", () => {
   });
 
   it("leaves already dark backgrounds alone", () => {
-    expect(darkAvatarBackground({ body: "#93C5FD", background: "#0F172A" })).toBe("#0F172A");
+    expect(darkBackground({ body: "#93C5FD", background: "#0F172A" })).toBe("#0F172A");
   });
 
   it("is unchanged without the option", () => {
