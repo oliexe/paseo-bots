@@ -681,9 +681,9 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
             void addBot(applyDefaults(bot, defaults, defaultProvider()), start ? "overview" : "identity");
           }}
           onImport={async (json) => {
-            const { bots } = await importTeam({ json });
+            const { bots, teams } = await importTeam({ json });
             setCreating(false);
-            const saved = await commit((values) => addImportedBots(values, bots));
+            const saved = await commit((values) => addImportedBots(values, bots, teams));
             const first = bots[0]?.bot;
             if (saved && first) {
               select({ botId: first.id, chatId: null });

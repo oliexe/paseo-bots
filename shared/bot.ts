@@ -243,6 +243,16 @@ export const BotGroupSchema = z.object({
 });
 export type BotGroup = z.infer<typeof BotGroupSchema>;
 
+/** A team in a team file: its bots by their place in the file's list of bots. */
+export const TeamFileTeamSchema = z.object({
+  name: z.string().max(60),
+  logo: TeamLogoSchema.nullable().default(null),
+  lead: z.number().int().min(0).nullable().default(null),
+  members: z.array(z.number().int().min(0)).max(50).default([]),
+  instructions: z.string().max(20_000).default(""),
+});
+export type TeamFileTeam = z.infer<typeof TeamFileTeamSchema>;
+
 /** What a new bot starts with, from the plugin's settings. An empty provider picks one that's ready. */
 export const BotDefaultsSchema = z.object({
   provider: z.string().default(""),

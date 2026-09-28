@@ -50,12 +50,30 @@ describe("team files", () => {
     const { exportTeam, importTeam, isTeamFile } = await import("../server/share");
     const routine = { id: "rt", name: "Daily", prompt: "p", enabled: true, schedule: { kind: "cron" as const, expression: "0 9 * * *" }, resultsChatId: "chat-1", createdAt: "" };
     const bots = [makeBot({ id: "bot-a", name: "Inbox", apps: ["gmail"], contactBots: "allow", routines: [routine] }), makeBot({ id: "bot-b", name: "Scout" })];
-    const { json } = await exportTeam({ bots, includeMemory: false }, EMPTY_LIBRARY);
+    const { json } = await exportTeam({ bots, groups: [], includeMemory: false }, EMPTY_LIBRARY);
     expect(isTeamFile(json)).toBe(true);
     const imported = await importTeam({ json });
     expect(imported.bots.map((entry) => entry.bot.name)).toEqual(["Inbox", "Scout"]);
     expect(imported.bots[0]!.bot).toMatchObject({ apps: [], contactBots: "ask", routines: [{ name: "Daily", enabled: false, resultsChatId: null }] });
     expect(new Set(imported.bots.map((entry) => entry.bot.id)).size).toBe(2);
     await expect(importTeam({ json: '{"format":"paseo-bots-team","version":1,"bots":[]}' })).rejects.toThrow("damaged");
+  });
+
+  it("brings the teams along and recreates them on import", async () => {
+    const { exportTeam, importTeam } = await import("../server/share");
+    const { addImportedBots } = await import("../shared/library");
+    const bots = [makeBot({ id: "bot-a", name: "Juno" }), makeBot({ id: "bot-b", name: "Mika" })];
+    const logo = { seed: "s", palette: 2, imageUrl: null };
+    const groups = [
+      { id: "t1", name: "Studio", logo, leadId: "bot-a", memberIds: ["bot-a", "bot-b", "bot-gone"], instructions: "Ship Fridays.", createdAt: "", updatedAt: "" },
+      { id: "t2", name: "Empty", logo: null, leadId: null, memberIds: ["bot-gone"], instructions: "", createdAt: "", updatedAt: "" },
+    ];
+    const { json } = await exportTeam({ bots, groups, includeMemory: false }, EMPTY_LIBRARY);
+    expect(JSON.parse(json).teams).toEqual([{ name: "Studio", logo, lead: 0, members: [0, 1], instructions: "Ship Fridays." }]);
+    const imported = await importTeam({ json });
+    const values = addImportedBots({ bots: [makeBot({ id: "old", name: "Juno" })], history: [] }, imported.bots, imported.teams, "now");
+    const [juno, mika] = [values.bots[1]!, values.bots[2]!];
+    expect([juno.name, mika.name]).toEqual(["Juno 2", "Mika"]);
+    expect(values.groups).toMatchObject([{ name: "Studio", logo, leadId: juno.id, memberIds: [juno.id, mika.id], instructions: "Ship Fridays." }]);
   });
 });

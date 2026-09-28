@@ -1,4 +1,5 @@
-import { EMPTY_LIBRARY, joinArgs, numberedName, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill } from "./bot";
+import { EMPTY_LIBRARY, joinArgs, newGroupId, numberedName, RESERVED_MCP_NAMES, uniqueName, type Bot, type BotMcpServer, type BotSettingsValues, type Library, type LibraryMcpServer, type LibrarySkill, type TeamFileTeam } from "./bot";
+import { saveTeam } from "./groups";
 
 // The shared library of skills and MCP servers. Bots only hold ids; these
 // helpers keep the ids, names and bot references consistent.
@@ -120,8 +121,11 @@ export interface ImportedBot {
   mcpServers: readonly BotMcpServer[];
 }
 
-/** Adds imported bots, numbering names already in use; their skills (unreviewed, so off) and MCP servers join the library. */
-export function addImportedBots(values: BotSettingsValues, imported: readonly ImportedBot[]): BotSettingsValues {
+/**
+ * Adds imported bots, numbering names already in use; their skills (unreviewed, so
+ * off) and MCP servers join the library, and a team file's teams come along.
+ */
+export function addImportedBots(values: BotSettingsValues, imported: readonly ImportedBot[], teams: readonly TeamFileTeam[] = [], now: string = new Date().toISOString()): BotSettingsValues {
   let library = values.library ?? EMPTY_LIBRARY;
   const bots = [...values.bots];
   for (const entry of imported) {
@@ -132,5 +136,11 @@ export function addImportedBots(values: BotSettingsValues, imported: readonly Im
     library = added.library;
     bots.push({ ...entry.bot, name, mcpServerIds: [...new Set([...entry.bot.mcpServerIds, ...added.ids])] });
   }
-  return { ...values, bots, library };
+  const idAt = (position: number) => imported[position]?.bot.id;
+  const groups = teams.reduce((current, team) => {
+    const memberIds = team.members.flatMap((position) => idAt(position) ?? []);
+    const draft = { name: team.name, logo: team.logo, leadId: team.lead === null ? null : (idAt(team.lead) ?? null), memberIds, instructions: team.instructions };
+    return memberIds.length ? saveTeam(current, null, draft, newGroupId(), now) : current;
+  }, values.groups ?? []);
+  return { ...values, bots, library, groups };
 }

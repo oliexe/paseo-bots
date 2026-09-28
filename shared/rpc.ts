@@ -1,6 +1,6 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import { BotMcpServerSchema, BotSchema, McpServerConfigSchema, McpToolSchema } from "./bot";
+import { BotGroupSchema, BotMcpServerSchema, BotSchema, McpServerConfigSchema, McpToolSchema, TeamFileTeamSchema } from "./bot";
 import { ProposalSchema } from "./proposals";
 
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
@@ -238,18 +238,18 @@ export const importBotRpc = defineRpc({
 
 const ImportedBotSchema = z.object({ bot: BotSchema, skills: z.array(ImportedSkillSchema), mcpServers: z.array(BotMcpServerSchema) });
 
-/** Several bots in one team file; secrets are redacted as in single exports. */
+/** Several bots in one team file, with the teams they're on; secrets are redacted as in single exports. */
 export const exportTeamRpc = defineRpc({
   name: "bots.export-team",
-  input: z.object({ bots: z.array(BotSchema).min(1).max(50), includeMemory: z.boolean() }),
+  input: z.object({ bots: z.array(BotSchema).min(1).max(50), groups: z.array(BotGroupSchema).max(50).default([]), includeMemory: z.boolean() }),
   output: z.object({ json: z.string() }),
 });
 
-/** Imports a team file, or a single bot file, as new bots. */
+/** Imports a team file, or a single bot file, as new bots and teams. */
 export const importTeamRpc = defineRpc({
   name: "bots.import-team",
   input: z.object({ json: z.string().max(20_000_000) }),
-  output: z.object({ bots: z.array(ImportedBotSchema) }),
+  output: z.object({ bots: z.array(ImportedBotSchema), teams: z.array(TeamFileTeamSchema) }),
 });
 
 /** Stores a picked file on this host so it can be sent as an `uploaded_file` attachment. */

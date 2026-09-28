@@ -3,7 +3,7 @@ import { useRpc } from "@getpaseo/plugin/client";
 import { copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
-import { DEFAULT_BOT_DEFAULTS, type Bot, type BotDefaults } from "../../shared/bot";
+import { DEFAULT_BOT_DEFAULTS, type Bot, type BotDefaults, type BotGroup } from "../../shared/bot";
 import { addImportedBots } from "../../shared/library";
 import { exportTeamRpc, importTeamRpc } from "../../shared/rpc";
 import { useBotHost, useProviders } from "../data";
@@ -44,7 +44,7 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
           ))}
         </SettingsCard>
       </SettingsSection>
-      <TeamSection colors={colors} bots={values.bots.filter((bot) => !bot.archived)} commit={commit} />
+      <TeamSection colors={colors} bots={values.bots.filter((bot) => !bot.archived)} groups={values.groups ?? []} commit={commit} />
     </>
   );
 }
@@ -84,8 +84,8 @@ function DefaultsSection({ localHost, defaults, onChange }: { localHost: { id: s
   );
 }
 
-/** A team file: every bot that isn't archived in one file, and adding the bots of one. */
-function TeamSection({ colors, bots, commit }: { colors: Colors; bots: Bot[]; commit: ReturnType<typeof useBotSettings>["commit"] }) {
+/** A team file: every bot that isn't archived and the teams they're on, in one file; and adding those of one. */
+function TeamSection({ colors, bots, groups, commit }: { colors: Colors; bots: Bot[]; groups: BotGroup[]; commit: ReturnType<typeof useBotSettings>["commit"] }) {
   const exportTeam = useRpc(exportTeamRpc);
   const importTeam = useRpc(importTeamRpc);
   const toast = useToast();
@@ -96,7 +96,7 @@ function TeamSection({ colors, bots, commit }: { colors: Colors; bots: Bot[]; co
   const copyTeam = async () => {
     setBusy("export");
     try {
-      const file = await exportTeam({ bots, includeMemory });
+      const file = await exportTeam({ bots, groups, includeMemory });
       await copyText(file.json);
       toast.show(`Team file with ${bots.length} ${bots.length === 1 ? "bot" : "bots"} copied`, { variant: "success" });
     } catch (error) {
@@ -110,9 +110,10 @@ function TeamSection({ colors, bots, commit }: { colors: Colors; bots: Bot[]; co
     setBusy("import");
     try {
       const imported = await importTeam({ json });
-      if (await commit((current) => addImportedBots(current, imported.bots))) {
+      if (await commit((current) => addImportedBots(current, imported.bots, imported.teams))) {
         setJson("");
-        toast.show(`Added ${imported.bots.length} ${imported.bots.length === 1 ? "bot" : "bots"}. Routines arrive paused and skills need a review.`, { variant: "success" });
+        const teams = imported.teams.length ? ` and ${imported.teams.length} ${imported.teams.length === 1 ? "team" : "teams"}` : "";
+        toast.show(`Added ${imported.bots.length} ${imported.bots.length === 1 ? "bot" : "bots"}${teams}. Routines arrive paused and skills need a review.`, { variant: "success" });
       }
     } catch (error) {
       toast.error(errorText(error));
@@ -122,12 +123,12 @@ function TeamSection({ colors, bots, commit }: { colors: Colors; bots: Bot[]; co
   };
 
   return (
-    <SettingsSection title="Team file" info="Share several bots at once. Chats, keys and each bot's host, folder, tool grants and connected apps stay behind. Imports only add bots; a name already in use gets a number.">
+    <SettingsSection title="Team file" info="Share your bots and their teams at once. Chats, keys and each bot's host, folder, tool grants and connected apps stay behind. Imports only add bots and teams; a bot name already in use gets a number.">
       <SettingsCard>
         <SettingsSwitch label="Include memory" hint="MEMORY.md and topic files. Leave off when sharing with someone else." value={includeMemory} onValueChange={setIncludeMemory} />
         <SettingsAction
           label="Copy a team file"
-          hint={bots.length ? `${bots.length} ${bots.length === 1 ? "bot" : "bots"}, all but archived ones` : "No bots to share yet"}
+          hint={bots.length ? `${bots.length} ${bots.length === 1 ? "bot" : "bots"}${groups.length ? ` on ${groups.length} ${groups.length === 1 ? "team" : "teams"}` : ""}, all but archived ones` : "No bots to share yet"}
           actionLabel={busy === "export" ? "Copying..." : "Copy"}
           disabled={!bots.length || busy !== null}
           onPress={() => void copyTeam()}

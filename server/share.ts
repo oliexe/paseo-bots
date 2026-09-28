@@ -1,7 +1,7 @@
 import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
-import { BotMcpServerSchema, BotSchema, botMcpServers, botSkills, newBotId, newRoutineId, type Bot, type BotMcpServer, type Library } from "../shared/bot";
+import { BotMcpServerSchema, BotSchema, botMcpServers, botSkills, newBotId, newRoutineId, TeamFileTeamSchema, type Bot, type BotGroup, type BotMcpServer, type Library, type TeamFileTeam } from "../shared/bot";
 import { sanitizeSkillName } from "../shared/skills";
 import { botDataPath } from "./bot-home";
 import { librarySkillPath, type ImportedSkill } from "./library";
@@ -193,7 +193,7 @@ export async function importBot({ botId, json }: { botId: string; json: string }
 const TEAM_FORMAT = "paseo-bots-team";
 const MAX_TEAM = 50;
 
-const TeamSchema = z.object({ format: z.literal(TEAM_FORMAT), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM) });
+const TeamSchema = z.object({ format: z.literal(TEAM_FORMAT), version: z.literal(1), bots: z.array(z.unknown()).min(1).max(MAX_TEAM), teams: z.array(TeamFileTeamSchema).max(MAX_TEAM).default([]) });
 
 export function isTeamFile(json: string): boolean {
   try {
@@ -203,19 +203,33 @@ export function isTeamFile(json: string): boolean {
   }
 }
 
-/** Several bots in one file, each as its own bot export. */
-export async function exportTeam({ bots, includeMemory }: { bots: Bot[]; includeMemory: boolean }, library: Library) {
-  const entries: unknown[] = [];
-  for (const bot of bots.slice(0, MAX_TEAM)) entries.push(JSON.parse((await exportBot({ bot, includeMemory }, library)).json));
-  return { json: JSON.stringify({ format: TEAM_FORMAT, version: 1, bots: entries }, null, 2) };
+/** The teams among the exported bots, pointing at them by their place in the file. */
+export function teamsInFile(bots: readonly Bot[], groups: readonly BotGroup[]): TeamFileTeam[] {
+  const index = new Map(bots.map((bot, position) => [bot.id, position]));
+  return groups.flatMap((group) => {
+    const members = [...new Set([...(group.leadId ? [group.leadId] : []), ...group.memberIds])].flatMap((id) => index.get(id) ?? []);
+    if (members.length === 0) return [];
+    const lead = group.leadId ? (index.get(group.leadId) ?? null) : null;
+    return [{ name: group.name, logo: group.logo, lead, members, instructions: group.instructions }];
+  });
 }
 
-/** Imports every bot of a team file (or a single bot file) as new bots. */
+/** Several bots in one file, each as its own bot export, and the teams they're on. */
+export async function exportTeam({ bots, groups, includeMemory }: { bots: Bot[]; groups: BotGroup[]; includeMemory: boolean }, library: Library) {
+  const shared = bots.slice(0, MAX_TEAM);
+  const entries: unknown[] = [];
+  for (const bot of shared) entries.push(JSON.parse((await exportBot({ bot, includeMemory }, library)).json));
+  return { json: JSON.stringify({ format: TEAM_FORMAT, version: 1, bots: entries, teams: teamsInFile(shared, groups) }, null, 2) };
+}
+
+/** Imports every bot of a team file (or a single bot file) as new bots, with its teams. */
 export async function importTeam({ json }: { json: string }) {
-  if (!isTeamFile(json)) return { bots: [await importBot({ botId: newBotId(), json })] };
+  if (!isTeamFile(json)) return { bots: [await importBot({ botId: newBotId(), json })], teams: [] };
   const parsed = TeamSchema.safeParse(JSON.parse(json));
   if (!parsed.success) throw new Error("That team file is damaged or from a newer version.");
   const bots = [];
   for (const entry of parsed.data.bots) bots.push(await importBot({ botId: newBotId(), json: JSON.stringify(entry) }));
-  return { bots };
+  const inRange = (position: number) => position < bots.length;
+  const teams = parsed.data.teams.map((team) => ({ ...team, lead: team.lead !== null && inRange(team.lead) ? team.lead : null, members: team.members.filter(inRange) }));
+  return { bots, teams };
 }
