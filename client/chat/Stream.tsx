@@ -61,7 +61,7 @@ export interface ChatStreamProps {
 }
 
 /** Whether a turn is running, as the stream shows it. */
-export function isTurnRunning(chat: ChatState): boolean {
+function isTurnRunning(chat: ChatState): boolean {
   return chat.agent?.status === "running" || chat.agent?.status === "initializing";
 }
 

@@ -4,8 +4,8 @@ import { localDay, parseLog, type LogEntry } from "../shared/activity";
 import { botDataPath } from "./bot-home";
 
 /** OpenMausBot's budget: the first 200 lines or 24 KB of MEMORY.md go into every chat. */
-export const MEMORY_MAX_LINES = 200;
-export const MEMORY_MAX_BYTES = 24_000;
+const MEMORY_MAX_LINES = 200;
+const MEMORY_MAX_BYTES = 24_000;
 export const MAIN_MEMORY = "MEMORY.md";
 
 export function memoryFolder(botId: string): string {
@@ -24,7 +24,7 @@ async function readText(path: string): Promise<string> {
   }
 }
 
-export function trimForPrompt(text: string): string {
+function trimForPrompt(text: string): string {
   const lines = text.split("\n").slice(0, MEMORY_MAX_LINES);
   let out = "";
   for (const line of lines) {

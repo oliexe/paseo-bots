@@ -145,12 +145,6 @@ export function pickFileHandles(options: { accept?: string; multiple?: boolean }
   });
 }
 
-/** Eager variant kept for existing callers: reads every picked file. */
-export async function pickFiles(): Promise<PickedFile[]> {
-  const handles = await pickFileHandles();
-  return Promise.all(handles.map(async (file) => ({ name: file.name, mimeType: file.mimeType, size: file.size, base64: await file.readBase64() })));
-}
-
 /** A picture as a small square WebP data URL: its centre, scaled down to `size` pixels (avatars). */
 export async function squareImage(source: string, size: number): Promise<string> {
   const image = document.createElement("img");

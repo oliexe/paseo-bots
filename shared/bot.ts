@@ -29,7 +29,7 @@ export const BotMcpServerSchema = z.object({
 });
 export type BotMcpServer = z.infer<typeof BotMcpServerSchema>;
 
-export const BotAvatarSchema = z.object({
+const BotAvatarSchema = z.object({
   /** Seed for the generated robot face. */
   seed: z.string(),
   /** Palette override for the generated face; null lets the seed pick. */
@@ -41,7 +41,7 @@ export const BotAvatarSchema = z.object({
 export type BotAvatar = z.infer<typeof BotAvatarSchema>;
 
 /** A skill folder in the shared library. `id` is the folder name and the name bots see. */
-export const LibrarySkillSchema = z.object({
+const LibrarySkillSchema = z.object({
   id: z.string(),
   description: z.string().default(""),
   /** Where it came from: "github.com/owner/repo/path", a SKILL.md link, or "" when written here. */
@@ -70,7 +70,7 @@ export const McpToolSchema = z.object({ name: z.string(), description: z.string(
 export type McpTool = z.infer<typeof McpToolSchema>;
 
 /** An MCP server in the shared library. `name` is the key agents see ("server/tool"). */
-export const LibraryMcpServerSchema = z.object({
+const LibraryMcpServerSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().default(""),
@@ -87,7 +87,7 @@ export const LibraryMcpServerSchema = z.object({
 export type LibraryMcpServer = z.infer<typeof LibraryMcpServerSchema>;
 
 /** Skills and MCP servers kept once and switched on per bot. */
-export const LibrarySchema = z.object({
+const LibrarySchema = z.object({
   skills: z.array(LibrarySkillSchema).default([]),
   mcpServers: z.array(LibraryMcpServerSchema).default([]),
 });
@@ -106,7 +106,7 @@ export const RoutineScheduleSchema = z.discriminatedUnion("kind", [
 ]);
 export type RoutineSchedule = z.infer<typeof RoutineScheduleSchema>;
 
-export const RoutineSchema = z.object({
+const RoutineSchema = z.object({
   id: z.string(),
   name: z.string(),
   prompt: z.string(),
@@ -119,7 +119,7 @@ export const RoutineSchema = z.object({
 export type Routine = z.infer<typeof RoutineSchema>;
 
 /** Process guidance a chat gets when one of its trigger words appears in the chat's first message. */
-export const PlaybookSchema = z.object({
+const PlaybookSchema = z.object({
   id: z.string(),
   name: z.string(),
   triggers: z.array(z.string()).default([]),
@@ -132,14 +132,14 @@ export type Playbook = z.infer<typeof PlaybookSchema>;
  * Composio marks read-only, or exact tool names) and the account it must use
  * (a Composio account id; null lets it pick one by name).
  */
-export const AppRuleSchema = z.object({
+const AppRuleSchema = z.object({
   tools: z.union([z.enum(["all", "read"]), z.array(z.string())]).default("all"),
   account: z.string().nullable().default(null),
 });
 export type AppRule = z.infer<typeof AppRuleSchema>;
 
 /** How a bot sounds when its replies are read aloud: a device voice by name (voices differ per device) and whether finished replies are read out. */
-export const BotVoiceSchema = z.object({
+const BotVoiceSchema = z.object({
   name: z.string().nullable().default(null),
   readReplies: z.boolean().default(false),
 });
@@ -186,7 +186,7 @@ export const BotSchema = z.object({
 });
 export type Bot = z.infer<typeof BotSchema>;
 
-export const HistoryEntrySchema = z.object({ botId: z.string(), at: z.string(), snapshot: BotSchema });
+const HistoryEntrySchema = z.object({ botId: z.string(), at: z.string(), snapshot: BotSchema });
 export type HistoryEntry = z.infer<typeof HistoryEntrySchema>;
 
 export const SOUL_MAX_BYTES = 24_000;
@@ -216,7 +216,7 @@ export type BotListUi = z.infer<typeof BotListUiSchema>;
 export const DEFAULT_BOT_LIST_UI: BotListUi = BotListUiSchema.parse({});
 
 /** A team's logo: a generated pixel-art motif, or a picture instead. */
-export const TeamLogoSchema = z.object({
+const TeamLogoSchema = z.object({
   /** Seed for the generated logo. */
   seed: z.string(),
   /** Palette override for the generated logo; null lets the seed pick. */
@@ -254,7 +254,7 @@ export const TeamFileTeamSchema = z.object({
 export type TeamFileTeam = z.infer<typeof TeamFileTeamSchema>;
 
 /** What a new bot starts with, from the plugin's settings. An empty provider picks one that's ready. */
-export const BotDefaultsSchema = z.object({
+const BotDefaultsSchema = z.object({
   provider: z.string().default(""),
   model: z.string().nullable().default(null),
   modeId: z.string().nullable().default(null),
@@ -269,7 +269,7 @@ export const DEFAULT_BOT_DEFAULTS: BotDefaults = BotDefaultsSchema.parse({});
  * it works (instructions, playbooks, skills). Access (MCP servers, connected
  * apps, folder), routines and the agent come from the defaults instead.
  */
-export const PresetSchema = z.object({
+const PresetSchema = z.object({
   id: z.string(),
   name: z.string(),
   title: z.string().default(""),
@@ -402,7 +402,7 @@ export function newGroupId(): string {
   return "team-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-export function newPresetId(): string {
+function newPresetId(): string {
   return "pr-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
@@ -561,7 +561,7 @@ export function botSkills(bot: Pick<Bot, "skillIds">, library: Library): Library
   });
 }
 
-export function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "config">[]): Record<string, McpServerConfig> {
+function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "config">[]): Record<string, McpServerConfig> {
   const record: Record<string, McpServerConfig> = {};
   for (const server of servers) {
     const name = server.name.trim();

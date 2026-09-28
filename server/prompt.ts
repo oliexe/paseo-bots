@@ -68,7 +68,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
 }
 
 /** Whether this host gives the provider's agents Paseo's tools. Assumes yes when the config can't be read. */
-export async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<boolean> {
+async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<boolean> {
   if (!paseo) return true;
   try {
     const { config } = await paseo.config.get();

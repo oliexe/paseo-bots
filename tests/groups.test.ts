@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { promptSections, type BotGroup } from "../shared/bot";
 import { groupBots, OTHER_BOTS_TAB, saveTeam, tabOf, teamLogoOf, teamOf, teamPrompt, teamTabs, withoutBot } from "../shared/groups";
-import { LOGO_SIZE, motifLogo, MOTIF_NAMES, teamLogo } from "../shared/team-logo";
+import { LOGO_SIZE, MOTIF_NAMES, teamLogo, type TeamLogoImage } from "../shared/team-logo";
 import { makeBot } from "./helpers";
 
 const NOW = "2026-09-27T00:00:00.000Z";
@@ -77,9 +77,14 @@ describe("team logos", () => {
     expect(teamLogo("abc", 3, { dark: true }).rows).toEqual(teamLogo("abc", 3).rows);
   });
 
-  it("fits every motif in the grid with a free edge for the rounded tile", () => {
-    for (const motif of MOTIF_NAMES) {
-      const { rows } = motifLogo(motif, 0);
+  it("reaches every motif and fits each in the grid with a free edge for the rounded tile", () => {
+    const logos = new Map<string, TeamLogoImage>();
+    for (let seed = 0; logos.size < MOTIF_NAMES.length && seed < 5000; seed++) {
+      const logo = teamLogo(`seed-${seed}`, 0);
+      if (!logos.has(logo.motif)) logos.set(logo.motif, logo);
+    }
+    expect([...logos.keys()].sort()).toEqual([...MOTIF_NAMES].sort());
+    for (const [motif, { rows }] of logos) {
       expect(rows).toHaveLength(LOGO_SIZE);
       for (const runs of rows) expect(runs.reduce((width, run) => width + run.width, 0)).toBe(LOGO_SIZE);
       for (const y of [0, LOGO_SIZE - 1]) expect(rows[y]!.every((run) => run.color === null), `${motif} row ${y}`).toBe(true);

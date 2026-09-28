@@ -68,7 +68,7 @@ const SHIMMER_CSS = `
 }`;
 
 /** message.tsx computeShimmerMetrics: a sweep slower for longer labels. */
-export function shimmerDuration(label: string, secondary?: string): number {
+function shimmerDuration(label: string, secondary?: string): number {
   const chars = label.trim().length + (secondary?.trim().length ?? 0);
   const adjust = chars <= 12 ? 0.25 : 0;
   return Math.max(1, Math.min(2.3, 1.25 + chars * 0.008 - adjust));
@@ -79,7 +79,7 @@ export function shimmerDuration(label: string, secondary?: string): number {
  * (a clipped gradient); phones pulse its opacity instead, since plugins have no
  * masked views.
  */
-export function useShimmer(active: boolean, duration: number): { textProps: object; style: StyleProp<TextStyle> } {
+function useShimmer(active: boolean, duration: number): { textProps: object; style: StyleProp<TextStyle> } {
   const opacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (!active) return;

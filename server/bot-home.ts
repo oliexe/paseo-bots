@@ -63,7 +63,7 @@ let migration: Promise<void> | null = null;
  * project. Move it to "Bots" and leave a link behind so existing chats keep
  * their working folder.
  */
-export function migrateLegacyHome(): Promise<void> {
+function migrateLegacyHome(): Promise<void> {
   migration ??= (async () => {
     const legacy = join(pluginDataPath(), "home");
     const target = botsHomePath();

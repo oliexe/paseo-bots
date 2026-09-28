@@ -39,7 +39,7 @@ async function botsProjectId(api: PaseoApi, root: string): Promise<string> {
 }
 
 /** Finds the bot's workspace (by its folder) or creates it, and keeps its title in step with the bot's name. */
-export async function ensureBotWorkspace(api: PaseoApi, bot: Bot, placement: BotPlacement) {
+async function ensureBotWorkspace(api: PaseoApi, bot: Bot, placement: BotPlacement) {
   const { entries } = await api.workspaces.list();
   const mine = entries.find(
     (workspace) =>

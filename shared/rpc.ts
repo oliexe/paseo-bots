@@ -5,8 +5,8 @@ import { ProposalSchema } from "./proposals";
 
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 /** "MEMORY.md" or a topic file such as "projects.md" (stored under memory/). */
-export const MemoryFileName = z.string().regex(/^[A-Za-z0-9 ._-]+\.md$/);
-export const SkillName = z.string().regex(/^[A-Za-z0-9._-]+$/);
+const MemoryFileName = z.string().regex(/^[A-Za-z0-9 ._-]+\.md$/);
+const SkillName = z.string().regex(/^[A-Za-z0-9._-]+$/);
 
 /**
  * Creates (if needed) the Bots project folder and this bot's folder inside it.
@@ -75,7 +75,7 @@ export const memoryLogDeleteRpc = defineRpc({
   output: z.object({ ok: z.boolean() }),
 });
 
-export const JournalEntrySchema = z.object({
+const JournalEntrySchema = z.object({
   id: z.string(),
   at: z.string(),
   file: z.string(),
@@ -175,7 +175,7 @@ export const avatarGenerateRpc = defineRpc({
 });
 
 /** One run of a routine, like Paseo's ScheduleRun. */
-export const RoutineRunSchema = z.object({
+const RoutineRunSchema = z.object({
   id: z.string(),
   trigger: z.enum(["schedule", "manual", "webhook"]),
   /** When the run was due; for manual and webhook runs, when it was asked for. */
@@ -195,7 +195,7 @@ export const RoutineRunCardSchema = RoutineRunSchema.pick({ trigger: true, sched
 export type RoutineRunCard = z.infer<typeof RoutineRunCardSchema>;
 export const ROUTINE_RUN_CARD = { kind: "routine-run", version: 1 } as const;
 
-export const RoutineRecordSchema = z.object({
+const RoutineRecordSchema = z.object({
   /** The last time the schedule fired (runs, skips and misses), which the next due time counts from. */
   lastRunAt: z.string().nullable(),
   /** The latest runs, oldest first. */

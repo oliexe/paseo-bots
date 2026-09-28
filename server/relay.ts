@@ -23,11 +23,11 @@ function sign(secret: string, subject: string): string {
 }
 
 /** Connected-apps token; unchanged from the first release so running chats keep working. */
-export function botToken(secret: string, botId: string): string {
+function botToken(secret: string, botId: string): string {
   return sign(secret, botId);
 }
 
-export function toolsToken(secret: string, botId: string, agentId: string): string {
+function toolsToken(secret: string, botId: string, agentId: string): string {
   return sign(secret, `tools:${botId}:${agentId}`);
 }
 

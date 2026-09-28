@@ -90,7 +90,7 @@ export function humanizeToolName(name: string): string {
     .replace(/^./, (character) => character.toUpperCase());
 }
 
-export function stripCwdPrefix(filePath: string, cwd?: string): string {
+function stripCwdPrefix(filePath: string, cwd?: string): string {
   if (!cwd || !filePath) return filePath;
   const normalizedCwd = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
   const normalizedPath = filePath.replace(/\\/g, "/");

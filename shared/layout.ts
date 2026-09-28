@@ -1,7 +1,7 @@
 // Column widths from Paseo's desktop layout (stores/panel-store/state.ts,
 // components/explorer-sidebar-layout.ts, components/desktop-sidebar-layout.ts).
 export const LIST_WIDTH = { default: 320, min: 200, max: 600 };
-export const PANEL_WIDTH = { default: 320, min: 240 };
+const PANEL_WIDTH = { default: 320, min: 240 };
 /** The centre column never gets narrower than this while space allows. */
 export const CENTER_MIN_WIDTH = 400;
 

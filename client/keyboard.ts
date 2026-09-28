@@ -5,7 +5,7 @@ import { Dimensions, Keyboard, LayoutAnimation, Platform, TurboModuleRegistry, N
 const IOS_KEYBOARD_MIN_HEIGHT = 120;
 
 /** Keyboard height from an iOS frame event: 0 when the frame is off screen (hidden or undocked below the fold) or only the accessory bar. */
-export function iosKeyboardHeight(event: Pick<KeyboardEvent, "endCoordinates">, screenHeight: number): number {
+function iosKeyboardHeight(event: Pick<KeyboardEvent, "endCoordinates">, screenHeight: number): number {
   const { height, screenY } = event.endCoordinates;
   if (!(height > 0) || (Number.isFinite(screenY) && screenY >= screenHeight)) return 0;
   return height < IOS_KEYBOARD_MIN_HEIGHT ? 0 : height;

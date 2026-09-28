@@ -24,7 +24,7 @@ function storePath(): string {
 }
 
 /** Throws a message the person can act on when a rule can't be saved. */
-export function validateRule(command: string, cwd: string): void {
+function validateRule(command: string, cwd: string): void {
   if (!command.trim() || Buffer.byteLength(command, "utf8") > MAX_COMMAND_BYTES || /[\p{Cc}]/u.test(command.replace(/[\t\r\n]/g, ""))) {
     throw new Error("The command must be text of at most 16 KB.");
   }

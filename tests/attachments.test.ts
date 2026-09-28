@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyFile, formatBytes, rejectReason, toWire } from "../shared/attachments";
+import { classifyFile, rejectReason, toWire } from "../shared/attachments";
 
 describe("attachments", () => {
   it("classifies images, text and other files", () => {
@@ -31,7 +31,6 @@ describe("attachments", () => {
         { type: "uploaded_file", id: "3", fileName: "r.pdf", mimeType: "application/pdf", size: 9, path: "/x/r.pdf" },
       ],
     });
-    expect(formatBytes(1536)).toBe("1.5 KB");
   });
 });
 
@@ -42,17 +41,6 @@ describe("chat titles", () => {
     expect(displayTitle("[Email Manager] Triage my inbox")).toBe("Triage my inbox");
     expect(displayTitle("plain")).toBe("plain");
     expect(displayTitle(null)).toBe("New chat");
-  });
-});
-
-import { avatarSvg, spriteAvatar } from "../shared/avatar";
-
-describe("project icon", () => {
-  it("renders the robot sprite as SVG", () => {
-    const svg = avatarSvg(spriteAvatar("robot", 3));
-    expect(svg.startsWith("<svg")).toBe(true);
-    expect(svg).toContain('shape-rendering="crispEdges"');
-    expect(svg.match(/<rect /g)!.length).toBeGreaterThan(20);
   });
 });
 

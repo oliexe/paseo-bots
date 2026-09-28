@@ -21,7 +21,7 @@ import { CardButton } from "./ui";
 
 type Colors = PluginTheme["colors"];
 
-export const proposalQueryKey = (id: string) => ["paseo-bots", "proposal", id];
+const proposalQueryKey = (id: string) => ["paseo-bots", "proposal", id];
 
 const OUTCOME = { pending: "pending", accepted: "approved", dismissed: "rejected" } as const;
 

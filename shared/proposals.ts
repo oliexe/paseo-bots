@@ -17,13 +17,13 @@ const ProposalBase = z.object({
 });
 
 /** A new or updated library skill: its folder name and full SKILL.md. */
-export const SkillProposalSchema = z.object({ name: z.string(), description: z.string(), text: z.string() });
+const SkillProposalSchema = z.object({ name: z.string(), description: z.string(), text: z.string() });
 
 /** A new routine for the bot; its runs report back to the chat it was proposed in. */
-export const RoutineProposalSchema = z.object({ name: z.string(), prompt: z.string(), schedule: RoutineScheduleSchema, resultsChatId: z.string().nullable() });
+const RoutineProposalSchema = z.object({ name: z.string(), prompt: z.string(), schedule: RoutineScheduleSchema, resultsChatId: z.string().nullable() });
 
 /** Changes to the setup, applied together (shared/changes.ts); `provider` is the host's pick for new bots the defaults leave open. */
-export const ChangesProposalSchema = z.object({ summary: z.string(), changes: z.array(ChangeSchema), provider: z.string().default("") });
+const ChangesProposalSchema = z.object({ summary: z.string(), changes: z.array(ChangeSchema), provider: z.string().default("") });
 
 export const ProposalSchema = z.discriminatedUnion("kind", [
   ProposalBase.extend({ kind: z.literal("skill"), data: SkillProposalSchema }),
@@ -31,7 +31,6 @@ export const ProposalSchema = z.discriminatedUnion("kind", [
   ProposalBase.extend({ kind: z.literal("changes"), data: ChangesProposalSchema }),
 ]);
 export type Proposal = z.infer<typeof ProposalSchema>;
-export type ProposalKind = Proposal["kind"];
 
 const PROPOSAL_ID = /\bproposal (p-[a-z0-9]{10})\b/i;
 
@@ -41,7 +40,7 @@ export function proposalReply(id: string, what: string): string {
 }
 
 /** The proposal a propose_* tool call made, from its output (text or MCP content blocks). */
-export function proposalIdIn(output: unknown): string | null {
+function proposalIdIn(output: unknown): string | null {
   const text = typeof output === "string" ? output : JSON.stringify(output ?? null);
   return PROPOSAL_ID.exec(text)?.[1] ?? null;
 }

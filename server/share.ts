@@ -204,7 +204,7 @@ export function isTeamFile(json: string): boolean {
 }
 
 /** The teams among the exported bots, pointing at them by their place in the file. */
-export function teamsInFile(bots: readonly Bot[], groups: readonly BotGroup[]): TeamFileTeam[] {
+function teamsInFile(bots: readonly Bot[], groups: readonly BotGroup[]): TeamFileTeam[] {
   const index = new Map(bots.map((bot, position) => [bot.id, position]));
   return groups.flatMap((group) => {
     const members = [...new Set([...(group.leadId ? [group.leadId] : []), ...group.memberIds])].flatMap((id) => index.get(id) ?? []);

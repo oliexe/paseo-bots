@@ -245,7 +245,7 @@ function category(row: StreamRow | null | undefined): Category | null {
 /** Routine result cards arrive between turns and belong to none. */
 const standsAlone = (row: StreamRow) => row.kind === "routine-run";
 
-export function continuesTurn(previous: StreamRow | null, next: StreamRow | null): boolean {
+function continuesTurn(previous: StreamRow | null, next: StreamRow | null): boolean {
   if (!previous || !next || standsAlone(previous) || standsAlone(next)) return false;
   if (previous.turnId !== undefined && next.turnId !== undefined) return previous.turnId === next.turnId;
   return next.kind !== "user";

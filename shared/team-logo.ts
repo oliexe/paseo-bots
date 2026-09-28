@@ -323,8 +323,3 @@ export function teamLogo(seed: string, palette: number | null = null, options: L
   const seeded = pick(next, PALETTES);
   return themed(motif, palette === null ? seeded : PALETTES[palette % PALETTES.length]!, options);
 }
-
-/** A specific motif in a specific palette. */
-export function motifLogo(motif: MotifName, palette: number, options: LogoOptions = {}): TeamLogoImage {
-  return themed(motif, PALETTES[palette % PALETTES.length]!, options);
-}

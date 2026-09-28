@@ -4,7 +4,7 @@
 
 export const TOOLS_MCP_NAME = "bots";
 
-export const BOT_TOOL_NAMES = ["list_bots", "ask_bot", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app"] as const;
+const BOT_TOOL_NAMES = ["list_bots", "ask_bot", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app"] as const;
 export type BotToolName = (typeof BOT_TOOL_NAMES)[number];
 
 /**

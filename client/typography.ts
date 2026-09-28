@@ -87,11 +87,6 @@ export function contentLine(): number {
   return Math.round(current.content * 1.4);
 }
 
-/** Markdown headings and other content-relative sizes, from Paseo's 15pt authoring. */
-export function contentScaled(size: number): number {
-  return Math.round((size * current.content) / 15);
-}
-
 export function code(): number {
   return current.code;
 }

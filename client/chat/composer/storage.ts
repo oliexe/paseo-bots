@@ -73,7 +73,7 @@ export function writeItem(key: string, value: string): Promise<void> {
 let sendBehavior: SendBehavior = native ? DEFAULT_SEND_BEHAVIOR : parseSendBehavior(readItemSync(APP_SETTINGS_KEY));
 
 /** Re-reads Paseo's `sendBehavior` setting. */
-export async function readSendBehavior(): Promise<SendBehavior> {
+async function readSendBehavior(): Promise<SendBehavior> {
   sendBehavior = parseSendBehavior(await readItem(APP_SETTINGS_KEY));
   return sendBehavior;
 }

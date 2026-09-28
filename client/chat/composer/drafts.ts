@@ -69,7 +69,7 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-export function readQueue(key: string): QueuedMessage[] {
+function readQueue(key: string): QueuedMessage[] {
   return queues.get(key) ?? EMPTY;
 }
 

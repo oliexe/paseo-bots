@@ -62,7 +62,7 @@ export function errorText(error: unknown): string {
 }
 
 /** Blend two colours (`weight` of `a`); returns `a` when either can't be parsed. */
-export function mix(a: string, b: string, weight: number): string {
+function mix(a: string, b: string, weight: number): string {
   const x = parseColor(a);
   const y = parseColor(b);
   if (!x || !y) return a;
@@ -75,7 +75,7 @@ export function withAlpha(color: string, alpha: number): string {
   return c ? `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})` : color;
 }
 
-export function isDark(colors: Colors): boolean {
+function isDark(colors: Colors): boolean {
   const c = parseColor(colors.surface0);
   if (!c) return true;
   return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 < 0.5;

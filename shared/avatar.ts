@@ -531,7 +531,7 @@ export function pixelAvatar(seed: string, palette: number | null = null, options
   return withTheme(draw(traitsFor(sprite, colors, accentHue, next)), colors, options);
 }
 
-/** A specific creature and palette, e.g. the robot on the Bots project icon. The face follows from the arguments. */
+/** A specific creature and palette, e.g. the splash lineup. The face follows from the arguments. */
 export function spriteAvatar(sprite: SpriteName, palette: number, accent: number = 0, options: AvatarOptions = {}): PixelAvatar {
   const colors = PALETTES[palette % PALETTES.length]!;
   const next = rng(`${sprite}:${palette}:${accent}`);
@@ -561,19 +561,6 @@ export const SPLASH_LINEUP: readonly { sprite: SpriteName; palette: number; acce
   { sprite: "chick", palette: 4, accent: 1 },
   { sprite: "ghost", palette: 9, accent: 4 },
 ];
-
-/** The avatar as a crisp SVG (one rect per run) on a rounded background. */
-export function avatarSvg(avatar: PixelAvatar, radius: number = 4.5): string {
-  const rects = avatar.rows.flatMap((runs, y) =>
-    runs.filter((run) => run.color).map((run) => `<rect x="${run.x}" y="${y}" width="${run.width}" height="1" fill="${run.color}"/>`),
-  );
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SPRITE_SIZE} ${SPRITE_SIZE}" width="64" height="64" shape-rendering="crispEdges">`,
-    `<rect width="${SPRITE_SIZE}" height="${SPRITE_SIZE}" rx="${radius}" fill="${avatar.background}"/>`,
-    ...rects,
-    "</svg>",
-  ].join("");
-}
 
 export function randomSeed(): string {
   return Math.random().toString(36).slice(2, 10);

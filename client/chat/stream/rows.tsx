@@ -25,7 +25,7 @@ type Colors = PluginTheme["colors"];
 type ImageAttachment = Extract<ComposerAttachment, { kind: "image" }>;
 
 /** Paseo's STREAM_METADATA_FONT_SIZE: timestamps, durations and the live timer are a fixed 13. */
-export const METADATA_SIZE = 13;
+const METADATA_SIZE = 13;
 const TIMESTAMP_REVEAL_MS = 3000;
 
 export interface RowContext {
@@ -221,7 +221,7 @@ interface ToolCallRowProps {
 }
 
 /** Paseo's ToolCall: an expandable badge inline on desktop, a sheet on phones, a plan card for plans. */
-export const ToolCallRow = memo(function ToolCallRow({ colors, compact, cwd, name, status, error, detail, metadata, maxDetailHeight = 400 }: ToolCallRowProps) {
+const ToolCallRow = memo(function ToolCallRow({ colors, compact, cwd, name, status, error, detail, metadata, maxDetailHeight = 400 }: ToolCallRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [sheet, setSheet] = useState(false);
   const presentation = useMemo(() => buildToolCallPresentation({ name, status, error: error ?? null, detail, metadata, cwd }), [name, status, error, detail, metadata, cwd]);
@@ -292,7 +292,7 @@ const TodoListCard = memo(function TodoListCard({ colors, items, activity }: { c
 });
 
 /** Paseo's TaskListRow: Circle / CircleDot / CircleCheck 16, finished tasks struck through. */
-export function TaskListRow({ colors, task }: { colors: Colors; task: TaskEntry }) {
+function TaskListRow({ colors, task }: { colors: Colors; task: TaskEntry }) {
   const tokens = nativeTokens(colors);
   const completed = task.completed || task.status === "completed";
   const running = !completed && task.status === "in_progress";
@@ -369,7 +369,7 @@ const CompactionMarker = memo(function CompactionMarker({ colors, status, trigge
 // ---------------------------------------------------------------- turn footer
 
 /** agent-stream/turn-footer.tsx TurnFooterRow + slot: 13 below the turn, 24 high, 32 below. */
-export function TurnFooterRow({ children }: { children: ReactNode }) {
+function TurnFooterRow({ children }: { children: ReactNode }) {
   return (
     <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center", paddingHorizontal: 8, marginTop: 13 }}>
       <View style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-start", minHeight: 24, paddingBottom: 32 }}>{children}</View>

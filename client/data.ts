@@ -1,14 +1,9 @@
-import type { PluginTheme } from "@getpaseo/plugin";
 import { getPaseoClient, usePaseo, useHosts } from "@getpaseo/plugin/client";
 import type { PaseoAgent, PaseoApi } from "@getpaseo/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { BOT_LABEL } from "../shared/bot";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
-import { BUCKET_LABELS, chatBucket, type ChatBucket } from "../shared/sidebar";
-import { nativeTokens } from "./native";
-
-export { chatBucket, type ChatBucket };
 
 export interface LocalHost {
   id: string;
@@ -143,36 +138,6 @@ export function useChatInvalidation() {
       void subscription?.release();
     };
   }, [paseo, queryClient]);
-}
-
-export interface ChatStatus {
-  /** 0 idle, 1 ready to review, 2 running, 3 failed, 4 needs input: Paseo's bucket priority. The list shows the highest. */
-  rank: number;
-  bucket: ChatBucket;
-  icon: string;
-  color: string;
-  label: string;
-}
-
-const BUCKET_RANK: Record<ChatBucket, number> = { done: 0, attention: 1, running: 2, failed: 3, needs_input: 4 };
-
-/** Paseo's status bucket for a chat, with its statusDot colour (utils/status-dot-color.ts). */
-export function chatStatus(agent: PaseoAgent, colors: PluginTheme["colors"]): ChatStatus {
-  const bucket = chatBucket(agent);
-  const tokens = nativeTokens(colors);
-  const label = BUCKET_LABELS[bucket];
-  switch (bucket) {
-    case "needs_input":
-      return { rank: BUCKET_RANK[bucket], bucket, icon: "CircleAlert", color: tokens.statusDotWarning, label };
-    case "failed":
-      return { rank: BUCKET_RANK[bucket], bucket, icon: "CircleAlert", color: tokens.statusDotDanger, label };
-    case "running":
-      return { rank: BUCKET_RANK[bucket], bucket, icon: "Loader", color: tokens.statusDotRunning, label };
-    case "attention":
-      return { rank: BUCKET_RANK[bucket], bucket, icon: "CircleDot", color: tokens.statusDotSuccess, label };
-    default:
-      return { rank: 0, bucket, icon: "Circle", color: tokens.foregroundExtraMuted, label };
-  }
 }
 
 /** The host's Paseo-tools settings for a provider, and a way to turn them on. */

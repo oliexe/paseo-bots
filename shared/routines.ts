@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Routine, RoutineSchedule } from "./bot";
 
 /** A run missed by more than this is skipped instead of caught up (OpenMausBot uses 12 hours). */
-export const CATCH_UP_MS = 12 * 60 * 60 * 1000;
+const CATCH_UP_MS = 12 * 60 * 60 * 1000;
 
 function atLocalTime(day: Date, time: string): Date {
   const [hours, minutes] = time.split(":").map(Number) as [number, number];
@@ -205,7 +205,7 @@ function parseCronField(source: string, bounds: (typeof CRON_FIELDS)[number]): S
 }
 
 /** Throws with Paseo's messages ("Cron expressions must have 5 fields", "Invalid cron hour value", ...). */
-export function parseCron(expression: string): ParsedCron {
+function parseCron(expression: string): ParsedCron {
   const parts = expression.trim().split(/\s+/);
   if (parts.length !== 5) throw new Error("Cron expressions must have 5 fields");
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts.map((part, index) => parseCronField(part, CRON_FIELDS[index]!));
@@ -244,7 +244,7 @@ function dayMatches(cron: ParsedCron, day: Date): boolean {
 }
 
 /** The first matching minute strictly after `after`, or null within four years. */
-export function nextCronTime(cron: ParsedCron, after: Date): Date | null {
+function nextCronTime(cron: ParsedCron, after: Date): Date | null {
   const hours = sorted(cron.hour, false);
   const minutes = sorted(cron.minute, false);
   for (let offset = 0; offset <= CRON_SEARCH_DAYS; offset++) {
@@ -261,7 +261,7 @@ export function nextCronTime(cron: ParsedCron, after: Date): Date | null {
 }
 
 /** The latest matching minute at or before `atOrBefore`, searching back no further than `notBefore`'s day. */
-export function previousCronTime(cron: ParsedCron, atOrBefore: Date, notBefore: Date): Date | null {
+function previousCronTime(cron: ParsedCron, atOrBefore: Date, notBefore: Date): Date | null {
   const hours = sorted(cron.hour, true);
   const minutes = sorted(cron.minute, true);
   const span = Math.min(CRON_SEARCH_DAYS, Math.max(0, Math.ceil((atOrBefore.getTime() - notBefore.getTime()) / 86_400_000) + 1));

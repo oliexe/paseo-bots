@@ -787,15 +787,10 @@ export function parseMarkdown(source: string, options: ParseOptions = {}): Block
   return parseBlocks(lines, options.streaming === true, references);
 }
 
-/** Plain text of inlines, for accessibility labels and copy. */
-export function inlineText(inlines: Inline[]): string {
-  return plainText(inlines);
-}
-
 // ---------------------------------------------------------------- limits
 
 /** Paseo caps what it renders of one assistant message (assistant-message-render-limit.ts). */
-export const ASSISTANT_MESSAGE_RENDER_CHARACTER_LIMIT = 32_000;
+const ASSISTANT_MESSAGE_RENDER_CHARACTER_LIMIT = 32_000;
 
 export function capMessageForRender(message: string): { text: string; capped: boolean } {
   if (message.length <= ASSISTANT_MESSAGE_RENDER_CHARACTER_LIMIT) return { text: message, capped: false };

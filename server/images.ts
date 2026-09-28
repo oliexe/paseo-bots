@@ -10,7 +10,7 @@ const MODEL = "gpt-image-2";
 /** Under the minute the app waits for a plugin call. */
 const TIMEOUT_MS = 55_000;
 const MAX_RESPONSE_CHARS = 15 * 1024 * 1024;
-export const AVATAR_DIRECTION_MAX = 400;
+const AVATAR_DIRECTION_MAX = 400;
 
 interface State {
   openaiKey: string | null;

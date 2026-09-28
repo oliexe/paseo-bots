@@ -5,12 +5,12 @@ export type ComposerAttachment =
   | { kind: "text"; id: string; name: string; size: number; text: string }
   | { kind: "file"; id: string; name: string; mimeType: string; size: number; path: string };
 
-export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-export const TEXT_MAX_BYTES = 1024 * 1024;
-export const FILE_MAX_BYTES = 25 * 1024 * 1024;
+const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const TEXT_MAX_BYTES = 1024 * 1024;
+const FILE_MAX_BYTES = 25 * 1024 * 1024;
 
 /** Raster images Paseo sends as `images` (the provider-readable formats). */
-export const IMAGE_TYPES: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const IMAGE_TYPES: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 const TEXT_EXTENSIONS =
   /\.(txt|md|markdown|csv|tsv|json|jsonl|yaml|yml|toml|xml|html?|css|scss|js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|zsh|bash|sql|log|ini|cfg|conf|env|graphql|vue|svelte)$/i;
 
@@ -67,12 +67,6 @@ export function toWire(attachments: readonly ComposerAttachment[]): { images: Wi
     else rest.push({ type: "uploaded_file", id: attachment.id, fileName: attachment.name, mimeType: attachment.mimeType, size: attachment.size, path: attachment.path });
   }
   return { images, attachments: rest };
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function newAttachmentId(): string {

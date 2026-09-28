@@ -24,7 +24,7 @@ export interface ChatState {
 }
 
 /** Paseo's TIMELINE_FETCH_PAGE_SIZE (timeline/timeline-fetch-policy.ts). */
-export const TIMELINE_PAGE_SIZE = 40;
+const TIMELINE_PAGE_SIZE = 40;
 
 /** A chat's whole timeline, oldest first, page by page (a transcript needs all of it). */
 export async function fullTimeline(api: PaseoApi, agentId: string): Promise<ChatEntry[]> {

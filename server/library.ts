@@ -16,7 +16,7 @@ const MAX_LISTED_FILES = 100;
 
 export type ImportedSkill = Pick<LibrarySkill, "id" | "description" | "source">;
 
-export function librarySkillsPath(): string {
+function librarySkillsPath(): string {
   return join(pluginDataPath(), "library", "skills");
 }
 
