@@ -1,3 +1,6 @@
+import { randomSeed } from "./avatar";
+import { newBotId, type Bot, type Preset } from "./bot";
+
 // Starting points for a new bot, from OpenMausBot's New bot roles
 // (src/lib/bot-roles.ts): a name, a job and standing instructions.
 
@@ -54,3 +57,41 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     soul: "You keep the user's week on track. Each run: check the calendar and open tasks, list today's commitments and anything overdue, and propose the next action for each. Draft messages when a follow-up is due, but always ask before sending.",
   },
 ];
+
+/** A new bot on `provider`: blank, or from a template (a role). */
+export function newBot(provider: string, template?: BotTemplate): Bot {
+  const now = new Date().toISOString();
+  return {
+    id: newBotId(),
+    name: template?.name ?? "New bot",
+    title: template?.title ?? "",
+    description: template?.description ?? "",
+    avatar: { seed: template?.avatarSeed ?? randomSeed(), palette: null, shape: "circle", imageUrl: null },
+    hostId: null,
+    provider,
+    model: null,
+    modeId: null,
+    thinkingOptionId: null,
+    soul: template?.soul ?? "",
+    mcpServerIds: [],
+    alwaysAllow: [],
+    skillIds: [],
+    apps: [],
+    appRules: {},
+    voice: { name: null, readReplies: false },
+    contactBots: "ask",
+    routines: [],
+    playbooks: [],
+    cwd: null,
+    pinned: false,
+    archived: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** A new bot from a preset: its identity, instructions, playbooks and skills. */
+export function botFromPreset(provider: string, preset: Preset): Bot {
+  const { id: _id, createdAt: _createdAt, ...fields } = preset;
+  return { ...newBot(provider), ...fields };
+}

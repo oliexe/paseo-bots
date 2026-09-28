@@ -8,14 +8,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
-import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library, type Preset } from "../shared/bot";
+import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library } from "../shared/bot";
 import { saveTeam, tabOf, teamTabs, withoutBot } from "../shared/groups";
 import { addImportedBots } from "../shared/library";
 import { displayTitle, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
 import { chatTranscript } from "../shared/transcript";
 import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
-import type { BotTemplate } from "../shared/templates";
+import { botFromPreset, newBot } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
 import { BotSidebar, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
@@ -49,43 +49,6 @@ const SETUP_PROMPT =
 
 /** Autosave delay after the last edit in the settings panel. */
 const SAVE_DELAY_MS = 600;
-
-function blankBot(provider: string, template?: BotTemplate): Bot {
-  const now = new Date().toISOString();
-  return {
-    id: newBotId(),
-    name: template?.name ?? "New bot",
-    title: template?.title ?? "",
-    description: template?.description ?? "",
-    avatar: { seed: template?.avatarSeed ?? randomSeed(), palette: null, shape: "circle", imageUrl: null },
-    hostId: null,
-    provider,
-    model: null,
-    modeId: null,
-    thinkingOptionId: null,
-    soul: template?.soul ?? "",
-    mcpServerIds: [],
-    alwaysAllow: [],
-    skillIds: [],
-    apps: [],
-    appRules: {},
-    voice: { name: null, readReplies: false },
-    contactBots: "ask",
-    routines: [],
-    playbooks: [],
-    cwd: null,
-    pinned: false,
-    archived: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-/** A new bot from a preset: its identity, instructions, playbooks and skills. */
-function presetBot(provider: string, preset: Preset): Bot {
-  const { id: _id, createdAt: _createdAt, ...fields } = preset;
-  return { ...blankBot(provider), ...fields };
-}
 
 export function BotsSurface(props: PluginSurfaceProps) {
   const { colors } = props.theme;
@@ -713,7 +676,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           presets={settings.status === "ready" ? (settings.values.presets ?? []) : []}
           onCreate={(start) => {
             setCreating(false);
-            const bot = start?.preset ? presetBot(defaultProvider(), start.preset) : blankBot(defaultProvider(), start?.template);
+            const bot = start?.preset ? botFromPreset(defaultProvider(), start.preset) : newBot(defaultProvider(), start?.template);
             const defaults = (settings.status === "ready" ? settings.values.defaults : undefined) ?? DEFAULT_BOT_DEFAULTS;
             void addBot(applyDefaults(bot, defaults, defaultProvider()), start ? "overview" : "identity");
           }}

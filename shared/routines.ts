@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { Routine, RoutineSchedule } from "./bot";
 
 /** A run missed by more than this is skipped instead of caught up (OpenMausBot uses 12 hours). */
@@ -338,5 +339,45 @@ export function scheduleToCron(schedule: RoutineSchedule): string | null {
       if (hours >= 24) return "0 9 * * *";
       return hours === 1 ? "0 * * * *" : `0 */${hours} * * *`;
     }
+  }
+}
+
+// ---------------------------------------------------------------- tool input
+
+/** A routine schedule as bots give it in tool calls. */
+export const ScheduleInput = z.object({
+  type: z.enum(["once", "daily", "cron", "interval", "webhook"]),
+  at: z.string().max(40).optional().describe('For "once": local date and time, "YYYY-MM-DD HH:MM".'),
+  time: z.string().max(5).optional().describe('For "daily": local time, "HH:MM".'),
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional().describe('For "daily": the days to run, 0 = Sunday to 6 = Saturday. Every day when left out.'),
+  expression: z.string().max(100).optional().describe('For "cron": five fields (minute hour day-of-month month day-of-week) in local time.'),
+  every_minutes: z.number().int().min(5).max(1440).optional().describe('For "interval": minutes between runs, 5 to 1440.'),
+});
+
+/** The routine schedule a tool call describes; throws a message the bot can act on. */
+export function scheduleFrom(input: z.infer<typeof ScheduleInput>, now: Date): RoutineSchedule {
+  switch (input.type) {
+    case "once": {
+      const at = input.at ? (parseLocalDateTime(input.at) ?? new Date(input.at)) : null;
+      if (!at || Number.isNaN(at.getTime())) throw new Error('A "once" routine needs "at" as "YYYY-MM-DD HH:MM".');
+      if (at <= now) throw new Error(`${input.at} has already passed. Pick a time in the future.`);
+      return { kind: "once", at: at.toISOString() };
+    }
+    case "daily": {
+      if (!input.time || !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new Error('A "daily" routine needs "time" as "HH:MM".');
+      const weekdays = [...new Set(input.weekdays ?? [0, 1, 2, 3, 4, 5, 6])].sort();
+      if (weekdays.length === 0) throw new Error("Give at least one weekday.");
+      return { kind: "daily", time: input.time, weekdays };
+    }
+    case "cron": {
+      const error = validateCron(input.expression ?? "");
+      if (error) throw new Error(`${error}. Use five fields: minute hour day-of-month month day-of-week.`);
+      return { kind: "cron", expression: input.expression!.trim() };
+    }
+    case "interval":
+      if (!input.every_minutes) throw new Error('An "interval" routine needs "every_minutes" (5 to 1440).');
+      return { kind: "interval", minutes: input.every_minutes };
+    case "webhook":
+      return { kind: "webhook" };
   }
 }

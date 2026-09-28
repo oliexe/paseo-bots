@@ -26,7 +26,7 @@ describe("tool names and grants", () => {
     const tools = { type: "http" as const, url: "http://127.0.0.1:1/bots/b/a", headers: {} };
     const claude = buildAgentConfig(makeBot({ alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "m", "", { tools });
     expect(claude.mcpServers).toEqual({ bots: tools });
-    expect(claude.toolPolicy?.preapproved.map((grant) => grant.tool)).toEqual(["list_bots", "check_chat", "search_chats", "propose_skill", "propose_routine", "connect_app", "ask_bot"]);
+    expect(claude.toolPolicy?.preapproved.map((grant) => grant.tool)).toEqual(["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "ask_bot"]);
     // Paseo refuses a chat whose provider can't take grants, so none are sent.
     expect(buildAgentConfig(makeBot({ provider: "gemini", alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "m", "", { tools })).not.toHaveProperty("toolPolicy");
   });

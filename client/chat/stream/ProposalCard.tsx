@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { EMPTY_LIBRARY, newRoutineId, type Bot } from "../../../shared/bot";
+import { applyChanges, changeWarnings, describeChange } from "../../../shared/changes";
 import { setBotUses, updateSkill, upsertSkills } from "../../../shared/library";
 import type { Proposal } from "../../../shared/proposals";
 import { describeSchedule, upcomingRuns } from "../../../shared/routines";
@@ -25,10 +26,11 @@ export const proposalQueryKey = (id: string) => ["paseo-bots", "proposal", id];
 const OUTCOME = { pending: "pending", accepted: "approved", dismissed: "rejected" } as const;
 
 /**
- * Something a bot proposed with propose_skill (usually after /learn) or
- * propose_routine, laid out like Paseo's plan card with the actions under it.
- * Skills are saved to Skills & Tools as reviewed and turned on for the bot;
- * routines are added to the bot and report back to this chat.
+ * Something a bot proposed with propose_skill (usually after /learn),
+ * propose_routine or propose_changes, laid out like Paseo's plan card with the
+ * actions under it. Skills are saved to Skills & Tools as reviewed and turned on
+ * for the bot; routines are added to the bot and report back to this chat;
+ * setup changes are applied together.
  */
 export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; compact: boolean; proposalId: string }) {
   const get = useRpc(proposalGetRpc);
@@ -48,11 +50,23 @@ export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; 
 
   const values = settings.status === "ready" ? settings.values : null;
   const bot = values?.bots.find((entry) => entry.id === proposal.botId);
-  const view = proposal.kind === "skill" ? skillView(proposal, bot, !!values?.library?.skills.some((skill) => skill.id === proposal.data.name)) : routineView(proposal, bot);
+  const view =
+    proposal.kind === "skill"
+      ? skillView(proposal, bot, !!values?.library?.skills.some((skill) => skill.id === proposal.data.name))
+      : proposal.kind === "routine"
+        ? routineView(proposal, bot)
+        : changesView(proposal);
 
   const save = async () => {
     setBusy("save");
     try {
+      if (proposal.kind === "changes") {
+        // Applied before the proposal counts as accepted: a change that no longer fits leaves the card pending.
+        const context = { now: new Date().toISOString(), provider: proposal.data.provider };
+        if (!(await commit((current) => applyChanges(current, proposal.data.changes, context)))) return;
+        queryClient.setQueryData(proposalQueryKey(proposal.id), await accept({ id: proposal.id }));
+        return;
+      }
       const { proposal: saved, skill } = await accept({ id: proposal.id });
       await commit((current) => {
         if (proposal.kind === "routine") {
@@ -146,5 +160,18 @@ function routineView(proposal: Extract<Proposal, { kind: "routine" }>, bot: Bot 
     warnings: [],
     notes: [timing, `Each run starts a new chat${bot ? ` with ${bot.name}` : ""} and posts its result here.`],
     action: "Create routine",
+  };
+}
+
+function changesView(proposal: Extract<Proposal, { kind: "changes" }>): ProposalView {
+  const { summary, changes } = proposal.data;
+  const count = changes.length === 1 ? "the change" : `all ${changes.length} changes`;
+  return {
+    titles: { pending: "Setup changes", accepted: "Applied setup changes", dismissed: "Dismissed setup changes" },
+    description: summary,
+    text: changes.map((change) => `- ${describeChange(change)}`).join("\n"),
+    warnings: changeWarnings(changes),
+    notes: [`Apply ${count}? A bot's earlier settings stay under History in its settings.`],
+    action: "Apply changes",
   };
 }

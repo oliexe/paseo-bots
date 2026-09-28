@@ -14,7 +14,7 @@ function routine(patch: Partial<Routine> = {}): Routine {
 
 describe("routine schedules from chat", () => {
   it("reads each schedule type and explains what's wrong", async () => {
-    const { scheduleFrom } = await import("../server/tools/routines");
+    const { scheduleFrom } = await import("../shared/routines");
     const now = local(27, 12);
     expect(scheduleFrom({ type: "daily", time: "08:30", weekdays: [5, 1, 1] }, now)).toEqual({ kind: "daily", time: "08:30", weekdays: [1, 5] });
     expect(scheduleFrom({ type: "cron", expression: " 0 9 * * 1-5 " }, now)).toEqual({ kind: "cron", expression: "0 9 * * 1-5" });
