@@ -7,6 +7,7 @@ import { Text, View } from "react-native";
 import { botToolName } from "../../shared/bot-tools";
 import { shellCommand } from "../../shared/commands";
 import { commandAllowRpc } from "../../shared/rpc";
+import { permissionInput, permissionToolName } from "../../shared/tool-name";
 import { humanizeToolName, type ToolCallDetail } from "../../shared/tools";
 import { errorText } from "../native";
 import { ui } from "../typography";
@@ -101,7 +102,7 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
     void respond(action.behavior === "allow" ? { behavior: "allow", selectedActionId: action.id } : { behavior: "deny", selectedActionId: action.id, message: "Denied by user" });
   };
 
-  const title = isPlan ? "Plan" : (permission.title ?? permissionTitle(permission) ?? "Permission Required");
+  const title = isPlan ? "Plan" : (permissionTitle(permission) ?? "Permission Required");
   const description = permission.description ?? "";
 
   const footer = (
@@ -140,10 +141,16 @@ export function PermissionCard({ colors, permission, api, agentId, compact = fal
   );
 }
 
-/** "Ask Helper" for a request to another bot; other tools by their readable name. */
+/** The provider's title, unless it only names a tool with a plainer name: "Ask Helper" for a request to another bot, "Propose changes"… */
 function permissionTitle(permission: Permission): string | null {
-  if (!permission.name) return null;
-  const bot = permission.input?.bot;
-  if (botToolName(permission.name) === "ask_bot" && typeof bot === "string" && bot.trim()) return `Ask ${bot.trim()}`;
-  return humanizeToolName(permission.name);
+  if (!permission.name) return permission.title ?? null;
+  const name = permissionToolName(permission);
+  const readable = readableToolTitle(name, permissionInput(permission));
+  return name !== permission.name && readable !== name ? readable : (permission.title ?? readable);
+}
+
+function readableToolTitle(name: string, input: Record<string, unknown> | null): string {
+  const bot = input?.bot;
+  if (botToolName(name) === "ask_bot" && typeof bot === "string" && bot.trim()) return `Ask ${bot.trim()}`;
+  return humanizeToolName(name);
 }

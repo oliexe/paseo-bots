@@ -3,6 +3,8 @@
 // memory/log/YYYY-MM-DD.md; the newest line from each chat of the last two days
 // goes into the next chat's prompt.
 
+import { toolCallName } from "./tool-name";
+
 const REPLY_MAX = 240;
 const TITLE_MAX = 60;
 const MAX_TOOLS = 6;
@@ -37,6 +39,7 @@ interface TimelineItemLike {
   type: string;
   text?: unknown;
   name?: unknown;
+  metadata?: unknown;
 }
 
 /** The latest turn in a chat's timeline: the bot's last reply and the tools it used. */
@@ -48,7 +51,7 @@ export function lastTurn(items: readonly TimelineItemLike[]): { reply: string; t
   const tools: string[] = [];
   for (const item of turn) {
     if (item.type !== "tool_call" || typeof item.name !== "string") continue;
-    const label = toolLabel(item.name);
+    const label = toolLabel(toolCallName({ name: item.name, metadata: item.metadata }));
     if (!tools.includes(label) && tools.length < MAX_TOOLS) tools.push(label);
   }
   return { reply: String(reply?.text ?? ""), tools };

@@ -4,6 +4,7 @@
 // server instead of every app's tools, so the tool list stays small.
 
 import type { AppRule } from "./bot";
+import { serverToolName, toolCallName } from "./tool-name";
 
 /** The MCP server name bots see for connected apps; a library server with this name would shadow it. */
 export const APPS_MCP_NAME = "composio";
@@ -198,8 +199,8 @@ function composioResults(value: unknown, depth = 0): Record<string, unknown> | n
  * The sign-ins a finished COMPOSIO_MANAGE_CONNECTIONS call started, from its
  * output: `{data: {results: {notion: {redirect_url, accounts: [{id, alias}]}}}}`.
  */
-export function appSignIns(call: { name: string; status: string; detail: unknown }): AppSignIn[] {
-  if (call.status !== "completed" || !/^(?:mcp__)?composio(?:__|\.|_)COMPOSIO_MANAGE_CONNECTIONS$/.test(call.name.trim())) return [];
+export function appSignIns(call: { name: string; status: string; detail: unknown; metadata?: unknown }): AppSignIn[] {
+  if (call.status !== "completed" || serverToolName(toolCallName(call), APPS_MCP_NAME) !== "COMPOSIO_MANAGE_CONNECTIONS") return [];
   const results = composioResults((call.detail as { output?: unknown } | null)?.output) ?? {};
   const signIns: AppSignIn[] = [];
   for (const [slug, value] of Object.entries(results)) {

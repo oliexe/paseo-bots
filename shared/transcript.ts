@@ -1,10 +1,11 @@
 import { localTime, toolLabel } from "./activity";
+import { toolCallName } from "./tool-name";
 
 // A chat as Markdown, like OpenMausBot's transcript export: who said what,
 // when, and the tools the bot used in between.
 
 interface TranscriptEntry {
-  item: { type: string; text?: unknown; name?: unknown; status?: unknown };
+  item: { type: string; text?: unknown; name?: unknown; status?: unknown; metadata?: unknown };
   timestamp: string;
 }
 
@@ -29,7 +30,8 @@ export function chatTranscript(input: { title: string; botName: string; entries:
   for (const { item, timestamp } of input.entries) {
     if (item.type === "tool_call" && typeof item.name === "string") {
       say(input.botName, timestamp);
-      tools.push(item.status === "failed" ? `${toolLabel(item.name)} (failed)` : toolLabel(item.name));
+      const label = toolLabel(toolCallName({ name: item.name, metadata: item.metadata }));
+      tools.push(item.status === "failed" ? `${label} (failed)` : label);
       continue;
     }
     if (item.type !== "user_message" && item.type !== "assistant_message") continue;

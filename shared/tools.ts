@@ -1,4 +1,5 @@
 import { botToolName } from "./bot-tools";
+import { toolCallName } from "./tool-name";
 
 // Tool call presentation, ported from Paseo: labels and summaries from
 // protocol/src/tool-call-display.ts (buildToolCallDisplayModel), icons from
@@ -154,7 +155,7 @@ function unknownDetailOverride(input: ToolCallDisplayInput): { displayName?: str
 export function buildToolCallDisplayModel(input: ToolCallDisplayInput): ToolCallDisplayModel {
   const canonical = canonicalDisplay(input);
   const override = unknownDetailOverride(input);
-  const displayName = override.displayName ?? canonical.displayName ?? humanizeToolName(input.name);
+  const displayName = override.displayName ?? canonical.displayName ?? humanizeToolName(toolCallName(input));
   const summary = override.summary ?? canonical.summary;
   const errorText = input.status === "failed" ? formatErrorText(input.error) : undefined;
   return { displayName, ...(summary ? { summary } : {}), ...(errorText ? { errorText } : {}) };

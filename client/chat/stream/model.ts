@@ -15,6 +15,7 @@ import {
   type ToolCallStatus,
 } from "../../../shared/tools";
 import { ROUTINE_RUN_CARD, RoutineRunCardSchema, type RoutineRunCard } from "../../../shared/rpc";
+import { toolCallName } from "../../../shared/tool-name";
 import { PLUGIN_ID } from "../../../shared/version";
 
 /** The fields of a projected timeline entry the stream reads. */
@@ -150,7 +151,7 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
         break;
       }
       case "tool_call": {
-        const name = String(item.name ?? "");
+        const name = toolCallName({ name: String(item.name ?? ""), metadata: item.metadata });
         const status = toolStatus(item.status);
         const detail = (item.detail ?? { type: "unknown", input: null, output: null }) as ToolCallDetail;
         if (isHiddenToolCall(name, status) || isHiddenTaskTool(name, entry.provider)) break;

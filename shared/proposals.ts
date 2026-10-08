@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RoutineScheduleSchema } from "./bot";
 import { botToolName } from "./bot-tools";
 import { ChangeSchema } from "./changes";
+import { toolCallName } from "./tool-name";
 
 // What a bot proposes in a chat (a skill it learned, a routine, changes to the
 // setup) waits as a card in that chat and is saved only when the user accepts it.
@@ -48,8 +49,8 @@ function proposalIdIn(output: unknown): string | null {
 const PROPOSING_TOOLS: readonly string[] = ["propose_skill", "propose_routine", "propose_changes"];
 
 /** The proposal behind a finished propose_* tool call, if the call is one. */
-export function proposalIdOf(call: { name: string; status: string; detail: unknown }): string | null {
-  const tool = botToolName(call.name);
+export function proposalIdOf(call: { name: string; status: string; detail: unknown; metadata?: unknown }): string | null {
+  const tool = botToolName(toolCallName(call));
   if (call.status !== "completed" || !tool || !PROPOSING_TOOLS.includes(tool)) return null;
   const detail = call.detail as { output?: unknown } | null;
   return proposalIdIn(detail && typeof detail === "object" && "output" in detail ? detail.output : null);

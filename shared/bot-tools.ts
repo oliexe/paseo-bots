@@ -1,3 +1,5 @@
+import { serverToolName } from "./tool-name";
+
 // The plugin's own tools, served to every local bot chat as the MCP server
 // "bots": other bots, past chats, the setup, and proposals (skills, routines,
 // setup changes, app connections) the user confirms in the chat.
@@ -14,13 +16,9 @@ export type BotToolName = (typeof BOT_TOOL_NAMES)[number];
  */
 export const QUIET_TOOLS: readonly BotToolName[] = ["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app"];
 
-/**
- * The bot tool a timeline tool call is, whatever the provider calls it:
- * Claude `mcp__bots__ask_bot`, Codex `bots.ask_bot`, others `bots_ask_bot`.
- */
+/** The bot tool a resolved tool name (shared/tool-name.ts) is, if it's one. */
 export function botToolName(name: string): BotToolName | null {
-  const match = /^(?:mcp__)?bots(?:__|\.|_)([a-z_]+)$/.exec(name.trim());
-  const tool = match?.[1];
+  const tool = serverToolName(name, TOOLS_MCP_NAME);
   return tool && (BOT_TOOL_NAMES as readonly string[]).includes(tool) ? (tool as BotToolName) : null;
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildRows, deriveTurnTiming, findRows, gapBetween, layoutStream, mergeEntries, retainLayout, type StreamEntry, type StreamRow } from "../client/chat/stream/model";
+import { proposalIdOf } from "../shared/proposals";
 import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
@@ -42,6 +43,13 @@ describe("buildRows", () => {
     const streaming = buildRows([user("hi"), assistant("hel")], true);
     expect(streaming[1]).toMatchObject({ kind: "assistant", phase: "streaming" });
     expect(buildRows([user("hi"), assistant("hel")], false)[1]).toMatchObject({ phase: "complete" });
+  });
+
+  it("names an ACP provider's tool rows after the tool in their title, so proposals get their card", () => {
+    const output = "Proposal p-0123456789: the user sees...";
+    const [row] = buildRows([tool("other", { type: "unknown", input: {}, output }, { metadata: { kind: "other", title: "mcp__bots__propose_changes: Add a Researcher bot" } })], false);
+    expect(row).toMatchObject({ kind: "tool", name: "mcp__bots__propose_changes" });
+    expect(row?.kind === "tool" ? proposalIdOf(row) : null).toBe("p-0123456789");
   });
 
   it("hides ExitPlanMode, running plan approvals and Claude's task tools", () => {
@@ -209,6 +217,9 @@ describe("tool display model", () => {
     expect(buildToolCallDisplayModel({ name: "mcp__paseo__list_workspaces", status: "completed", error: null, detail: { type: "unknown", input: null, output: null } }).displayName).toBe("List workspaces");
     expect(buildToolCallDisplayModel({ name: "mcp__bots__search_chats", status: "completed", error: null, detail: { type: "unknown", input: null, output: null } }).displayName).toBe("Search chats");
     expect(buildToolCallDisplayModel({ name: "mcp__other__search_chats", status: "completed", error: null, detail: { type: "unknown", input: null, output: null } }).displayName).toBe("mcp__other__search_chats");
+    const acp = { name: "other", status: "completed", error: null, detail: { type: "unknown", input: null, output: null } } as const;
+    expect(buildToolCallDisplayModel({ ...acp, metadata: { kind: "other", title: "mcp__bots__search_chats: invoices: march" } }).displayName).toBe("Search chats");
+    expect(buildToolCallDisplayModel({ ...acp, metadata: { kind: "other", title: "Run the linter" } }).displayName).toBe("Other");
     expect(buildToolCallDisplayModel({ name: "thinking", status: "completed", error: null, detail: { type: "unknown", input: "x", output: null } }).displayName).toBe("Thinking");
     expect(buildToolCallDisplayModel({ name: "Bash", status: "failed", error: { content: "exit 1" }, detail: { type: "shell", command: "false" } }).errorText).toBe("exit 1");
   });

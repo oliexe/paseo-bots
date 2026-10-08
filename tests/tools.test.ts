@@ -6,6 +6,7 @@ import { buildAgentConfig, EMPTY_LIBRARY } from "../shared/bot";
 import { botToolName, supportsToolGrants } from "../shared/bot-tools";
 import { withPluginCommands } from "../client/chat/composer/logic";
 import { proposalIdOf } from "../shared/proposals";
+import { permissionInput, permissionToolName } from "../shared/tool-name";
 import { expandLearn, sanitizeSkillName } from "../shared/skills";
 import { newUuid } from "../shared/uuid";
 import { fakeHost, makeBot } from "./helpers";
@@ -15,6 +16,7 @@ describe("tool names and grants", () => {
     expect(botToolName("mcp__bots__ask_bot")).toBe("ask_bot");
     expect(botToolName("bots.propose_skill")).toBe("propose_skill");
     expect(botToolName("bots_list_bots")).toBe("list_bots");
+    expect(botToolName("bots / propose_changes")).toBe("propose_changes");
     expect(botToolName("mcp__other__ask_bot")).toBeNull();
     expect(botToolName("bots.unknown")).toBeNull();
   });
@@ -47,6 +49,29 @@ describe("tool names and grants", () => {
     expect(proposalIdOf({ name: "bots.propose_skill", status: "completed", detail: { type: "unknown", input: {}, output: "Proposal p-abcdefabcd: x" } })).toBe("p-abcdefabcd");
     expect(proposalIdOf({ name: "mcp__bots__propose_skill", status: "running", detail: { type: "unknown", input: {}, output: null } })).toBeNull();
     expect(proposalIdOf({ name: "mcp__bots__list_bots", status: "completed", detail: { type: "unknown", input: {}, output } })).toBeNull();
+  });
+
+  it("finds the proposal behind an ACP provider's call, which Paseo names by its kind", () => {
+    const detail = { type: "unknown", input: {}, output: "Proposal p-0123456789: the user sees..." };
+    const acp = (title: string, kind: string | null = "other") => ({ name: kind ?? title, status: "completed", detail, metadata: { ...(kind ? { kind } : {}), title } });
+    expect(proposalIdOf(acp("mcp__bots__propose_changes: Add a Researcher bot"))).toBe("p-0123456789");
+    expect(proposalIdOf(acp("mcp__bots__propose_changes"))).toBe("p-0123456789");
+    expect(proposalIdOf(acp("mcp__bots__propose_skill: invoices: march", null))).toBe("p-0123456789");
+    expect(proposalIdOf(acp("mcp__bots__get_setup"))).toBeNull();
+    expect(proposalIdOf(acp("Propose changes to the setup"))).toBeNull();
+    // A provider's own name wins over a title it didn't derive the name from.
+    expect(proposalIdOf({ name: "Bash", status: "completed", detail, metadata: { title: "mcp__bots__propose_changes" } })).toBeNull();
+  });
+
+  it("reads the tool and arguments of an ACP provider's permission request from its title and raw request", () => {
+    const rawRequest = { sessionId: "s", toolCall: { toolCallId: "tc-1", title: "mcp__bots__ask_bot: Helper", rawInput: { bot: "Helper" } }, options: [] };
+    const acp = { name: "other", title: "mcp__bots__ask_bot: Helper", metadata: { toolCallId: "tc-1", rawRequest } };
+    expect(permissionToolName(acp)).toBe("mcp__bots__ask_bot");
+    expect(permissionInput(acp)).toEqual({ bot: "Helper" });
+    const claude = { name: "mcp__bots__ask_bot", title: "Ask a bot", input: { bot: "Writer" } };
+    expect(permissionToolName(claude)).toBe("mcp__bots__ask_bot");
+    expect(permissionInput(claude)).toEqual({ bot: "Writer" });
+    expect(permissionToolName({ name: "CodexMcpElicitation", title: "MCP approval: bots" })).toBe("CodexMcpElicitation");
   });
 
   it("keeps skill folder names inside the library", () => {

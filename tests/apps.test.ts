@@ -107,6 +107,8 @@ describe("tool to app", () => {
     expect(call("composio.COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: [{ type: "text", text: output }] })).toEqual(expected);
     expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output }, "running")).toEqual([]);
     expect(call("mcp__other__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output })).toEqual([]);
+    const hermes = { name: "other", status: "completed", detail: { type: "unknown", input: {}, output }, metadata: { kind: "other", title: "mcp__composio__COMPOSIO_MANAGE_CONNECTIONS" } };
+    expect(appSignIns(hermes)).toEqual(expected);
     // Only Composio's own sign-in pages.
     expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: output.replace("connect.composio.dev", "evil.example") })).toEqual([]);
   });
