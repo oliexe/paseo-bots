@@ -1,4 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import type { PluginHostProps } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View, type LayoutRectangle } from "react-native";
@@ -19,6 +20,9 @@ import { tooltip } from "./ui/Tooltip";
 type Colors = PluginTheme["colors"];
 
 export interface ChatPaneProps {
+  pluginHost: PluginHostProps["host"];
+  theme: PluginTheme;
+  playAudio(dataUrl: string): Promise<void>;
   colors: Colors;
   bot: Bot;
   host: BotHost;
@@ -46,7 +50,7 @@ export interface OutgoingMessage {
   attachments: ReturnType<typeof toWire>["attachments"];
 }
 
-export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStart, onOpenChat }: ChatPaneProps) {
+export function ChatPane({ pluginHost, theme, playAudio, colors, bot, host, chat, chatId, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStart, onOpenChat }: ChatPaneProps) {
   const running = chat.agent?.status === "running" || chat.agent?.status === "initializing";
   const empty = chat.entries.length === 0 && !chat.loading && !chat.error && (chat.agent?.pendingPermissions.length ?? 0) === 0;
   const title = chatId ? displayTitle(chat.agent?.title) : "New chat";
@@ -79,7 +83,7 @@ export function ChatPane({ colors, bot, host, chat, chatId, panelOpen, layout, k
           ) : null}
         </View>
       ) : (
-        <ChatStream key={chatId} colors={colors} chat={chat} api={host.api} agentId={chatId} compact={layout.compact} platform={layout.platform} typeVersion={typeVersion} onOpenChat={onOpenChat} voice={bot.voice} findOpen={findOpen} onCloseFind={() => setFindOpen(false)} {...(host.isLocal ? { botId: bot.id } : {})} />
+        <ChatStream key={chatId} pluginHost={pluginHost} theme={theme} playAudio={playAudio} colors={colors} chat={chat} api={host.api} agentId={chatId} compact={layout.compact} platform={layout.platform} enableGenUi={host.isLocal} typeVersion={typeVersion} onOpenChat={onOpenChat} voice={bot.voice} findOpen={findOpen} onCloseFind={() => setFindOpen(false)} {...(host.isLocal ? { botId: bot.id } : {})} />
       )}
       <Composer colors={colors} bot={bot} host={host} agentId={chatId} agent={chat.agent} running={running} layout={layout} keyboardOpen={keyboardOpen} onStart={onStart} />
     </View>

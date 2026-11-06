@@ -3,6 +3,9 @@ import { Icon, Modal, useRevealedText } from "@getpaseo/plugin/client/react-nati
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import type { ComposerAttachment } from "../../../shared/attachments";
+import { GENUI_BLOCK_KIND } from "paseo-plugin-genui/shared/segment";
+import { TimelineBlockItem } from "paseo-plugin-genui/client/live-ui";
+import type { GenUiBlockData, GenUiTextData } from "paseo-plugin-genui/shared/rpc";
 import { capMessageForRender, formatDuration, formatMessageTimestamp, utf8ByteLength } from "../../../shared/markdown";
 import { appSignIns } from "../../../shared/apps";
 import { proposalIdOf } from "../../../shared/proposals";
@@ -15,6 +18,7 @@ import { scrollIntoView } from "../../web";
 import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
 import type { StreamRow, TurnFooterInfo } from "./model";
+import { assistantGenUiItems } from "./genui";
 import { PlanCard } from "./PlanCard";
 import { ConnectCard } from "./ConnectCard";
 import { ProposalCard } from "./ProposalCard";
@@ -29,7 +33,12 @@ const METADATA_SIZE = 13;
 const TIMESTAMP_REVEAL_MS = 3000;
 
 export interface RowContext {
+  pluginHost: import("@getpaseo/plugin/client").PluginHostProps["host"];
+  theme: PluginTheme;
+  playAudio(dataUrl: string): Promise<void>;
+  enableGenUi: boolean;
   colors: Colors;
+  platform: "ios" | "android" | "web";
   /** Phone-sized layout: details open in a sheet, controls stay visible. */
   compact: boolean;
   cwd?: string;
@@ -64,7 +73,7 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
     case "user":
       return <UserMessage colors={colors} compact={context.compact} text={row.text} timestamp={row.timestamp} attachments={context.attachmentsFor(row)} />;
     case "assistant":
-      return <AssistantMessage colors={colors} text={row.text} phase={row.phase} compactBottom={compactBottom} />;
+      return <AssistantMessage context={context} text={row.text} messageId={row.messageId} phase={row.phase} compactBottom={compactBottom} timestamp={row.timestamp} />;
     case "thought":
       return <ThoughtRow colors={colors} compact={context.compact} text={row.text} loading={row.loading} />;
     case "tool": {
@@ -180,13 +189,14 @@ function Lightbox({ colors, image, onClose }: { colors: Colors; image: ImageAtta
 
 // ---------------------------------------------------------------- assistant
 
-const AssistantMessage = memo(function AssistantMessage({ colors, text, phase, compactBottom }: { colors: Colors; text: string; phase: "streaming" | "complete"; compactBottom: boolean }) {
+const AssistantMessage = memo(function AssistantMessage({ context, text, messageId, phase, compactBottom, timestamp }: { context: RowContext; text: string; messageId?: string; phase: "streaming" | "complete"; compactBottom: boolean; timestamp: number }) {
+  const { colors } = context;
   const capped = useMemo(() => capMessageForRender(text), [text]);
   const revealed = useRevealedText(capped.text, phase);
   const bytes = useMemo(() => (capped.capped && phase === "complete" ? utf8ByteLength(text) : null), [capped.capped, phase, text]);
   return (
     <View style={{ paddingTop: 12, paddingBottom: compactBottom ? 0 : 12, ...(isWeb ? ({ userSelect: "text" } as object) : {}) }}>
-      <Markdown colors={colors} text={revealed} streaming={phase === "streaming"} />
+      <AssistantMessageContent context={context} text={revealed} messageId={messageId} phase={phase} timestamp={timestamp} />
       {bytes !== null ? <Text style={{ marginTop: 12, fontSize: ui(14), fontStyle: "italic", color: colors.foregroundMuted }}>This message was capped ({bytes} bytes).</Text> : null}
     </View>
   );
@@ -351,6 +361,38 @@ function compactionLabel(status: "loading" | "completed", trigger?: "auto" | "ma
   if (trigger === "manual") return "Context manually compacted";
   if (preTokens) return `Context compacted (${Math.round(preTokens / 1000)}K tokens)`;
   return "Context compacted";
+}
+
+function AssistantMessageContent({ context, text, messageId, phase, timestamp }: { context: RowContext; text: string; messageId?: string; phase: "streaming" | "complete"; timestamp: number }) {
+  const transformed = useMemo(() => assistantGenUiItems(text, phase, messageId), [text, phase, messageId]);
+  if (!context.enableGenUi || context.agentId === null || !transformed) return <Markdown colors={context.colors} text={text} streaming={phase === "streaming"} />;
+
+  return (
+    <View style={{ gap: 8 }}>
+      {transformed.map((item, index) => {
+        if (item.type !== "plugin" || item.kind !== GENUI_BLOCK_KIND) {
+          if (item.type === "plugin" && item.kind === "genui-text" && typeof item.data === "object" && item.data !== null && !Array.isArray(item.data) && typeof item.data.text === "string") {
+            return <Markdown key={`text:${index}`} colors={context.colors} text={(item.data as GenUiTextData).text} streaming={phase === "streaming"} />;
+          }
+          return null;
+        }
+        const data = item.data as GenUiBlockData;
+        const timelineItem = { type: "plugin" as const, kind: GENUI_BLOCK_KIND, version: 1 as const, data };
+        return (
+          <TimelineBlockItem
+            key={`ui:${data.fenceIndex}`}
+            host={context.pluginHost}
+            agentId={context.agentId ?? ""}
+            item={timelineItem}
+            timestamp={new Date(timestamp)}
+            theme={context.theme}
+            layout={{ compact: context.compact, platform: context.platform }}
+            playAudio={context.playAudio}
+          />
+        );
+      })}
+    </View>
+  );
 }
 
 const CompactionMarker = memo(function CompactionMarker({ colors, status, trigger, preTokens }: { colors: Colors; status: "loading" | "completed"; trigger?: "auto" | "manual"; preTokens?: number }) {

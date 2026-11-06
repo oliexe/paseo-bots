@@ -36,7 +36,7 @@ interface RowBase {
 
 export type StreamRow =
   | (RowBase & { kind: "user"; text: string; messageId?: string; clientMessageId?: string })
-  | (RowBase & { kind: "assistant"; text: string; phase: "streaming" | "complete" })
+  | (RowBase & { kind: "assistant"; text: string; messageId?: string; phase: "streaming" | "complete" })
   | (RowBase & { kind: "thought"; text: string; loading: boolean })
   | (RowBase & {
       kind: "tool";
@@ -142,7 +142,13 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
         });
         break;
       case "assistant_message":
-        rows.push({ ...base, kind: "assistant", text: String(item.text ?? ""), phase: running && isLast ? "streaming" : "complete" });
+        rows.push({
+          ...base,
+          kind: "assistant",
+          text: String(item.text ?? ""),
+          ...(typeof item.messageId === "string" ? { messageId: item.messageId } : {}),
+          phase: running && isLast ? "streaming" : "complete",
+        });
         break;
       case "reasoning": {
         const text = String(item.text ?? "");

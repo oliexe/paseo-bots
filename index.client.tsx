@@ -17,7 +17,17 @@ export default function contribute(client: PluginClientContext) {
   // Hands the daemon side its Paseo API so bot routines can run.
   void client.rpc(helloRpc, {}).catch(() => {});
   const removeTooltips = installTooltips();
-  client.addSurface("bots", BotsSurface);
+  client.addSurface("bots", (props) => (
+    <BotsSurface
+      {...props}
+      playAudio={async (dataUrl) => {
+        const comma = dataUrl.indexOf(",");
+        if (comma === -1) return;
+        const mimeType = /^data:([^;]+);base64$/i.exec(dataUrl.slice(0, comma))?.[1] ?? "audio/wav";
+        await client.playAudio({ base64: dataUrl.slice(comma + 1), mimeType });
+      }}
+    />
+  ));
   client.addSidebarItem({ id: "bots", title: "Bots", icon: "Bot", surface: "bots" });
   client.addSettingsScreen({ id: "bots", title: "Bots", icon: "Bot", Component: BotsSettings });
   client.addCommandCenterItem({

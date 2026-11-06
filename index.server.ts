@@ -5,6 +5,7 @@ import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
+import { registerGenUiHandlers } from "./server/genui";
 import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
@@ -68,6 +69,7 @@ import {
 } from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
+  const stopGenUi = registerGenUiHandlers(server);
   try {
     migrateRenamedPluginData();
   } catch (error) {
@@ -185,6 +187,7 @@ export default function contribute(server: PluginServerContext) {
   });
 
   return () => {
+    stopGenUi();
     scheduler.stop();
     relay.stop();
   };

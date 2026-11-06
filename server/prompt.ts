@@ -9,6 +9,7 @@ import { botSkills, composeSystemPrompt, promptSections, type Bot, type BotGroup
 import { teamOf, teamPrompt } from "../shared/groups";
 import { linkBotSkills, skillSha } from "./library";
 import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
+import { BOT_GENUI_INSTRUCTIONS } from "../shared/genui-instructions";
 
 /**
  * The connected apps a bot may use right now (allowed for it and signed in on
@@ -84,5 +85,8 @@ export async function systemPrompt({ bot, local, message }: { bot: Bot; local: b
   const start: ChatStart = { ...(message !== undefined ? { message } : {}), ...(group && settings ? { team: { group, bots: settings.bots } } : {}) };
   // Another host's config isn't readable from here; Paseo gives agents its tools by default.
   const context = await promptContext(bot, local, library, local ? await paseoToolsOn(paseo, bot.provider) : true, start);
-  return { systemPrompt: composeSystemPrompt(bot, context), sections: promptSections(bot, context) };
+  return {
+    systemPrompt: [composeSystemPrompt(bot, context), local ? BOT_GENUI_INSTRUCTIONS : null].filter(Boolean).join("\n\n"),
+    sections: promptSections(bot, context),
+  };
 }

@@ -18,6 +18,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 | **Learning** | Send `/learn` after a task and the bot writes it up as a skill. |
 | **Connected apps** | 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. |
 | **Paseo tools** | Bots can start other agents, open workspaces, set up schedules and use the browser. |
+| **Generative UI** | Local bot chats render GenUI `ui` and `app` blocks inline, including interactive controls. |
 
 ## Screenshots
 
@@ -36,7 +37,7 @@ Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give 
 paseo plugin install npm:@oliexe/paseo-bots
 ```
 
-Or paste `npm:@oliexe/paseo-bots` into **Settings → Plugins → Plugin source** in Paseo. Requires Paseo 0.9.2 or later.
+Or paste `npm:@oliexe/paseo-bots` into **Settings → Plugins → Plugin source** in Paseo. Requires Paseo 0.14.0 or later.
 
 ## Usage
 

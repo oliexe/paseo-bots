@@ -50,7 +50,7 @@ const SETUP_PROMPT =
 /** Autosave delay after the last edit in the settings panel. */
 const SAVE_DELAY_MS = 600;
 
-export function BotsSurface(props: PluginSurfaceProps) {
+export function BotsSurface(props: PluginSurfaceProps & { playAudio(dataUrl: string): Promise<void> }) {
   const { colors } = props.theme;
   useTooltipTheme(colors);
   return (
@@ -63,7 +63,7 @@ export function BotsSurface(props: PluginSurfaceProps) {
 }
 
 
-function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfaceProps) {
+function BotsSurfaceContent({ theme, layout, host, navigation, playAudio }: PluginSurfaceProps & { playAudio(dataUrl: string): Promise<void> }) {
   const { colors } = theme;
   const { settings, latest, commit } = useBotSettings();
   const toast = useToast();
@@ -559,7 +559,10 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   ) : selectedBot && selection ? (
       <SelectedChat
         key={`${selectedBot.id}:${selection.chatId ?? "new"}`}
+        pluginHost={host}
+        theme={theme}
         colors={colors}
+        playAudio={playAudio}
         bot={selectedBot}
         library={library}
         selection={selection}
@@ -728,6 +731,9 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
 }
 
 interface SelectedChatProps {
+  pluginHost: PluginSurfaceProps["host"];
+  theme: PluginTheme;
+  playAudio(dataUrl: string): Promise<void>;
   colors: Colors;
   bot: Bot;
   library: Library;
@@ -743,7 +749,7 @@ interface SelectedChatProps {
   onStarted(chatId: string): void;
 }
 
-function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStarted }: SelectedChatProps) {
+function SelectedChat({ pluginHost, theme, playAudio, colors, bot, library, selection, localHost, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStarted }: SelectedChatProps) {
   const host = useBotHost(bot.hostId, localHost);
   const chat = useChat(host.api, selection.chatId);
   const ensureHome = useRpc(ensureBotHomeRpc);
@@ -801,6 +807,9 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
 
   return (
     <ChatPane
+      pluginHost={pluginHost}
+      theme={theme}
+      playAudio={playAudio}
       colors={colors}
       bot={bot}
       host={host}

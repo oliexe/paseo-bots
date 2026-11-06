@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoApi } from "../paseo";
+import type { PluginHostProps } from "@getpaseo/plugin/client";
 import { FlatList, Icon } from "@getpaseo/plugin/client/react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -42,6 +43,10 @@ const HISTORY_START_THRESHOLD = 96;
 const EMPTY_ATTACHMENTS: ComposerAttachment[] = [];
 
 export interface ChatStreamProps {
+  pluginHost: PluginHostProps["host"];
+  theme: PluginTheme;
+  playAudio(dataUrl: string): Promise<void>;
+  enableGenUi: boolean;
   colors: Colors;
   chat: ChatState;
   api: PaseoApi | null;
@@ -65,7 +70,7 @@ function isTurnRunning(chat: ChatState): boolean {
   return chat.agent?.status === "running" || chat.agent?.status === "initializing";
 }
 
-export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId, voice, findOpen = false, onCloseFind }: ChatStreamProps) {
+export function ChatStream({ pluginHost, theme, playAudio, enableGenUi, colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId, voice, findOpen = false, onCloseFind }: ChatStreamProps) {
   const running = isTurnRunning(chat);
   const inverted = platform !== "web";
   const list = useRef<NativeFlatList<StreamLayoutItem>>(null);
@@ -220,8 +225,13 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   const context = useMemo<RowContext>(
     () => ({
+      pluginHost,
+      theme,
+      playAudio,
+      enableGenUi,
       colors,
       compact,
+      platform,
       cwd: cwd ?? undefined,
       attachmentsFor: (row) => {
         const found = sentAttachments(row);
@@ -233,7 +243,7 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       voice: canSpeak && voice ? voice.name : undefined,
       highlightKey: findOpen ? found : null,
     }),
-    [colors, compact, cwd, onOpenChat, agentId, botId, voice, findOpen, found],
+    [pluginHost, theme, playAudio, enableGenUi, colors, compact, platform, cwd, onOpenChat, agentId, botId, voice, findOpen, found],
   );
 
   // A bot that reads its replies aloud reads each one as it finishes, while its chat is open.
