@@ -49,8 +49,12 @@ const PROPOSING_TOOLS: readonly string[] = ["propose_skill", "propose_routine", 
 
 /** The proposal behind a finished propose_* tool call, if the call is one. */
 export function proposalIdOf(call: { name: string; status: string; detail: unknown }): string | null {
-  const tool = botToolName(call.name);
-  if (call.status !== "completed" || !tool || !PROPOSING_TOOLS.includes(tool)) return null;
+  if (call.status !== "completed") return null;
+  // Some provider adapters decorate MCP tool names with their own namespace.
+  // Keep supporting the canonical bots aliases, and also accept the exact
+  // proposal tool leaf when an adapter preserves that leaf under a prefix.
+  const tool = botToolName(call.name) ?? call.name.trim().split(/(?:__|[.:/])/).filter(Boolean).at(-1) ?? null;
+  if (!tool || !PROPOSING_TOOLS.includes(tool)) return null;
   const detail = call.detail as { output?: unknown } | null;
   return proposalIdIn(detail && typeof detail === "object" && "output" in detail ? detail.output : null);
 }

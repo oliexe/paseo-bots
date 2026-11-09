@@ -32,7 +32,7 @@ const OUTCOME = { pending: "pending", accepted: "approved", dismissed: "rejected
  * for the bot; routines are added to the bot and report back to this chat;
  * setup changes are applied together.
  */
-export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; compact: boolean; proposalId: string }) {
+export function ProposalCard({ colors, compact, proposalId, agentId }: { colors: Colors; compact: boolean; proposalId: string; agentId: string | null }) {
   const get = useRpc(proposalGetRpc);
   const accept = useRpc(proposalAcceptRpc);
   const dismiss = useRpc(proposalDismissRpc);
@@ -47,6 +47,9 @@ export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; 
   if (!proposal) {
     return <Text style={{ marginVertical: 12, fontSize: ui(14), color: colors.foregroundMuted }}>{query.isError ? `Couldn't load the proposal: ${errorText(query.error)}` : "This proposal is no longer available."}</Text>;
   }
+  // A provider-specific tool alias can expose an old proposal ID. Never show
+  // its actions in a different chat.
+  if (!agentId || proposal.agentId !== agentId) return null;
 
   const values = settings.status === "ready" ? settings.values : null;
   const bot = values?.bots.find((entry) => entry.id === proposal.botId);

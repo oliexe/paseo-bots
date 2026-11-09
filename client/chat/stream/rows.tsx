@@ -69,7 +69,7 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
       return <ThoughtRow colors={colors} compact={context.compact} text={row.text} loading={row.loading} />;
     case "tool": {
       const proposalId = proposalIdOf(row);
-      if (proposalId) return <ProposalCard colors={colors} compact={context.compact} proposalId={proposalId} />;
+      if (proposalId) return <ProposalCard colors={colors} compact={context.compact} proposalId={proposalId} agentId={context.agentId} />;
       const signIns = appSignIns(row);
       if (signIns.length) return <>{signIns.map((signIn) => <ConnectCard key={signIn.url} colors={colors} signIn={signIn} since={row.timestamp} agentId={context.agentId} botId={context.botId} />)}</>;
       return <ToolCallRow colors={colors} compact={context.compact} cwd={context.cwd} name={row.name} status={row.status} error={row.error} detail={row.detail} metadata={row.metadata} />;

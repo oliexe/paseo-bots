@@ -62,7 +62,7 @@ export default function contribute(client: PluginClientContext) {
     kind: "proposal",
     version: 1,
     schema: z.object({ proposalId: z.string() }),
-    Component: ({ item, theme, layout }) => <ProposalCard colors={theme.colors} compact={layout.compact} proposalId={item.data.proposalId} />,
+    Component: ({ item, agentId, theme, layout }) => <ProposalCard colors={theme.colors} compact={layout.compact} proposalId={item.data.proposalId} agentId={agentId} />,
   });
   // A bot's request to connect an app, in Paseo's view too.
   client.addTimelineTransformer({
