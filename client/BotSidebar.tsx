@@ -27,6 +27,8 @@ export interface Selection {
   chatId: string | null;
   /** First message to send straight away when starting a new chat. */
   prompt?: string;
+  /** Title for the chat that `prompt` starts; Paseo derives one from the prompt otherwise. */
+  title?: string;
 }
 
 export type MenuSource = "kebab" | "context";

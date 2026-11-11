@@ -599,7 +599,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           setPanelVersion((version) => version + 1);
           toast.show("Restored. Undo it from History if needed.", { variant: "success" });
         }}
-        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: SETUP_PROMPT })}
+        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: SETUP_PROMPT, title: "Setup" })}
         onOpenChat={(chatId) => {
           select({ botId: selectedBot.id, chatId });
           // On phones the panel covers the chat.
@@ -752,7 +752,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
   const queryClient = useQueryClient();
   const toast = useToast();
 
-  const start = async (message: OutgoingMessage) => {
+  const start = async (message: OutgoingMessage, title?: string) => {
     if (!host.api) throw new Error(`${host.label} is offline.`);
     // The bot's folder holds its memory and skills even when it works elsewhere.
     const home = await ensureHome({ botId: bot.id });
@@ -768,6 +768,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
       plugin,
       placement,
       prompt: message.text,
+      title,
       systemPrompt,
       images: message.images,
       attachments: message.attachments,
@@ -791,13 +792,12 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
   }, [bot.name, host.api]);
 
   // "Set up with the bot" opens a new chat that sends its first message straight away.
-  const autoStarted = useRef(false);
+  const autoStartedSelection = useRef<Selection | null>(null);
   useEffect(() => {
-    if (selection.chatId !== null || !selection.prompt || autoStarted.current || !host.api) return;
-    autoStarted.current = true;
-    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
-    // Runs once for the selection that carries the prompt.
-  }, [host.api]);
+    if (selection.chatId !== null || !selection.prompt || autoStartedSelection.current === selection || !host.api) return;
+    autoStartedSelection.current = selection;
+    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }, selection.title).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
+  }, [host.api, selection]);
 
   return (
     <ChatPane
