@@ -1,8 +1,9 @@
 import type { PaseoApi } from "../paseo";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
 import { BOT_LABEL } from "../../shared/bot";
-import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL, type HandoffCard } from "../../shared/handoff";
+import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL, HANDOFF_REQUEST_METADATA, type HandoffCard } from "../../shared/handoff";
 import { startChat } from "../chats";
 import { publishHandoff } from "../handoffs";
 import { defineTool, type ToolCaller } from "./mcp";
@@ -30,6 +31,32 @@ export { ASKED_BY_LABEL } from "../../shared/handoff";
 /** MCP clients give up on a tool call after about a minute (Codex after 60 seconds), so answers are awaited a little less. */
 const ASK_WAIT_MS = 50_000;
 const REPLY_MAX = 8_000;
+const continuing = new Set<string>();
+
+/** Continue only a delegation created by this bot; never hijack a worker's unrelated chat. */
+async function continueChat(caller: ToolCaller, targetBotId: string, chatId: string, message: string, notify: boolean): Promise<boolean> {
+  if (continuing.has(chatId)) throw new Error("This chat is already receiving a follow-up. Use check_chat before sending another message.");
+  continuing.add(chatId);
+  try {
+    const ref = caller.host.requirePaseo().agents.ref(chatId);
+    const agent = (await ref.refresh())?.agent;
+    if (!agent) throw new Error("There's no chat with that id.");
+    if (agent.labels?.[BOT_LABEL] !== targetBotId || agent.labels?.[ASKED_BY_LABEL] !== caller.bot.id) throw new Error("You can only continue a chat your bot started with ask_bot for this target bot.");
+    if (agent.archivedAt) throw new Error("That delegated chat is archived. Start a new request instead.");
+    if (agent.pendingPermissions?.length) throw new Error("The delegated chat is waiting for the user to approve something. Use check_chat after approval before sending a follow-up.");
+    if (agent.status === "running" || agent.status === "initializing") throw new Error("The other bot is still working. Use check_chat before sending a follow-up.");
+    await ref.setMetadata({ [HANDOFF_REQUEST_METADATA]: { requesterBotId: caller.bot.id, requesterAgentId: caller.agentId, notify } });
+    try {
+      // An ordinary prompt starts before send resolves, unlike a batched source-agent
+      // message. The peer framing is the same as the delegated chat's initial prompt.
+      await ref.send(askPrompt(caller.bot.name, message), { messageId: `bots-followup-${randomUUID()}`, activeTurnBehavior: "steer" });
+      return true;
+    } catch {
+      // The provider may already have accepted it. Do not encourage a second dispatch.
+      return false;
+    }
+  } finally { continuing.delete(chatId); }
+}
 
 /** How another bot is asked (OpenMausBot's peer framing): who's asking, that it isn't the user, and that the answer goes back. */
 export function askPrompt(asker: string, message: string): string {
@@ -82,15 +109,16 @@ async function mayAsk({ bot, agentId, host }: ToolCaller): Promise<boolean> {
 export const askBot = defineTool({
   name: "ask_bot",
   description:
-    "Ask another bot on this Paseo for help. It gets your message in a new chat of its own, works with its own tools and settings, and its answer comes back here. Use list_bots to see who does what.",
+    "Ask another bot on this Paseo for help. It works with its own tools and settings and its answer comes back here. Omit chat_id to start a new chat; pass an earlier ask_bot chat_id to continue that conversation with its existing context. Use list_bots to see who does what.",
   input: z.object({
     bot: z.string().min(1).max(100).describe("The other bot's name or id."),
     message: z.string().min(1).max(20_000).describe("What you need, written so the other bot can act on it without this chat."),
+    chat_id: z.string().trim().min(1).max(100).optional().describe("Continue an existing chat your bot started with ask_bot for this bot, preserving its conversation. Omit for a new task."),
     wait: z.boolean().optional().describe("Wait up to about 50 seconds for the answer (the default). With false, return at once and use check_chat later."),
     notify: z.boolean().optional().describe("Send a completion update to this chat when the other bot finishes (default true), including after the wait times out. Set false to check manually."),
   }),
   available: mayAsk,
-  async run({ bot: wanted, message, wait = true, notify = true }, caller) {
+  async run({ bot: wanted, message, chat_id: existingChatId, wait = true, notify = true }, caller) {
     const { bot, host, relay } = caller;
     const others = (await host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived);
     const key = wanted.trim().toLowerCase();
@@ -99,10 +127,13 @@ export const askBot = defineTool({
     if (!exact && named.length > 1) throw new Error(`More than one bot is called "${wanted}". Use one of their ids: ${named.map((entry) => entry.id).join(", ")}.`);
     const target = exact ?? named[0];
     if (!target) throw new Error(others.length ? `There's no other bot called "${wanted}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");
-    const chatId = await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id, [ASKED_IN_LABEL]: caller.agentId, [ASK_NOTIFY_LABEL]: String(notify) } });
+    if (target.hostId) throw new Error("This bot runs on another host. Bot handoffs are available only on this Paseo host.");
+    const chatId = existingChatId?.trim() ?? await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id, [ASKED_IN_LABEL]: caller.agentId, [ASK_NOTIFY_LABEL]: String(notify) } });
+    const confirmed = existingChatId ? await continueChat(caller, target.id, chatId, message, notify) : true;
     const paseo = host.requirePaseo();
     const handoff: HandoffCard = { requesterBotId: bot.id, requesterAgentId: caller.agentId, targetBotId: target.id, targetAgentId: chatId, targetName: target.name.slice(0, 200), request: foldText(message, 600), createdAt: new Date().toISOString(), status: { state: "running", reply: "", error: null } };
     await publishHandoff(paseo, handoff);
+    if (!confirmed) return `The follow-up to ${target.name} in chat ${chatId} could not be confirmed. It may already be running. Do not send it again; use check_chat with that id to check its status.`;
     if (!wait) return `Asked ${target.name} in chat ${chatId}. Use check_chat with that id for the answer.`;
     await paseo.agents.ref(chatId).waitForFinish(ASK_WAIT_MS).catch(() => null);
     try {

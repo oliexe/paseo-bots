@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildRows, findRows, layoutStream, type StreamEntry } from "../client/chat/stream/model";
 import { handoffStatus, publishHandoff } from "../server/handoffs";
 import { BOT_LABEL } from "../shared/bot";
-import { ASKED_BY_LABEL, ASKED_IN_LABEL, HANDOFF_CARD, HandoffCardSchema, type HandoffCard } from "../shared/handoff";
+import { ASKED_BY_LABEL, ASKED_IN_LABEL, HANDOFF_CARD, HANDOFF_REQUEST_METADATA, HandoffCardSchema, type HandoffCard } from "../shared/handoff";
 import { PLUGIN_ID } from "../shared/version";
 import { fakeHost, makeBot } from "./helpers";
 
@@ -11,7 +11,7 @@ const card: HandoffCard = {
   request: "Find urgent emails", createdAt: "2026-11-16T00:00:00Z", status: { state: "running", reply: "", error: null },
 };
 
-function fixture(patch: Record<string, unknown> = {}, requesterLabels: Record<string, string> = { [BOT_LABEL]: "scout" }) {
+function fixture(patch: Record<string, unknown> = {}, requesterLabels: Record<string, string> = { [BOT_LABEL]: "scout" }, requesterIds = ["requester"]) {
   const target = { id: "target", status: "idle", labels: { [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "scout", [ASKED_IN_LABEL]: "requester" }, pendingPermissions: [], lastError: null, archivedAt: null, ...patch };
   const reads = vi.fn(async (_id: string) => ({ entries: [
     { item: { type: "user_message", text: "Previous question" } },
@@ -21,7 +21,7 @@ function fixture(patch: Record<string, unknown> = {}, requesterLabels: Record<st
   ] }));
   const append = vi.fn(async (_input: unknown) => {});
   const paseo = { agents: { ref: (id: string) => ({
-    refresh: async () => id === "requester" ? { agent: { id, labels: requesterLabels } } : id === "target" ? { agent: target } : null,
+    refresh: async () => requesterIds.includes(id) ? { agent: { id, labels: requesterLabels } } : id === "target" ? { agent: target } : null,
     timeline: { refetch: () => reads(id), append },
   }) } };
   const host = fakeHost([makeBot({ id: "scout" }), makeBot({ id: "inbox" })]);
@@ -44,11 +44,10 @@ describe("bot handoff cards", () => {
 
   it.each([
     [{ [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "other", [ASKED_IN_LABEL]: "requester" }, { [BOT_LABEL]: "scout" }],
-    [{ [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "scout", [ASKED_IN_LABEL]: "another-chat" }, { [BOT_LABEL]: "scout" }],
-    [{ [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "scout" }, { [BOT_LABEL]: "scout" }],
+    [{ [BOT_LABEL]: "inbox", [ASKED_IN_LABEL]: "requester" }, { [BOT_LABEL]: "scout" }],
     [{ [ASKED_BY_LABEL]: "scout", [ASKED_IN_LABEL]: "requester" }, { [BOT_LABEL]: "scout" }],
     [{ [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "scout", [ASKED_IN_LABEL]: "requester" }, {}],
-  ])("refuses foreign, older unbound or relabeled handoffs before reading messages", async (labels, requesterLabels) => {
+  ])("refuses foreign or relabeled handoffs before reading messages", async (labels, requesterLabels) => {
     const { host, reads } = fixture({ labels }, requesterLabels);
     await expect(handoffStatus(host, "requester", "target")).rejects.toThrow("another request");
     expect(reads).not.toHaveBeenCalled();
@@ -65,6 +64,38 @@ describe("bot handoff cards", () => {
     expect(status?.reply.endsWith("…")).toBe(true);
     expect(status?.error).toHaveLength(1000);
     expect(HandoffCardSchema.safeParse({ ...card, status }).success).toBe(true);
+  });
+
+  it("shows the handoff in a subsequent requesting chat of the same bot", async () => {
+    const { host } = fixture({
+      labels: { [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "scout", [ASKED_IN_LABEL]: "original-requester" },
+      metadata: { [HANDOFF_REQUEST_METADATA]: { requesterBotId: "scout", requesterAgentId: "requester", notify: true } },
+    });
+    expect(await handoffStatus(host, "requester", "target")).toMatchObject({ state: "finished", reply: "Two urgent emails." });
+  });
+
+  it("rejects forged continuation metadata before reading the target's messages", async () => {
+    const { host, reads } = fixture({
+      labels: { [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "other-bot", [ASKED_IN_LABEL]: "original-requester" },
+      metadata: { [HANDOFF_REQUEST_METADATA]: { requesterBotId: "scout", requesterAgentId: "requester", notify: true } },
+    });
+    await expect(handoffStatus(host, "requester", "target")).rejects.toThrow("another request");
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it("keeps the intermediate requester's card readable after a third chat continues the delegation", async () => {
+    const { host } = fixture({
+      labels: { [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "scout", [ASKED_IN_LABEL]: "requester-a" },
+      metadata: { [HANDOFF_REQUEST_METADATA]: { requesterBotId: "scout", requesterAgentId: "requester-c", notify: true } },
+    }, { [BOT_LABEL]: "scout" }, ["requester-a", "requester-b", "requester-c"]);
+    for (const requester of ["requester-a", "requester-b", "requester-c"]) {
+      expect(await handoffStatus(host, requester, "target")).toMatchObject({ state: "finished", reply: "Two urgent emails." });
+    }
+  });
+
+  it("uses the delegation's bot ownership for older chats without an asked-in label", async () => {
+    const { host } = fixture({ labels: { [BOT_LABEL]: "inbox", [ASKED_BY_LABEL]: "scout" } });
+    expect(await handoffStatus(host, "requester", "target")).toMatchObject({ state: "finished" });
   });
 
   it("uses a stable timeline item id and keeps publication failures isolated from dispatch", async () => {

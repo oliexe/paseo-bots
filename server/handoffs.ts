@@ -1,7 +1,7 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { lastTurn } from "../shared/activity";
 import { BOT_LABEL } from "../shared/bot";
-import { ASKED_BY_LABEL, ASKED_IN_LABEL, HANDOFF_CARD, HandoffCardSchema, handoffStatusRpc, type HandoffCard, type HandoffStatus } from "../shared/handoff";
+import { ASKED_BY_LABEL, HANDOFF_CARD, HandoffCardSchema, handoffStatusRpc, type HandoffCard, type HandoffStatus } from "../shared/handoff";
 import type { BotsHost } from "./host";
 import type { PaseoApi } from "./paseo";
 import { HandoffNotifications } from "./handoff-notifications";
@@ -14,13 +14,13 @@ export async function publishHandoff(paseo: PaseoApi, card: HandoffCard): Promis
   } catch (error) { console.error("paseo-bots: could not display a bot handoff", error); }
 }
 
-/** Only a target created from this exact requester chat can be inspected by a handoff card. */
+/** Match check_chat's bot ownership so later requests cannot invalidate earlier handoff cards. */
 export async function handoffStatus(host: BotsHost, requesterAgentId: string, targetAgentId: string): Promise<HandoffStatus | null> {
   const paseo = host.requirePaseo();
   const [requester, target] = await Promise.all([paseo.agents.ref(requesterAgentId).refresh(), paseo.agents.ref(targetAgentId).refresh()]);
   if (!requester || !target) return null;
   const requesterBotId = requester.agent.labels?.[BOT_LABEL];
-  if (!requesterBotId || !target.agent.labels?.[BOT_LABEL] || target.agent.labels[ASKED_BY_LABEL] !== requesterBotId || target.agent.labels[ASKED_IN_LABEL] !== requesterAgentId) throw new Error("This bot conversation belongs to another request.");
+  if (!requesterBotId || !target.agent.labels?.[BOT_LABEL] || target.agent.labels[ASKED_BY_LABEL] !== requesterBotId) throw new Error("This bot conversation belongs to another request.");
   const page = await paseo.agents.ref(targetAgentId).timeline.refetch({ direction: "tail", projection: "projected", limit: 80 });
   const reply = lastTurn(page.entries.map((entry) => entry.item as { type: string; text?: unknown; name?: unknown })).reply;
   const agent = target.agent;

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { HandoffNotifications } from "../server/handoff-notifications";
 import { BOT_LABEL } from "../shared/bot";
-import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL } from "../shared/handoff";
+import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL, HANDOFF_REQUEST_METADATA } from "../shared/handoff";
 import { fakeHost, makeBot } from "./helpers";
 
 let temporary: string;
@@ -18,7 +18,7 @@ afterAll(async () => { await rm(temporary, { recursive: true, force: true }); })
 function fixture(directory: string) {
   const bots = [makeBot({ id: "lead", name: "Lead" }), makeBot({ id: "worker", name: "Worker" })];
   const host = fakeHost(bots);
-  const agents: Record<string, { labels: Record<string, string>; archivedAt?: string; status?: string; pendingPermissions?: unknown[] }> = {
+  const agents: Record<string, { labels: Record<string, string>; archivedAt?: string; status?: string; pendingPermissions?: unknown[]; metadata?: Record<string, unknown> }> = {
     asking: { labels: { [BOT_LABEL]: "lead" } },
     working: { labels: { [BOT_LABEL]: "worker", [ASKED_BY_LABEL]: "lead", [ASKED_IN_LABEL]: "asking", [ASK_NOTIFY_LABEL]: "true" } },
   };
@@ -201,5 +201,56 @@ describe("delegation completion notifications", () => {
     expect(f.send).toHaveBeenCalledTimes(2);
     expect(f.send.mock.calls[0]![2]).not.toEqual(f.send.mock.calls[1]![2]);
     await f.notifications.stop();
+  });
+
+  it("routes a continued conversation to its new requesting chat", async () => {
+    const f = fixture(join(temporary, "continued"));
+    f.agents.second = { labels: { [BOT_LABEL]: "lead" } };
+    f.agents.working!.metadata = { [HANDOFF_REQUEST_METADATA]: { requesterBotId: "lead", requesterAgentId: "second", notify: true } };
+    await f.notifications.finished(f.event, f.paseo);
+    expect(f.send).toHaveBeenCalledWith("second", expect.any(String), expect.anything());
+    await f.notifications.stop();
+  });
+
+  it("uses the ended turn's captured requester instead of newer mutable metadata", async () => {
+    const f = fixture(join(temporary, "captured-requester"));
+    f.agents.second = { labels: { [BOT_LABEL]: "lead" } };
+    const request = { requesterBotId: "lead", requesterAgentId: "second", notify: true };
+    f.agents.working!.metadata = { [HANDOFF_REQUEST_METADATA]: { ...request, requesterAgentId: "asking", notify: false } };
+    await f.notifications.finished({ ...f.event, agent: { id: "working", metadata: { [HANDOFF_REQUEST_METADATA]: request } } }, f.paseo);
+    expect(f.send).toHaveBeenCalledWith("second", expect.any(String), expect.anything());
+    await f.notifications.stop();
+  });
+
+  it.each([false, true])("applies each follow-up's notify override (%s) to the initial label", async (notify) => {
+    const f = fixture(join(temporary, `continued-notify-${notify}`));
+    f.agents.working!.labels[ASK_NOTIFY_LABEL] = String(!notify);
+    f.agents.working!.metadata = { [HANDOFF_REQUEST_METADATA]: { requesterBotId: "lead", requesterAgentId: "asking", notify } };
+    await f.notifications.finished(f.event, f.paseo);
+    expect(f.send).toHaveBeenCalledTimes(notify ? 1 : 0);
+    await f.notifications.stop();
+  });
+
+  it("fails closed for metadata pointing at another bot's requester", async () => {
+    const f = fixture(join(temporary, "foreign-metadata"));
+    f.agents.working!.metadata = { [HANDOFF_REQUEST_METADATA]: { requesterBotId: "someone-else", requesterAgentId: "asking", notify: true } };
+    await f.notifications.finished(f.event, f.paseo);
+    expect(f.send).not.toHaveBeenCalled();
+    await f.notifications.stop();
+  });
+
+  it("preserves captured continuation routing across a failed refresh and plugin reload", async () => {
+    const directory = join(temporary, "continued-reload");
+    const f = fixture(directory);
+    f.agents.second = { labels: { [BOT_LABEL]: "lead" } };
+    f.refresh.mockRejectedValueOnce(new Error("offline"));
+    await expect(f.notifications.finished({ ...f.event, agent: { id: "working", metadata: {
+      [HANDOFF_REQUEST_METADATA]: { requesterBotId: "lead", requesterAgentId: "second", notify: true },
+    } } }, f.paseo)).rejects.toThrow("offline");
+    await f.notifications.stop();
+    const restarted = new HandoffNotifications(f.host, directory);
+    await restarted.retry();
+    expect(f.send).toHaveBeenCalledWith("second", expect.any(String), expect.anything());
+    await restarted.stop();
   });
 });

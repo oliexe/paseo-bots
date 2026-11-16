@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildAgentConfig, EMPTY_LIBRARY } from "../shared/bot";
 import { fakeHost, makeBot } from "./helpers";
+import { ASKED_BY_LABEL, ASKED_IN_LABEL, HANDOFF_REQUEST_METADATA } from "../shared/handoff";
 
 const started: { botId: string; prompt: string; title: string; labels: Record<string, string> }[] = [];
 vi.mock("../server/chats", () => ({
@@ -16,16 +17,20 @@ interface FakeChat {
   title?: string;
   reply?: string;
   pendingPermissions?: unknown[];
+  archivedAt?: string;
+  metadata?: Record<string, unknown>;
 }
 
-function fakePaseo(chats: Record<string, FakeChat>, append = vi.fn(async (_input: unknown) => {})) {
+function fakePaseo(chats: Record<string, FakeChat>, append = vi.fn(async (_input: unknown) => {}), send = vi.fn(async (_id: string, _text: string, _options: unknown) => {})) {
   return {
     agents: {
       ref: (id: string) => ({
         refresh: async () => {
           const chat = chats[id];
-          return chat ? { agent: { id, status: chat.status, labels: chat.labels, title: chat.title ?? null, pendingPermissions: chat.pendingPermissions ?? [], lastError: null } } : null;
+          return chat ? { agent: { id, status: chat.status, labels: chat.labels, title: chat.title ?? null, pendingPermissions: chat.pendingPermissions ?? [], lastError: null, archivedAt: chat.archivedAt, metadata: chat.metadata ?? {} } } : null;
         },
+        setMetadata: async (patch: Record<string, unknown>) => { chats[id]!.metadata = { ...chats[id]!.metadata, ...patch }; },
+        send: (text: string, options: unknown) => send(id, text, options),
         waitForFinish: async () => {
           const chat = chats[id]!;
           if (chat.status === "running") {
@@ -134,5 +139,99 @@ describe("asking other bots", () => {
     expect(started.length).toBe(before);
     expect(await askBot.run({ bot: "inbox-2", message: "Count emails", wait: false }, caller)).toContain("Asked inbox");
     expect(started.at(-1)?.botId).toBe("inbox-2");
+  });
+});
+
+describe("continuing a delegated conversation", () => {
+  function setup(chat: Partial<FakeChat> = {}, send = vi.fn(async (_id: string, _text: string, _options: unknown) => {})) {
+    const lead = makeBot({ id: "lead", name: "Lead" });
+    const host = fakeHost([lead, makeBot({ id: "worker", name: "Worker" }), makeBot({ id: "other", name: "Other" })]);
+    const chats: Record<string, FakeChat> = { delegated: {
+      status: "idle", labels: { "paseo-bots.bot": "worker", [ASKED_BY_LABEL]: "lead", [ASKED_IN_LABEL]: "original-requester" },
+      reply: "I remember the previous task.", metadata: { unrelated: "preserved" }, ...chat,
+    } };
+    const append = vi.fn(async (_input: unknown) => {});
+    host.attach(fakePaseo(chats, append, send));
+    const caller = { bot: lead, agentId: "requester", host, relay: null as never };
+    return { host, caller, chats, send, append };
+  }
+
+  it("sends to the existing worker session without creating a new chat", async () => {
+    const { askBot, askPrompt } = await import("../server/tools/bots");
+    const f = setup();
+    const before = started.length;
+    expect(await askBot.run({ bot: "Worker", chat_id: "delegated", message: "Revise your previous answer", wait: false }, f.caller)).toContain("chat delegated");
+    expect(started.length).toBe(before);
+    expect(f.send).toHaveBeenCalledWith("delegated", askPrompt("Lead", "Revise your previous answer"), {
+      messageId: expect.stringMatching(/^bots-followup-/), activeTurnBehavior: "steer",
+    });
+    expect(f.chats.delegated!.metadata).toEqual({ unrelated: "preserved", [HANDOFF_REQUEST_METADATA]: { requesterBotId: "lead", requesterAgentId: "requester", notify: true } });
+    expect(f.append).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ requesterAgentId: "requester", targetAgentId: "delegated" }) }));
+  });
+
+  it("allows a new chat of the same asking bot and honors notify:false per follow-up", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const f = setup();
+    await askBot.run({ bot: "worker", chat_id: "delegated", message: "Check again", wait: false, notify: false }, f.caller);
+    expect(f.chats.delegated!.metadata?.[HANDOFF_REQUEST_METADATA]).toEqual({ requesterBotId: "lead", requesterAgentId: "requester", notify: false });
+  });
+
+  it("waits for the follow-up's answer with the existing wait behavior", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const f = setup();
+    f.send.mockImplementation(async () => { f.chats.delegated!.reply = "Revised answer, with context retained."; });
+    expect(await askBot.run({ bot: "worker", chat_id: "delegated", message: "Revise" }, f.caller)).toContain("Revised answer, with context retained.");
+  });
+
+  it.each([
+    ["foreign", { labels: { "paseo-bots.bot": "worker", [ASKED_BY_LABEL]: "somebody-else" } }, "only continue"],
+    ["ordinary worker chat", { labels: { "paseo-bots.bot": "worker" } }, "only continue"],
+    ["wrong target", { labels: { "paseo-bots.bot": "other", [ASKED_BY_LABEL]: "lead" } }, "only continue"],
+    ["archived", { archivedAt: "2026-01-01" }, "archived"],
+    ["busy", { status: "running" }, "still working"],
+    ["initializing", { status: "initializing" }, "still working"],
+    ["permission", { pendingPermissions: [{}] }, "waiting for the user"],
+  ] as const)("rejects %s before mutating metadata or sending", async (_name, chat, error) => {
+    const { askBot } = await import("../server/tools/bots");
+    const f = setup(chat as Partial<FakeChat>);
+    const before = started.length;
+    await expect(askBot.run({ bot: "worker", chat_id: "delegated", message: "Revise", wait: false }, f.caller)).rejects.toThrow(error);
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.chats.delegated!.metadata).toEqual({ unrelated: "preserved" });
+    expect(started.length).toBe(before);
+  });
+
+  it("rejects missing chats and remote targets without starting another chat", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const f = setup();
+    await expect(askBot.run({ bot: "worker", chat_id: "missing", message: "x" }, f.caller)).rejects.toThrow("no chat with that id");
+    (await f.host.bot("worker"))!.hostId = "another-host";
+    await expect(askBot.run({ bot: "worker", chat_id: "delegated", message: "x" }, f.caller)).rejects.toThrow("another host");
+    expect(f.send).not.toHaveBeenCalled();
+  });
+
+  it("reports an ambiguous send without inviting a duplicate follow-up", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const f = setup();
+    f.send.mockRejectedValue(new Error("Connection lost"));
+    const response = await askBot.run({ bot: "worker", chat_id: "delegated", message: "Revise", wait: false }, f.caller);
+    expect(response).toContain("could not be confirmed");
+    expect(response).toContain("Do not send it again; use check_chat");
+    expect(response).toContain("chat delegated");
+    expect(f.send).toHaveBeenCalledOnce();
+  });
+
+  it("rejects concurrent follow-ups to the same chat without losing the next request", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => { resolve = done; });
+    const f = setup({}, vi.fn(async () => pending));
+    const first = askBot.run({ bot: "worker", chat_id: "delegated", message: "First", wait: false }, f.caller);
+    await vi.waitFor(() => expect(f.send).toHaveBeenCalledOnce());
+    await expect(askBot.run({ bot: "worker", chat_id: "delegated", message: "Second", wait: false }, f.caller)).rejects.toThrow("already receiving");
+    resolve();
+    await first;
+    await askBot.run({ bot: "worker", chat_id: "delegated", message: "Third", wait: false }, f.caller);
+    expect(f.send).toHaveBeenCalledTimes(2);
   });
 });
