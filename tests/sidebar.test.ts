@@ -105,7 +105,7 @@ describe("dark avatar backgrounds", () => {
   });
 });
 
-import { CENTER_MIN_WIDTH, fitColumns } from "../shared/layout";
+import { CENTER_MIN_WIDTH, fitColumns, isTouchLayout } from "../shared/layout";
 
 describe("fitColumns", () => {
   it("keeps the chat at least 400 wide, shrinking the panel before the list", () => {
@@ -136,5 +136,22 @@ describe("plugin version", () => {
   it("matches package.json", () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
     expect(PLUGIN_VERSION).toBe(pkg.version);
+  });
+});
+
+describe("isTouchLayout", () => {
+  // An iPad in the browser gets the wide web layout but can only touch: its row actions
+  // (new chat, the bot menu) were hidden behind a hover it cannot do.
+  it("treats a wide web layout with a touch screen as touch", () => {
+    expect(isTouchLayout({ compact: false, platform: "web" }, true)).toBe(true);
+  });
+
+  it("keeps hover-revealed actions for a wide web layout with only a mouse", () => {
+    expect(isTouchLayout({ compact: false, platform: "web" }, false)).toBe(false);
+  });
+
+  it("treats phones and native apps as touch", () => {
+    expect(isTouchLayout({ compact: true, platform: "web" }, false)).toBe(true);
+    expect(isTouchLayout({ compact: false, platform: "ios" }, false)).toBe(true);
   });
 });
