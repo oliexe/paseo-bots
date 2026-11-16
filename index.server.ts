@@ -84,7 +84,7 @@ export default function contribute(server: PluginServerContext) {
   };
   const host = new BotsHost(settings);
   const stopInteractions = registerInteractions(server, host);
-  registerHandoffs(server, host);
+  const stopHandoffs = registerHandoffs(server, host);
   const disconnectSchedulerHost = connectSchedulerHost(host);
   // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
@@ -191,6 +191,7 @@ export default function contribute(server: PluginServerContext) {
   return async () => {
     cancelLogin();
     stopInteractions();
+    await stopHandoffs();
     await scheduler.stop();
     await disconnectSchedulerHost();
     relay.stop();

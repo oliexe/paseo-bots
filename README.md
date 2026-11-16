@@ -118,6 +118,8 @@ In Bots, recognized card answers appear as readable confirmations and labeled fi
 
 When one bot asks another for help, a handoff card shows the receiving bot's status and latest reply. **Open conversation** takes you to that bot's chat; **Review request** appears when it needs approval. Each bot retains its own tools and permissions.
 
+`ask_bot` sends a completion update back to the asking chat, including when `wait: false` is used or the 50-second wait expires. Set `notify: false` on a call to check the answer manually with `check_chat`. Updates include the delegated chat ID and a shortened answer. They wait while the asking chat is busy or awaiting approval; archived or deleted chats are not reactivated. Pending updates are saved on the host and retried after a connection failure or plugin reload. Paseo acknowledges bot messages before dispatch, so a daemon crash at that point can lose an update; `check_chat` remains available to retrieve the answer.
+
 ### Avatars and defaults
 
 Open **Identity → Picture**, choose **Pixel**, **Modern** or **Orbital**, then adjust the palette, seed and shape. These built-in generators work without an image service or API key. Desktop and web clients can upload a picture; every client can use an image URL.

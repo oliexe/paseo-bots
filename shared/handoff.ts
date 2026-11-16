@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const ASKED_BY_LABEL = "paseo-bots.asked-by";
 export const ASKED_IN_LABEL = "paseo-bots.asked-in";
+export const ASK_NOTIFY_LABEL = "paseo-bots.notify";
 
 export const HandoffStatusSchema = z.object({
   state: z.enum(["running", "permission", "error", "finished", "archived"]),

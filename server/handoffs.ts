@@ -4,6 +4,7 @@ import { BOT_LABEL } from "../shared/bot";
 import { ASKED_BY_LABEL, ASKED_IN_LABEL, HANDOFF_CARD, HandoffCardSchema, handoffStatusRpc, type HandoffCard, type HandoffStatus } from "../shared/handoff";
 import type { BotsHost } from "./host";
 import type { PaseoApi } from "./paseo";
+import { HandoffNotifications } from "./handoff-notifications";
 
 /** A presentation failure must never turn an accepted delegation into a retryable dispatch error. */
 export async function publishHandoff(paseo: PaseoApi, card: HandoffCard): Promise<void> {
@@ -30,9 +31,20 @@ export async function handoffStatus(host: BotsHost, requesterAgentId: string, ta
   };
 }
 
-export function registerHandoffs(server: PluginServerContext, host: BotsHost): void {
+export function registerHandoffs(server: PluginServerContext, host: BotsHost): () => Promise<void> {
+  const notifications = new HandoffNotifications(host);
+  const retry = () => { if (host.paseo) void notifications.retry().catch((error: unknown) => console.error("paseo-bots: could not retry bot completion updates", error)); };
+  const detach = host.onAttach(retry);
+  const timer = setInterval(retry, 30_000);
+  timer.unref();
+  server.addHook("agent.turn.after", async (event, context) => {
+    host.attach(context.paseo);
+    await notifications.finished(event, context.paseo).catch((error: unknown) => console.error("paseo-bots: could not notify the requesting chat", error));
+    retry();
+  });
   server.handle(handoffStatusRpc, async ({ requesterAgentId, targetAgentId }, context) => {
     host.attach(context.paseo);
     return { status: await handoffStatus(host, requesterAgentId, targetAgentId) };
   });
+  return async () => { clearInterval(timer); detach(); await notifications.stop(); };
 }

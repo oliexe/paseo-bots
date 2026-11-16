@@ -62,8 +62,10 @@ describe("asking other bots", () => {
     );
     expect(await askBot.available!(caller)).toBe(true);
     expect(await askBot.run({ bot: "inbox", message: "How many unread mails?" }, caller)).toBe("Inbox answered (chat chat-new):\n\nThree unread, one urgent.");
-    expect(started.at(-1)).toMatchObject({ botId: "bot-inbox", title: "Scout: How many unread mails?", labels: { [ASKED_BY_LABEL]: "bot-scout" } });
+    expect(started.at(-1)).toMatchObject({ botId: "bot-inbox", title: "Scout: How many unread mails?", labels: { [ASKED_BY_LABEL]: "bot-scout", "paseo-bots.notify": "true" } });
     expect(await askBot.run({ bot: "bot-inbox", message: "Later", wait: false }, caller)).toBe("Asked Inbox in chat chat-new. Use check_chat with that id for the answer.");
+    await askBot.run({ bot: "bot-inbox", message: "No wakeup", wait: false, notify: false }, caller);
+    expect(started.at(-1)?.labels["paseo-bots.notify"]).toBe("false");
     await expect(askBot.run({ bot: "Old", message: "x" }, caller)).rejects.toThrow('There\'s no other bot called "Old". Ask one of: Inbox.');
 
     // A bot answering another bot can't ask further, and "off" hides the tool.

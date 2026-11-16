@@ -2,7 +2,7 @@ import type { PaseoApi } from "../paseo";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
 import { BOT_LABEL } from "../../shared/bot";
-import { ASKED_BY_LABEL, ASKED_IN_LABEL, type HandoffCard } from "../../shared/handoff";
+import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL, type HandoffCard } from "../../shared/handoff";
 import { startChat } from "../chats";
 import { publishHandoff } from "../handoffs";
 import { defineTool, type ToolCaller } from "./mcp";
@@ -87,9 +87,10 @@ export const askBot = defineTool({
     bot: z.string().min(1).max(100).describe("The other bot's name or id."),
     message: z.string().min(1).max(20_000).describe("What you need, written so the other bot can act on it without this chat."),
     wait: z.boolean().optional().describe("Wait up to about 50 seconds for the answer (the default). With false, return at once and use check_chat later."),
+    notify: z.boolean().optional().describe("Send a completion update to this chat when the other bot finishes (default true), including after the wait times out. Set false to check manually."),
   }),
   available: mayAsk,
-  async run({ bot: wanted, message, wait = true }, caller) {
+  async run({ bot: wanted, message, wait = true, notify = true }, caller) {
     const { bot, host, relay } = caller;
     const others = (await host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived);
     const key = wanted.trim().toLowerCase();
@@ -98,7 +99,7 @@ export const askBot = defineTool({
     if (!exact && named.length > 1) throw new Error(`More than one bot is called "${wanted}". Use one of their ids: ${named.map((entry) => entry.id).join(", ")}.`);
     const target = exact ?? named[0];
     if (!target) throw new Error(others.length ? `There's no other bot called "${wanted}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");
-    const chatId = await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id, [ASKED_IN_LABEL]: caller.agentId } });
+    const chatId = await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id, [ASKED_IN_LABEL]: caller.agentId, [ASK_NOTIFY_LABEL]: String(notify) } });
     const paseo = host.requirePaseo();
     const handoff: HandoffCard = { requesterBotId: bot.id, requesterAgentId: caller.agentId, targetBotId: target.id, targetAgentId: chatId, targetName: target.name.slice(0, 200), request: foldText(message, 600), createdAt: new Date().toISOString(), status: { state: "running", reply: "", error: null } };
     await publishHandoff(paseo, handoff);
