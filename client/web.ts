@@ -104,25 +104,6 @@ declare class FileReader {
 
 const web = Platform.OS === "web";
 
-interface PressCoordinateEvent {
-  nativeEvent: { clientX?: number; clientY?: number; locationX?: number; locationY?: number; detail?: number };
-  currentTarget?: unknown;
-}
-
-/** Read the pressed view's current bounds before React releases currentTarget. */
-export function pressCoordinates(event: PressCoordinateEvent): { x: number; y: number; box?: { width: number; height: number } } | null {
-  const native = event.nativeEvent;
-  if (!web) {
-    return Number.isFinite(native.locationX) && Number.isFinite(native.locationY) ? { x: native.locationX!, y: native.locationY! } : null;
-  }
-  // A keyboard activation has no pointer location and must not click a host app.
-  if (native.detail === 0 || !Number.isFinite(native.clientX) || !Number.isFinite(native.clientY)) return null;
-  const target = event.currentTarget as { getBoundingClientRect?(): { left: number; top: number; width: number; height: number } } | null;
-  const rect = target?.getBoundingClientRect?.();
-  if (!rect || ![rect.left, rect.top, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) return null;
-  return { x: native.clientX! - rect.left, y: native.clientY! - rect.top, box: { width: rect.width, height: rect.height } };
-}
-
 export interface PickedFile {
   name: string;
   mimeType: string;

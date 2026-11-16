@@ -579,7 +579,6 @@ function BotsSurfaceContent({ theme, layout, host, navigation, params, screen = 
       onDisplayMenu={openDisplayMenu}
       onEditTeam={setEditingTeam}
       onTeamMap={() => routed ? openScreen!(teamMapScreen()) : setTeamMap(true)}
-      onDesktop={openScreen ? () => { void flush().then(() => openScreen({ screenId: "bot-desktop" })); } : undefined}
     />
   );
 

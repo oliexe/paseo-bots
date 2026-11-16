@@ -21,8 +21,7 @@ Personal bots for [Paseo](https://paseo.sh). Give each bot instructions, a model
 | **Interactive chat** | Review editable drafts, answer forms, select options and confirm actions in the conversation. Completed tool steps collapse together; search results have source cards. |
 | **Conversations** | Threads beneath each bot, pinned chats, saved messages, search and device-local reply drafts. Handoff cards link to another bot's conversation. |
 | **Avatars** | Built-in pixel, modern and orbital generators with a seed, palette and shape, plus custom image uploads. No image service or API key is needed. |
-| **Quick access** | One Bots entry in Paseo's sidebar. Search and pin bots inside Bots, open the host desktop from its footer, and manage routines from Bot list options. |
-| **Host desktop** | View the host's displays and optionally click, drag, scroll and type through the authenticated Paseo connection. Requires macOS 14 or later. |
+| **Quick access** | One Bots entry in Paseo's sidebar. Search and pin bots inside Bots, and manage routines from Bot list options. |
 
 ## Screenshots
 
@@ -58,7 +57,7 @@ paseo plugin install "$PWD"
 
 For an existing checkout, pull changes, run `npm ci`, then `paseo plugin reload paseo-bots`. Installations are per host; choose that host in Paseo when opening Bots.
 
-You can use Bots from a remote desktop, browser or mobile client. Separately, a bot's **Host** setting can send its chats to another machine. That target does not receive this installation's memory, skills, connected apps or bot tools, so handoffs and `/learn` are unavailable there. File uploads also require the bot to run on the host selected for Bots; images and text attachments work with other targets. For all features on another machine, install Bots there and select that installation in Paseo.
+You can use Bots through Paseo's desktop, browser or mobile client, including when the Paseo host runs on another machine. Separately, a bot's **Host** setting can send its chats to another machine. That target does not receive this installation's memory, skills, connected apps or bot tools, so handoffs and `/learn` are unavailable there. File uploads also require the bot to run on the host selected for Bots; images and text attachments work with other targets. For all features on another machine, install Bots there and select that installation in Paseo.
 
 ## Usage
 
@@ -124,16 +123,6 @@ When one bot asks another for help, a handoff card shows the receiving bot's sta
 Open **Identity → Picture**, choose **Pixel**, **Modern** or **Orbital**, then adjust the palette, seed and shape. These built-in generators work without an image service or API key. Desktop and web clients can upload a picture; every client can use an image URL.
 
 In **New bot**, press **Configure** beside **Defaults for new bots** to set the provider, model and permissions inline. **Manage** under **Your presets** lets you delete saved presets without changing bots created from them. Shared apps, skills and MCP servers remain under **Skills & Tools**. Controls use Paseo's UI and appearance settings.
-
-### Host desktop
-
-Press the **Host desktop** monitor button at the bottom of the Bots list. In **Desktop settings**, press **Check**, choose whether to **Control the host**, then **Connect**. The host screen fills the available space. **Show desktop settings** opens the right sidebar for connection, display and input controls; on smaller screens it opens an overlay. **Hide desktop settings** gives the screen more room, and **Back to Bots** returns to the bot list.
-
-Choose a display, image size and refresh interval, or pause the view. Control supports clicks, double-clicks, right-clicks, two-point drags, scrolling, text and common keyboard shortcuts. Only one session can control a host at a time; view-only sessions can coexist. Sessions expire after 15 minutes and disconnect when you leave the desktop screen.
-
-The host needs macOS 14 or later and Apple's Command Line Tools. **Open settings** beside **Screen recording permission** or **Accessibility permission** opens the relevant settings on that computer. Allow the app macOS identifies, then check access again. macOS may require reopening Paseo. Linux and Windows hosts show an unavailable state.
-
-Screen images refresh periodically; this is not an audio or video stream. Images and input use Paseo's authenticated connection, with no separate remote-desktop port. Screen images are not saved by the plugin.
 
 ### Teams
 

@@ -66,7 +66,6 @@ interface BotSidebarProps {
   onDisplayMenu(anchor: LayoutRectangle): void;
   onEditTeam(group: BotGroup): void;
   onTeamMap(): void;
-  onDesktop?(): void;
 }
 
 const noSelect = { userSelect: "none" } as object;
@@ -91,7 +90,7 @@ export function BotSidebar(props: BotSidebarProps) {
     return (
       <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
         <Splash colors={colors} background={tokens.surfaceSidebar} />
-        <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} onDesktop={props.onDesktop} />
+        <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
       </View>
     );
   }
@@ -124,7 +123,7 @@ export function BotSidebar(props: BotSidebarProps) {
           )
         ) : null}
       </ScrollView>
-      <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} onDesktop={props.onDesktop} />
+      <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
     </View>
   );
 }
@@ -152,7 +151,7 @@ function SectionHeader({ colors, onDisplayMenu }: { colors: Colors; onDisplayMen
   );
 }
 
-function Footer({ colors, onNewBot, onTeamMap, onDesktop }: { colors: Colors; onNewBot(): void; onTeamMap(): void; onDesktop?(): void }) {
+function Footer({ colors, onNewBot, onTeamMap }: { colors: Colors; onNewBot(): void; onTeamMap(): void }) {
   const openLibrary = useOpenLibrary();
   const { hovered, hoverProps } = useHover();
   return (
@@ -185,7 +184,6 @@ function Footer({ colors, onNewBot, onTeamMap, onDesktop }: { colors: Colors; on
       </Pressable>
       <FooterIconButton colors={colors} icon="Network" label="Team map" onPress={onTeamMap} />
       <FooterIconButton colors={colors} icon="Blocks" label="Skills & Tools" onPress={() => openLibrary()} />
-      {onDesktop ? <FooterIconButton colors={colors} icon="Monitor" label="Host desktop" onPress={onDesktop} /> : null}
     </View>
   );
 }

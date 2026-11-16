@@ -13,7 +13,6 @@ import { INTERACTION_CARD, InteractionIdSchema, InteractionSchema, interactionId
 import { HandoffCard } from "./client/chat/stream/HandoffCard";
 import { HANDOFF_CARD, HandoffCardSchema } from "./shared/handoff";
 import { requestIntent } from "./client/intent";
-import { DesktopScreen } from "./client/DesktopScreen";
 import { RoutinesScreen } from "./client/RoutinesScreen";
 import { PaseoBotsSidebar } from "./client/PaseoSidebar";
 import { BackBar } from "./client/library/parts";
@@ -61,7 +60,6 @@ export default function contribute(client: PluginClientContext) {
     return null;
   }
   client.addScreen({ id: "bot-preferences", title: "Bots", Component: PreviousSettingsRoute });
-  client.addScreen({ id: "bot-desktop", title: "Bots", Component: (props) => <DesktopScreen {...props} onBack={backToBots} /> });
   client.addScreen({ id: "bot-routines", title: "Bots", Component: (props) => <BotsPage props={props} title="Routines" onBack={backToBots}><RoutinesScreen {...props} openScreen={(input) => client.openScreen(input)} /></BotsPage> });
   client.addCommandCenterItem({
     id: "open-bots",

@@ -12,7 +12,6 @@ import { probeMcpServer } from "./server/mcp-probe";
 import { mcpSources } from "./server/mcp-sources";
 import { accounts, appTools, catalog, connect, disconnect, removeKey, renameAccount, startLogin, cancelLogin, status as appsStatus } from "./server/composio";
 import { BotsHost } from "./server/host";
-import { registerDesktop } from "./server/desktop";
 import { registerInteractions } from "./server/interactions";
 import { registerHandoffs } from "./server/handoffs";
 import { connectSchedulerHost } from "./server/connection";
@@ -78,7 +77,6 @@ export default function contribute(server: PluginServerContext) {
   void ensureBotsHome()
     .then(migrateBotSkills)
     .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
-  const stopDesktop = registerDesktop(server);
   const settings = server.registerSettings(botSettings);
   const library = async () => {
     const state = await settings.read();
@@ -192,7 +190,6 @@ export default function contribute(server: PluginServerContext) {
 
   return async () => {
     cancelLogin();
-    stopDesktop();
     stopInteractions();
     await scheduler.stop();
     await disconnectSchedulerHost();
