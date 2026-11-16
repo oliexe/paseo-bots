@@ -16,8 +16,10 @@
         "@tanstack/react-query": "^5.90.11",
         "@types/node": "^22.20.4",
         "@types/react": "~19.2.0",
+        "@types/react-test-renderer": "19.3.1",
         "react": "19.1.0",
         "react-native": "0.81.5",
+        "react-test-renderer": "19.1.0",
         "typescript": "^5.9.3",
         "vitest": "^4.1.11",
         "zod": "^4.4.3"
@@ -1518,6 +1520,16 @@
       "license": "MIT",
       "dependencies": {
         "csstype": "^3.2.2"
+      }
+    },
+    "node_modules/@types/react-test-renderer": {
+      "version": "19.3.1",
+      "resolved": "https://registry.npmjs.org/@types/react-test-renderer/-/react-test-renderer-19.3.1.tgz",
+      "integrity": "sha512-9AwMfeBOcXsN5kC4oAauNTOKEwqLHtc69tkJC2CihQ5fCELDwzfQvookvtyaxm6i+vc5LLD0V5OLB8arzY8Smw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@types/react": "*"
       }
     },
     "node_modules/@types/stack-utils": {
@@ -4357,6 +4369,27 @@
       "engines": {
         "node": ">=0.10.0"
       }
+    },
+    "node_modules/react-test-renderer": {
+      "version": "19.1.0",
+      "resolved": "https://registry.npmjs.org/react-test-renderer/-/react-test-renderer-19.1.0.tgz",
+      "integrity": "sha512-jXkSl3CpvPYEF+p/eGDLB4sPoDX8pKkYvRl9+rR8HxLY0X04vW7hCm1/0zHoUSjPZ3bDa+wXWNTDVIw/R8aDVw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "react-is": "^19.1.0",
+        "scheduler": "^0.26.0"
+      },
+      "peerDependencies": {
+        "react": "^19.1.0"
+      }
+    },
+    "node_modules/react-test-renderer/node_modules/react-is": {
+      "version": "19.3.1",
+      "resolved": "https://registry.npmjs.org/react-is/-/react-is-19.3.1.tgz",
+      "integrity": "sha512-RRieF6IyxQBkcK6pP8xOHprLTPW6QjRkbGdImtqNme+/hYVwCZkLQLdlZGOhUqXwkS9IEynaGvPJtv6XB/cz0Q==",
+      "dev": true,
+      "license": "MIT"
     },
     "node_modules/regenerator-runtime": {
       "version": "0.13.11",
