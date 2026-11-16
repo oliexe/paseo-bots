@@ -462,6 +462,14 @@ export function observeWidth(element: DomElement | null, onChange: () => void): 
   return () => observer.disconnect();
 }
 
+/** A touch screen is present (an iPad, a touch laptop), even next to a mouse or trackpad. */
+export function hasTouchScreen(): boolean {
+  if (!web || typeof window === "undefined") return false;
+  const query = (window as { matchMedia?: (query: string) => { matches: boolean } }).matchMedia?.("(any-pointer: coarse)");
+  const points = (window as { navigator?: { maxTouchPoints?: number } }).navigator?.maxTouchPoints ?? 0;
+  return Boolean(query?.matches) || points > 0;
+}
+
 // ---------------------------------------------------------------- focus
 
 /** utils/web-focus.ts focusWithRetries: keeps trying for a moment while the surface mounts. */

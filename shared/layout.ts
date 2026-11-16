@@ -5,6 +5,15 @@ const PANEL_WIDTH = { default: 320, min: 240 };
 /** The centre column never gets narrower than this while space allows. */
 export const CENTER_MIN_WIDTH = 400;
 
+/**
+ * Whether the list should treat the device as touch: rows keep their actions visible
+ * because there is no hover to reveal them. An iPad in the browser runs the wide web
+ * layout but has a touch screen, so the screen's capability decides, not the layout.
+ */
+export function isTouchLayout(layout: { compact: boolean; platform: string }, touchScreen: boolean): boolean {
+  return layout.compact || layout.platform !== "web" || touchScreen;
+}
+
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 /**
