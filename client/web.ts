@@ -90,6 +90,33 @@ declare class FileReader {
 
 const web = Platform.OS === "web";
 
+interface WebListNode {
+  scrollHeight: number;
+  firstElementChild: unknown;
+  scroll(options: { top: number; behavior: "smooth" | "instant" }): void;
+}
+type WebList = { getScrollableNode(): unknown } | null;
+declare const ResizeObserver: new (callback: () => void) => { observe(node: unknown): void; disconnect(): void };
+
+/** Use the browser's measured end, including a footer still being laid out. */
+export function scrollWebListToEnd(list: WebList, animated = false): void {
+  if (!web || !list) return;
+  const node = list.getScrollableNode() as WebListNode | null;
+  // React Native Web replaces node.scrollTo with its {y, animated} API.
+  node?.scroll({ top: node.scrollHeight, behavior: animated ? "smooth" : "instant" });
+}
+
+export function watchWebListSize(list: WebList, changed: () => void): () => void {
+  if (!web || !list || typeof ResizeObserver === "undefined") return () => {};
+  const node = list.getScrollableNode() as WebListNode | null;
+  if (!node) return () => {};
+  const observer = new ResizeObserver(changed);
+  observer.observe(node);
+  if (node.firstElementChild) observer.observe(node.firstElementChild);
+  changed();
+  return () => observer.disconnect();
+}
+
 export interface PickedFile {
   name: string;
   mimeType: string;

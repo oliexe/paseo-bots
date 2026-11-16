@@ -28,6 +28,7 @@ import { buildRows, findRows, layoutStream, retainLayout, type StreamEntry, type
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
 import { tooltip } from "../ui/Tooltip";
+import { scrollWebListToEnd, watchWebListSize } from "../web";
 
 type Colors = PluginTheme["colors"];
 
@@ -83,6 +84,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   const [nearBottom, setNearBottom] = useState(true);
   const nearBottomRef = useRef(true);
+  // Web FlatList first measures a partial render window. Its initial
+  // scrollToEnd can therefore emit a scroll away from the eventual bottom.
+  // Keep following those measurements until the reader deliberately scrolls.
+  const initialFollow = useRef(!inverted);
   const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
   /** Set while an older page loads on web, so content added above doesn't move the reader. */
   const olderAnchor = useRef(false);
@@ -95,9 +100,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   const scrollToBottom = useCallback(
     (animated: boolean) => {
+      initialFollow.current = !inverted;
       updateNearBottom(true);
       if (inverted) list.current?.scrollToOffset({ offset: 0, animated });
-      else list.current?.scrollToEnd({ animated });
+      else scrollWebListToEnd(list.current, animated);
     },
     [inverted],
   );
@@ -114,8 +120,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     metrics.current = { offset: contentOffset.y, content: contentSize.height, viewport: layoutMeasurement.height };
     const distance = inverted ? contentOffset.y : contentSize.height - (contentOffset.y + layoutMeasurement.height);
-    updateNearBottom(distance <= (inverted ? NATIVE_NEAR_BOTTOM : WEB_NEAR_BOTTOM));
-    maybeLoadOlder();
+    if (!initialFollow.current || distance <= WEB_NEAR_BOTTOM) {
+      updateNearBottom(distance <= (inverted ? NATIVE_NEAR_BOTTOM : WEB_NEAR_BOTTOM));
+    }
+    if (!initialFollow.current) maybeLoadOlder();
   };
 
   const onContentSizeChange = (_width: number, height: number) => {
@@ -134,13 +142,20 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       }
       return;
     }
-    if (nearBottomRef.current && height !== previous) list.current?.scrollToEnd({ animated: false });
+    if (nearBottomRef.current && height !== previous) scrollWebListToEnd(list.current);
   };
 
   const onLayout = (event: LayoutChangeEvent) => {
     metrics.current.viewport = event.nativeEvent.layout.height;
-    if (!inverted && nearBottomRef.current) list.current?.scrollToEnd({ animated: false });
+    if (!inverted && nearBottomRef.current) scrollWebListToEnd(list.current);
   };
+
+  useEffect(() => {
+    if (inverted || chat.loading) return;
+    return watchWebListSize(list.current, () => {
+      if (initialFollow.current || nearBottomRef.current) scrollWebListToEnd(list.current);
+    });
+  }, [inverted, chat.loading]);
 
   useEffect(() => {
     if (!chat.loadingOlder) {
@@ -271,7 +286,17 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
   ) : null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
+    <View
+      style={{ flex: 1, backgroundColor: colors.surface0 }}
+      {...(platform === "web" ? {
+        onWheel: () => { initialFollow.current = false; },
+        onTouchStart: () => { initialFollow.current = false; },
+        onPointerDown: () => { initialFollow.current = false; },
+        onKeyDown: (event: { key: string }) => {
+          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) initialFollow.current = false;
+        },
+      } : {})}
+    >
       {findOpen ? (
         <FindBar
           colors={colors}
