@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "files": [
     "paseo-plugin.json",
+    "npm-shrinkwrap.json",
     "OVERVIEW.md",
     "OVERVIEW.*.md",
     "index.client.ts",
