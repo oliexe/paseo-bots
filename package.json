@@ -1,6 +1,6 @@
 {
   "name": "@oliexe/paseo-bots",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "files": [
     "paseo-plugin.json",
     "npm-shrinkwrap.json",

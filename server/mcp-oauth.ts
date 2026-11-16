@@ -6,6 +6,7 @@ import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { z } from "zod";
 import type { LibraryMcpServer, McpServerConfig } from "../shared/bot";
 import type { McpOAuthStatus } from "../shared/mcp-oauth";
+import { PLUGIN_VERSION } from "../shared/version";
 import { pluginDataPath } from "./bot-home";
 import { atomicWrite, ensureRealDirectory, readRegularText } from "./files";
 import type { BotsHost } from "./host";
@@ -273,7 +274,7 @@ export class McpOAuth {
         const headers = new Headers(config.headers);
         headers.delete("authorization"); headers.delete("cookie"); headers.delete("host");
         headers.set("Accept", "application/json, text/event-stream"); headers.set("Content-Type", "application/json");
-        const challenge = await oauthFetch(config.url, { headersOnly: true })(config.url, { method: config.type === "sse" ? "GET" : "POST", signal: this.controllers.get(id)!.signal, headers, ...(config.type === "http" ? { body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "paseo-bots", version: "0.3.0" } } }) } : {}) });
+        const challenge = await oauthFetch(config.url, { headersOnly: true })(config.url, { method: config.type === "sse" ? "GET" : "POST", signal: this.controllers.get(id)!.signal, headers, ...(config.type === "http" ? { body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "paseo-bots", version: PLUGIN_VERSION } } }) } : {}) });
         const hints = extractWWWAuthenticateParams(challenge);
         await challenge.body?.cancel();
         await auth(provider, { serverUrl: config.url, fetchFn: fetch, ...hints });
