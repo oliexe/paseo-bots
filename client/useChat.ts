@@ -72,11 +72,47 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
     let queued: "tail" | "after" | null = null;
     let olderBusy = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let entries: ChatEntry[] = [];
 
     const agentFrom = (page: TimelinePage, current: PaseoAgent | null) => (page.agent as PaseoAgent | null) ?? handle.current() ?? current;
 
+    // Replacement notifications invalidate sequence identities, not the reader's
+    // history window. Rebuild that window before committing it so a 40-item tail
+    // cannot erase loaded prompts or answers. Include the first visible prompt
+    // on daemons that don't support whole-turn pagination yet.
+    const restoreWindow = async (tail: TimelinePage): Promise<TimelinePage> => {
+      let result = tail;
+      const oldest = startCursor && startCursor.epoch === tail.startCursor?.epoch ? startCursor.seq : null;
+      const count = Math.max(entries.length, tail.entries.length);
+      while (!disposed && result.startCursor && result.entries.length > 0) {
+        const first = result.entries[0]!;
+        const covered = oldest !== null ? first.seqStart <= oldest : result.entries.length >= count;
+        if (covered) {
+          const boundary = oldest !== null
+            ? result.entries.findLastIndex((entry) => entry.seqStart <= oldest)
+            : result.entries.length - count;
+          const prompt = result.entries.findLastIndex((entry, index) => index <= boundary && entry.item.type === "user_message");
+          if (prompt >= 0) {
+            result = { ...result, entries: result.entries.slice(prompt), startCursor: { ...result.startCursor, seq: result.entries[prompt]!.seqStart }, hasOlder: result.hasOlder || prompt > 0 };
+            break;
+          }
+        }
+        if (!result.hasOlder) break;
+        const before = result.startCursor;
+        const older = await handle.timeline.refetch({ direction: "before", cursor: before, projection: "projected", limit: TIMELINE_PAGE_SIZE });
+        if (older.error) throw new Error(older.error);
+        if (older.reset || older.staleCursor || older.gap || older.startCursor?.epoch !== before.epoch) {
+          throw new Error("Chat history changed while refreshing. Retry to load it again.");
+        }
+        if (!older.entries.length) break;
+        if (!older.startCursor || older.startCursor.seq >= before.seq) throw new Error("Chat history did not advance while refreshing.");
+        result = { ...result, entries: mergeEntries(result.entries, older.entries), startCursor: older.startCursor, hasOlder: older.hasOlder };
+      }
+      return result;
+    };
+
     const sync = async (mode: "tail" | "after"): Promise<void> => {
-      if (busy) {
+      if (busy || olderBusy) {
         if (queued !== "tail") queued = mode;
         return;
       }
@@ -84,20 +120,23 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
       try {
         let replace = mode === "tail" || endCursor === null;
         for (let pages = 0; pages < 25 && !disposed; pages++) {
-          const page = replace
+          let page = replace
             ? await handle.timeline.refetch({ direction: "tail", projection: "projected", limit: TIMELINE_PAGE_SIZE })
             : await handle.timeline.refetch({ direction: "after", cursor: endCursor!, projection: "projected", limit: TIMELINE_PAGE_SIZE });
           if (disposed) return;
           if (page.error) throw new Error(page.error);
           // A new epoch or a gap means our cursor no longer lines up: the page is a fresh tail.
           const reset = replace || page.reset || page.staleCursor || page.gap;
+          if (reset) page = await restoreWindow(page);
+          if (disposed) return;
           if (page.endCursor) endCursor = page.endCursor;
           if (reset) {
             startCursor = page.startCursor;
           }
+          entries = reset ? page.entries : mergeEntries(entries, page.entries);
           setState((current) => ({
             ...current,
-            entries: reset ? page.entries : mergeEntries(current.entries, page.entries),
+            entries,
             agent: agentFrom(page, current.agent),
             loading: false,
             error: null,
@@ -128,13 +167,18 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
     };
 
     const loadOlder = () => {
-      if (olderBusy || !startCursor || disposed) return;
+      if (busy || olderBusy || !startCursor || disposed) return;
       olderBusy = true;
+      const before = startCursor;
       setState((current) => (current.hasOlder ? { ...current, loadingOlder: true } : current));
       void handle.timeline
-        .refetch({ direction: "before", cursor: startCursor, projection: "projected", limit: TIMELINE_PAGE_SIZE })
+        .refetch({ direction: "before", cursor: before, projection: "projected", limit: TIMELINE_PAGE_SIZE })
         .then((page) => {
           if (disposed) return;
+          if (endCursor?.epoch !== before.epoch) {
+            setState((current) => ({ ...current, loadingOlder: false }));
+            return;
+          }
           if (page.error) throw new Error(page.error);
           if (page.staleCursor || page.reset) {
             setState((current) => ({ ...current, loadingOlder: false }));
@@ -142,9 +186,10 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
             return;
           }
           if (page.startCursor) startCursor = page.startCursor;
+          entries = mergeEntries(entries, page.entries);
           setState((current) => ({
             ...current,
-            entries: mergeEntries(current.entries, page.entries),
+            entries,
             hasOlder: page.hasOlder && page.entries.length > 0,
             loadingOlder: false,
           }));
@@ -154,6 +199,11 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
         })
         .finally(() => {
           olderBusy = false;
+          if (queued && !disposed) {
+            const next = queued;
+            queued = null;
+            void sync(next);
+          }
         });
     };
 
