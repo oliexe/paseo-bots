@@ -1,6 +1,5 @@
 import { useRpc } from "@getpaseo/plugin/client";
-import { Modal } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
+import { Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";

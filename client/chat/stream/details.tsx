@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { ScrollView } from "@getpaseo/plugin/client/react-native";
+import { ScrollView } from "@getpaseo/plugin/client/ui";
 import { memo, useMemo, type ReactNode } from "react";
 import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { buildLineDiff, parseUnifiedDiff, hasMeaningfulToolCallDetail, type DiffLine, type ToolCallDetail } from "../../../shared/tools";

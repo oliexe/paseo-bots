@@ -1,7 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent, PaseoAgentPermissionResponse, PaseoApi } from "../paseo";
 import { useRpc } from "@getpaseo/plugin/client";
-import { useToast } from "@getpaseo/plugin/client/react-native";
+import { useToast } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { botToolName } from "../../shared/bot-tools";

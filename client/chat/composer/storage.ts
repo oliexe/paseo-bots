@@ -1,97 +1,66 @@
+import { usePaseo, useSettings } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/ui";
 import { useEffect, useState } from "react";
 import { AppState, NativeModules, Platform, TurboModuleRegistry } from "react-native";
-import { parseSendBehavior, DEFAULT_SEND_BEHAVIOR, type SendBehavior } from "./logic";
+import { deviceStorage } from "../../../shared/device-storage";
+import { DeviceStore } from "../../device-store";
+import { readWebStorage } from "../../web";
+import { DEFAULT_SEND_BEHAVIOR, parseSendBehavior, type SendBehavior } from "./logic";
 
-// Persistence for the composer, the same way typography.ts reads Paseo's settings:
-// localStorage on web and desktop, the app's AsyncStorage TurboModule on phones.
-// Everything is best effort; a missing module or a full quota just means no persistence.
+// The public plugin API retains one Paseo object per installation across surfaces.
+// Each host installation keeps a separate, device-only draft document.
+const stores = new WeakMap<object, DeviceStore>();
+
+export function useDeviceStorage(): DeviceStore {
+  const paseo = usePaseo();
+  const settings = useSettings(deviceStorage);
+  const toast = useToast();
+  let store = stores.get(paseo);
+  if (!store) {
+    store = new DeviceStore((key) => key.startsWith("@paseo-bots:") ? readWebStorage(key) : null);
+    stores.set(paseo, store);
+  }
+  const current = store;
+  useEffect(() => current.subscribe(() => { const error = current.takeError(); if (error) toast.error(error); }), [current, toast]);
+  useEffect(() => { current.update(settings); }, [current, settings]);
+  return current;
+}
 
 const APP_SETTINGS_KEY = "@paseo:app-settings";
 const native = Platform.OS !== "web";
+type AsyncStorageModule = { multiGet(keys: string[], callback: (errors: unknown, result: [string, string | null][] | null) => void): void };
 
-// This plugin typechecks without the DOM library. Declare only what this module uses.
-declare const localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void } | undefined;
-
-type AsyncStorageModule = {
-  multiGet(keys: string[], callback: (errors: unknown, result: [string, string | null][] | null) => void): void;
-  multiSet?(pairs: [string, string][], callback: (errors: unknown) => void): void;
-};
-
-function asyncStorage(): AsyncStorageModule | null {
-  try {
-    return (TurboModuleRegistry.get("RNCAsyncStorage") as AsyncStorageModule | null) ?? (NativeModules.RNCAsyncStorage as AsyncStorageModule | undefined) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Synchronous read on web; null on phones (use `readItem`). */
-export function readItemSync(key: string): string | null {
-  if (native) return null;
-  try {
-    return typeof localStorage === "undefined" ? null : localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-export function readItem(key: string): Promise<string | null> {
-  if (!native) return Promise.resolve(readItemSync(key));
+// Preserve the existing host preference bridge. Drafts use the separate public
+// device settings store above; they never write Paseo's application settings.
+function readHostSettings(): Promise<string | null> {
+  if (!native) return Promise.resolve(readWebStorage(APP_SETTINGS_KEY));
   return new Promise((resolve) => {
-    const storage = asyncStorage();
-    if (!storage?.multiGet) return resolve(null);
+    const timeout = setTimeout(() => resolve(null), 1_000);
+    const finish = (value: string | null) => { clearTimeout(timeout); resolve(value); };
     try {
-      storage.multiGet([key], (_errors, result) => resolve(result?.[0]?.[1] ?? null));
-    } catch {
-      resolve(null);
-    }
+      const storage = (TurboModuleRegistry.get("RNCAsyncStorage") as AsyncStorageModule | null) ?? (NativeModules.RNCAsyncStorage as AsyncStorageModule | undefined);
+      if (!storage?.multiGet) finish(null);
+      else storage.multiGet([APP_SETTINGS_KEY], (_errors, result) => finish(result?.[0]?.[1] ?? null));
+    } catch { finish(null); }
   });
 }
 
-export function writeItem(key: string, value: string): Promise<void> {
-  if (!native) {
-    try {
-      if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
-    } catch {
-      // Quota exceeded or storage disabled.
-    }
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    const storage = asyncStorage();
-    if (!storage?.multiSet) return resolve();
-    try {
-      storage.multiSet([[key, value]], () => resolve());
-    } catch {
-      resolve();
-    }
-  });
-}
+let sendBehavior: SendBehavior = native ? DEFAULT_SEND_BEHAVIOR : parseSendBehavior(readWebStorage(APP_SETTINGS_KEY));
 
-// ---------------------------------------------------------------- send behaviour
-
-let sendBehavior: SendBehavior = native ? DEFAULT_SEND_BEHAVIOR : parseSendBehavior(readItemSync(APP_SETTINGS_KEY));
-
-/** Re-reads Paseo's `sendBehavior` setting. */
-async function readSendBehavior(): Promise<SendBehavior> {
-  sendBehavior = parseSendBehavior(await readItem(APP_SETTINGS_KEY));
-  return sendBehavior;
-}
-
-/** The user's "When the agent is working" setting (steer, interrupt or queue), kept fresh like the type scale. */
+/** Follow Paseo's “When the agent is working” preference, including later changes. */
 export function useSendBehavior(): SendBehavior {
   const [value, setValue] = useState(sendBehavior);
   useEffect(() => {
     let alive = true;
-    const refresh = () => void readSendBehavior().then((next) => alive && setValue(next));
+    const refresh = () => void readHostSettings().then((stored) => {
+      if (!alive) return;
+      sendBehavior = parseSendBehavior(stored);
+      setValue(sendBehavior);
+    });
     refresh();
-    const timer = native ? null : setInterval(refresh, 2000);
+    const timer = native ? null : setInterval(refresh, 2_000);
     const subscription = AppState.addEventListener("change", (state) => state === "active" && refresh());
-    return () => {
-      alive = false;
-      if (timer) clearInterval(timer);
-      subscription.remove();
-    };
+    return () => { alive = false; if (timer) clearInterval(timer); subscription.remove(); };
   }, []);
   return value;
 }

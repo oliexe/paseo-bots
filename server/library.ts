@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, readdir, readlink, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, posix, relative, sep } from "node:path";
 import type { LibrarySkill } from "../shared/bot";
 import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../shared/skills";
 import { botDataPath, botsHomePath, pluginDataPath } from "./bot-home";
+import { atomicWrite, ensureRealDirectory, missingFile, readRegularText, safeFileParts } from "./files";
 
 // The shared skill library: one folder per skill under plugin-data/library/skills.
 // Bots that use the managed folder get a link to each of their skills in
@@ -21,30 +22,76 @@ function librarySkillsPath(): string {
 }
 
 export function librarySkillPath(id: string): string {
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(id) || id === "." || id === "..") throw new Error("A skill name must be 1–128 letters, numbers, dots, dashes or underscores, and cannot be '.' or '..'.");
   return join(librarySkillsPath(), id);
 }
 
-async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { headers: { "User-Agent": "paseo-bots", Accept: "application/vnd.github+json" } });
+async function fetchText(url: string, limit = MAX_FILE_BYTES): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  timeout.unref();
+  try {
+  const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "paseo-bots", Accept: "application/vnd.github+json" } });
   if (!response.ok) throw new Error(`${url} answered ${response.status}.`);
-  return response.text();
+  if (!response.body) throw new Error(`${url} returned an empty response.`);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      if (bytes > limit) throw new Error(`The download exceeds ${Math.round(limit / 1024)} KB: ${url}`);
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  } finally { clearTimeout(timeout); }
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  return JSON.parse(await fetchText(url)) as T;
+  return JSON.parse(await fetchText(url, 8 * 1024 * 1024)) as T;
+}
+
+const writes = new Map<string, Promise<unknown>>();
+function changeSkill<T>(id: string, change: () => Promise<T>): Promise<T> {
+  const key = librarySkillPath(id);
+  const next = (writes.get(key) ?? Promise.resolve()).then(change);
+  const settled = next.catch(() => {}).finally(() => { if (writes.get(key) === settled) writes.delete(key); });
+  writes.set(key, settled);
+  return next;
 }
 
 async function saveSkill(files: Map<string, string>, source: string, fallbackName: string): Promise<ImportedSkill> {
-  const meta = parseSkillFrontmatter(files.get("SKILL.md") ?? "");
+  if (!files.has("SKILL.md")) throw new Error("The skill is missing SKILL.md.");
+  const meta = parseSkillFrontmatter(files.get("SKILL.md")!);
   const id = sanitizeSkillName(meta.name ?? fallbackName);
   const dir = librarySkillPath(id);
-  await rm(dir, { recursive: true, force: true });
-  for (const [path, text] of files) {
-    const target = join(dir, ...path.split("/"));
-    if (!target.startsWith(dir + sep)) continue;
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, text, "utf8");
-  }
+  await changeSkill(id, async () => {
+    await mkdir(librarySkillsPath(), { recursive: true });
+    const staged = join(librarySkillsPath(), `.import-${randomUUID()}`);
+    const backup = join(librarySkillsPath(), `.backup-${randomUUID()}`);
+    let backedUp = false;
+    try {
+      for (const [path, text] of files) {
+        const target = join(staged, ...safeFileParts(path));
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, text, { encoding: "utf8", mode: 0o600 });
+      }
+      try { await rename(dir, backup); backedUp = true; } catch (error) { if (!missingFile(error)) throw error; }
+      try { await rename(staged, dir); } catch (error) {
+        if (backedUp) { await rename(backup, dir); backedUp = false; }
+        throw error;
+      }
+      if (backedUp) { await rm(backup, { recursive: true, force: true }); backedUp = false; }
+    } finally {
+      await rm(staged, { recursive: true, force: true });
+      // Leave a backup intact if an exceptional rollback failed.
+    }
+  });
   return { id, description: meta.description ?? "", source };
 }
 
@@ -67,28 +114,34 @@ export async function importSkills({ source: input }: { source: string }): Promi
   const api = `https://api.github.com/repos/${owner}/${repo}`;
   const ref = source.ref ?? (await fetchJson<{ default_branch: string }>(api)).default_branch;
   const tree = await fetchJson<{ tree: TreeEntry[]; truncated: boolean }>(`${api}/git/trees/${encodeURIComponent(ref)}?recursive=1`);
+  if (tree.truncated) throw new Error("This repository is too large to import safely. Use a direct SKILL.md link.");
   const prefix = source.path ? `${source.path}/` : "";
   const skillDirs = tree.tree
     .filter((entry) => entry.type === "blob" && posix.basename(entry.path) === "SKILL.md" && (entry.path === `${prefix}SKILL.md` || entry.path.startsWith(prefix)))
-    .map((entry) => posix.dirname(entry.path))
-    .slice(0, MAX_SKILLS);
+    .map((entry) => posix.dirname(entry.path));
+  if (skillDirs.length > MAX_SKILLS) throw new Error(`This source contains more than ${MAX_SKILLS} skills. Select a smaller subfolder.`);
   if (skillDirs.length === 0) throw new Error(`No SKILL.md found in ${owner}/${repo}${source.path ? `/${source.path}` : ""}.`);
 
-  const skills: ImportedSkill[] = [];
+  const downloaded: { files: Map<string, string>; origin: string; name: string }[] = [];
   for (const dir of skillDirs) {
     const base = dir === "." ? "" : `${dir}/`;
     const blobs = tree.tree
-      .filter((entry) => entry.type === "blob" && entry.path.startsWith(base) && (entry.size ?? 0) <= MAX_FILE_BYTES)
+      .filter((entry) => entry.type === "blob" && entry.path.startsWith(base))
       // Nested skills are imported on their own.
-      .filter((entry) => !skillDirs.some((other) => other !== dir && other.startsWith(base) && entry.path.startsWith(`${other}/`)))
-      .slice(0, MAX_FILES_PER_SKILL);
+      .filter((entry) => !skillDirs.some((other) => other !== dir && other.startsWith(base) && entry.path.startsWith(`${other}/`)));
+    if (blobs.length > MAX_FILES_PER_SKILL) throw new Error(`The skill ${dir} contains more than ${MAX_FILES_PER_SKILL} files. Use a direct SKILL.md link.`);
     const files = new Map<string, string>();
     for (const blob of blobs) {
-      files.set(blob.path.slice(base.length), await fetchText(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${blob.path}`));
+      if ((blob.size ?? 0) > MAX_FILE_BYTES) throw new Error(`A skill file exceeds 512 KB: ${blob.path}`);
+      const path = blob.path.slice(base.length);
+      safeFileParts(path);
+      files.set(path, await fetchText(`https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(ref)}/${blob.path.split("/").map(encodeURIComponent).join("/")}`));
     }
     const origin = `github.com/${owner}/${repo}${dir === "." ? "" : `/${dir}`}`;
-    skills.push(await saveSkill(files, origin, dir === "." ? repo : posix.basename(dir)));
+    downloaded.push({ files, origin, name: dir === "." ? repo : posix.basename(dir) });
   }
+  const skills: ImportedSkill[] = [];
+  for (const { files, origin, name } of downloaded) skills.push(await saveSkill(files, origin, name));
   return { skills };
 }
 
@@ -100,7 +153,7 @@ async function listFiles(root: string): Promise<string[]> {
       if (files.length >= MAX_LISTED_FILES) return;
       const path = join(dir, entry.name);
       if (entry.isDirectory()) await walk(path);
-      else files.push(relative(root, path).split(sep).join("/"));
+      else if (entry.isFile()) files.push(relative(root, path).split(sep).join("/"));
     }
   };
   await walk(root);
@@ -113,26 +166,29 @@ export function sha256(text: string): string {
 
 /** SHA-256 of a library skill's SKILL.md, or null when it's missing. */
 export async function skillSha(id: string): Promise<string | null> {
-  const text = await readFile(join(librarySkillPath(id), "SKILL.md"), "utf8").catch(() => null);
+  const text = await readRegularText(join(librarySkillPath(id), "SKILL.md"), MAX_FILE_BYTES);
   return text === null ? null : sha256(text);
 }
 
 export async function readSkill({ id }: { id: string }) {
   const dir = librarySkillPath(id);
-  const text = await readFile(join(dir, "SKILL.md"), "utf8").catch(() => null);
+  const text = await readRegularText(join(dir, "SKILL.md"), MAX_FILE_BYTES);
   return { text: text ?? "", sha: text === null ? null : sha256(text), missing: text === null, path: join(dir, "SKILL.md"), files: await listFiles(dir) };
 }
 
 /** Writes SKILL.md, creating the skill folder if needed. Returns its frontmatter description and hash. */
 export async function writeSkill({ id, text }: { id: string; text: string }) {
   const dir = librarySkillPath(id);
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "SKILL.md"), text, "utf8");
+  if (Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES) throw new Error("A skill file must be at most 512 KB.");
+  await changeSkill(id, async () => {
+    await ensureRealDirectory(dir);
+    await atomicWrite(join(dir, "SKILL.md"), text);
+  });
   return { description: parseSkillFrontmatter(text).description ?? "", sha: sha256(text) };
 }
 
 export async function deleteSkill({ id }: { id: string }) {
-  await rm(librarySkillPath(id), { recursive: true, force: true });
+  await changeSkill(id, () => rm(librarySkillPath(id), { recursive: true, force: true }));
   return { ok: true };
 }
 

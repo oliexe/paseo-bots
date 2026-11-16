@@ -1,7 +1,16 @@
 {
   "id": "paseo-bots",
+  "name": "Bots",
   "description": "Personal bots with their own instructions, agent, memory, routines, skills, tools and connected apps.",
+  "media": [
+    "https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/splash.png",
+    "https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/bot.png",
+    "https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/skills.png",
+    "https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/mcp.png",
+    "https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/apps.png",
+    "https://raw.githubusercontent.com/oliexe/paseo-bots/main/docs/teams.png"
+  ],
   "requirements": {
-    "paseo": ">=0.9.2"
+    "paseo": ">=0.16.0"
   }
 }

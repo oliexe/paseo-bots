@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, TextInput } from "@getpaseo/plugin/client/react-native";
+import { Icon, TextInput } from "@getpaseo/plugin/client/ui";
 import { useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, View, useWindowDimensions, type LayoutRectangle, type StyleProp, type TextInputProps, type ViewStyle } from "react-native";
 import { MONO_FONT, MONO_PROPS, nativeTokens, useHover, withAlpha } from "../native";
@@ -273,7 +273,7 @@ export function SearchField({ colors, value, onChangeText, placeholder }: { colo
 // ---------------------------------------------------------------- alert, badge, switch
 
 /** Paseo's Alert at size sm: 1px tinted border, transparent fill, 14pt icon, muted body. */
-export function Alert({ colors, variant = "default", title, description }: { colors: Colors; variant?: "default" | "warning" | "error"; title?: string; description?: string | string[] }) {
+export function Alert({ colors, variant = "default", title, description, actionLabel, onAction }: { colors: Colors; variant?: "default" | "warning" | "error"; title?: string; description?: string | string[]; actionLabel?: string; onAction?(): void }) {
   const accent = variant === "warning" ? colors.statusWarning : variant === "error" ? colors.statusDanger : null;
   const icon = variant === "warning" ? "AlertTriangle" : variant === "error" ? "CircleX" : null;
   const lines = description === undefined ? [] : Array.isArray(description) ? description : [description];
@@ -293,6 +293,7 @@ export function Alert({ colors, variant = "default", title, description }: { col
         <View style={{ flex: 1, minWidth: 0 }}>{title ? <Text style={{ fontSize: ui(14), fontWeight: "500", color: accent ?? colors.foreground }}>{title}</Text> : body[0]}</View>
       </View>
       {(title ? body : body.slice(1)).length ? <View style={{ marginLeft: icon ? 26 : 0 }}>{title ? body : body.slice(1)}</View> : null}
+      {actionLabel && onAction ? <View style={{ alignSelf: "flex-start", marginTop: 8 }}><Button colors={colors} label={actionLabel} onPress={onAction} /></View> : null}
     </View>
   );
 }

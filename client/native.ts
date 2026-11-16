@@ -3,6 +3,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useState } from "react";
 import { Alert, Platform } from "react-native";
+import { confirmOnWeb } from "./web";
 
 type Colors = PluginTheme["colors"];
 
@@ -144,13 +145,6 @@ export interface ConfirmInput {
   destructive?: boolean;
 }
 
-// This plugin typechecks without the DOM library. Declare only what this module uses.
-const host = globalThis as unknown as {
-  paseoDesktop?: { dialog?: { ask?: (message: string, options: { title: string; okLabel: string; cancelLabel: string; kind: "warning" | "info" }) => Promise<boolean> } };
-  confirm?: (message?: string) => boolean;
-  document?: { activeElement?: { blur?: () => void } | null };
-};
-
 /** Paseo's confirmDialog (utils/confirm-dialog.ts): Alert on phones, the Electron dialog on desktop, confirm() on web. */
 export async function confirmDialog(input: ConfirmInput): Promise<boolean> {
   const confirmLabel = input.confirmLabel ?? "Confirm";
@@ -168,10 +162,5 @@ export async function confirmDialog(input: ConfirmInput): Promise<boolean> {
       );
     });
   }
-  host.document?.activeElement?.blur?.();
-  const ask = host.paseoDesktop?.dialog?.ask;
-  if (typeof ask === "function") {
-    return ask(input.message, { title: input.title, okLabel: confirmLabel, cancelLabel, kind: input.destructive ? "warning" : "info" });
-  }
-  return host.confirm ? host.confirm(`${input.title}\n\n${input.message}`) : false;
+  return confirmOnWeb({ title: input.title, message: input.message, confirmLabel, cancelLabel, destructive: input.destructive === true });
 }

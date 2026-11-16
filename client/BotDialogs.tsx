@@ -1,15 +1,16 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin/client";
-import { Icon, Modal, TextInput, copyText, useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
-import { useEffect, useState } from "react";
+import { copyText, Icon, Modal, SettingsAction, SettingsCard, SettingsSection, SettingsSwitch, TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { Bot, BotAvatar, Preset } from "../shared/bot";
+import type { Bot, BotAvatar, BotDefaults, Preset } from "../shared/bot";
 import { exportBotRpc } from "../shared/rpc";
 import { BOT_TEMPLATES, type BotTemplate } from "../shared/templates";
 import { Avatar } from "./Avatar";
+import { NewBotDefaults } from "./NewBotDefaults";
+import type { LocalHost } from "./data";
 import { errorText, MONO_FONT, MONO_PROPS, nativeTokens, useHover } from "./native";
-import { Button, FormTextArea, SheetActions } from "./panel/controls";
+import { Button, FormTextArea, SectionLink, SheetActions } from "./panel/controls";
 import type { MenuEntry } from "./ui/Menu";
 import { code, codeLine, ui } from "./typography";
 
@@ -20,39 +21,61 @@ type Colors = PluginTheme["colors"];
 export function NewBotDialog({
   colors,
   presets,
+  defaults,
+  localHost,
+  onDefaultsChange,
+  onDeletePreset,
   onClose,
   onCreate,
   onImport,
 }: {
   colors: Colors;
   presets: readonly Preset[];
+  defaults: BotDefaults;
+  localHost: LocalHost;
+  onDefaultsChange(patch: Partial<BotDefaults>): void;
+  onDeletePreset(preset: Preset): Promise<void>;
   onClose(): void;
-  onCreate(start?: { template?: BotTemplate; preset?: Preset }): void;
+  onCreate(start: { template?: BotTemplate; preset?: Preset } | undefined, defaults: BotDefaults): void;
   onImport(json: string): Promise<void>;
 }) {
   const [json, setJson] = useState("");
   const [importing, setImporting] = useState(false);
+  const [editingDefaults, setEditingDefaults] = useState(false);
+  const [managingPresets, setManagingPresets] = useState(false);
+  const [pendingPreset, setPendingPreset] = useState<string | null>(null);
+  const [draftDefaults, setDraftDefaults] = useState(defaults);
+  const defaultsRef = useRef(defaults);
   const toast = useToast();
   return (
     <Modal title="New bot" open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content>
         <SettingsSection title="Start from">
           <SettingsCard>
-            <StartRow colors={colors} label="Blank bot" hint="Set everything up yourself in the settings panel." onPress={() => onCreate()} />
+            <StartRow colors={colors} label="Blank bot" hint="Set everything up yourself in the settings panel." onPress={() => onCreate(undefined, defaultsRef.current)} />
             {BOT_TEMPLATES.map((template) => (
-              <StartRow key={template.id} colors={colors} label={template.title} hint={template.description} avatar={{ seed: template.avatarSeed }} onPress={() => onCreate({ template })} />
+              <StartRow key={template.id} colors={colors} label={template.title} hint={template.description} avatar={{ seed: template.avatarSeed }} onPress={() => onCreate({ template }, defaultsRef.current)} />
             ))}
           </SettingsCard>
         </SettingsSection>
         {presets.length ? (
-          <SettingsSection title="Your presets" info="Bots you saved as presets from their menu. Manage them in Settings, Plugins, paseo-bots.">
+          <SettingsSection title="Your presets" info="Bots you saved as presets from their menu. Deleting a preset leaves bots made from it unchanged." trailing={<SectionLink colors={colors} label={managingPresets ? "Done" : "Manage"} icon={managingPresets ? "Check" : "Pencil"} onPress={() => setManagingPresets(!managingPresets)} />}>
             <SettingsCard>
               {presets.map((preset) => (
-                <StartRow key={preset.id} colors={colors} label={preset.name} hint={preset.title || preset.description} avatar={preset.avatar} onPress={() => onCreate({ preset })} />
+                managingPresets ? <SettingsAction key={preset.id} label={preset.name} hint={preset.title || preset.description} actionLabel={pendingPreset === preset.id ? "Deleting…" : "Delete"} disabled={pendingPreset !== null} onPress={() => {
+                  if (pendingPreset) return;
+                  setPendingPreset(preset.id);
+                  void onDeletePreset(preset).catch((error: unknown) => toast.error(errorText(error))).finally(() => setPendingPreset(null));
+                }} /> : <StartRow key={preset.id} colors={colors} label={preset.name} hint={preset.title || preset.description} avatar={preset.avatar} onPress={() => onCreate({ preset }, defaultsRef.current)} />
               ))}
             </SettingsCard>
           </SettingsSection>
         ) : null}
+        {editingDefaults ? <NewBotDefaults localHost={localHost} defaults={draftDefaults} trailing={<SectionLink colors={colors} label="Done" icon="Check" onPress={() => setEditingDefaults(false)} />} onChange={(patch) => {
+          defaultsRef.current = { ...defaultsRef.current, ...patch };
+          setDraftDefaults(defaultsRef.current);
+          onDefaultsChange(patch);
+        }} /> : <SettingsCard><SettingsAction label="Defaults for new bots" hint="Provider, model and permissions for new bots" actionLabel="Configure" onPress={() => setEditingDefaults(true)} /></SettingsCard>}
         <SettingsSection title="Import" info="Paste a bot or team file from paseo-bots. Routines arrive paused, skills need a review and secrets must be filled in again.">
           <FormTextArea
             colors={colors}

@@ -27,6 +27,7 @@ describe("latestDue", () => {
     expect(latestDue({ kind: "interval", minutes: 30 }, at("2026-09-26T10:00:00"), at("2026-09-26T10:31:00"))).toEqual(at("2026-09-26T10:30:00"));
     expect(latestDue({ kind: "once", at: "2026-09-26T10:00:00" }, at("2026-09-26T09:00:00"), at("2026-09-26T10:05:00"))).toEqual(at("2026-09-26T10:00:00"));
     expect(latestDue({ kind: "once", at: "2026-09-26T10:00:00" }, at("2026-09-26T10:00:00"), at("2026-09-26T11:00:00"))).toBeNull();
+    expect(latestDue({ kind: "interval", minutes: 30 }, at("2026-09-26T10:00:00"), at("2026-09-26T11:41:00"))).toEqual(at("2026-09-26T11:30:00"));
   });
 });
 
@@ -90,6 +91,51 @@ describe("skill sources", () => {
 });
 
 import { CRON_PRESETS, describeCron, scheduleToCron, validateCron } from "../shared/routines";
+import { parseLocalDateTime, scheduleFrom, upcomingRuns } from "../shared/routines";
+
+describe("time zones and daylight saving", () => {
+  it("keeps a calendar schedule in its configured zone regardless of the client zone", () => {
+    const schedule = { kind: "cron" as const, expression: "0 9 * * *", timeZone: "America/New_York" };
+    expect(nextRun(schedule, new Date("2026-06-01T00:00:00Z"), new Date("2026-06-01T12:00:00Z"))).toEqual(new Date("2026-06-01T13:00:00Z"));
+    expect(nextRun(schedule, new Date("2026-12-01T00:00:00Z"), new Date("2026-12-01T12:00:00Z"))).toEqual(new Date("2026-12-01T14:00:00Z"));
+  });
+
+  it("skips nonexistent spring-forward minutes instead of shifting the run by an hour", () => {
+    const before = new Date("2026-03-29T00:00:00Z");
+    const cron = { kind: "cron" as const, expression: "30 2 * * *", timeZone: "Europe/Prague" };
+    const daily = { kind: "daily" as const, time: "02:30", weekdays: [0, 1, 2, 3, 4, 5, 6], timeZone: "Europe/Prague" };
+    expect(nextRun(cron, before, before)).toEqual(new Date("2026-03-30T00:30:00Z"));
+    expect(nextRun(daily, before, before)).toEqual(new Date("2026-03-30T00:30:00Z"));
+    expect(parseLocalDateTime("2026-03-29 02:30", "Europe/Prague")).toBeNull();
+    expect(() => scheduleFrom({ type: "once", at: "2026-03-29 02:30", timeZone: "Europe/Prague" }, before)).toThrow();
+  });
+
+  it("orders repeated autumn minutes by their actual instant", () => {
+    const before = new Date("2026-10-25T00:00:00Z");
+    const schedule = { kind: "cron" as const, expression: "15,45 2 * * *", timeZone: "Europe/Prague" };
+    expect(upcomingRuns(schedule, before, before, 4)).toEqual([
+      "2026-10-25T00:15:00Z", "2026-10-25T00:45:00Z", "2026-10-25T01:15:00Z", "2026-10-25T01:45:00Z",
+    ].map((text) => new Date(text)));
+    expect(latestDue(schedule, before, new Date("2026-10-25T01:30:00Z"))).toEqual(new Date("2026-10-25T01:15:00Z"));
+  });
+
+  it("rejects impossible dates and invalid zones without silently normalizing them", () => {
+    expect(parseLocalDateTime("2026-02-30 09:00", "UTC")).toBeNull();
+    expect(parseLocalDateTime("2026-01-01 25:00", "UTC")).toBeNull();
+    expect(parseLocalDateTime("2026-01-01 09:00", "Not/AZone")).toBeNull();
+    expect(nextRun({ kind: "cron", expression: "0 9 * * *", timeZone: "Not/AZone" }, new Date(), new Date())).toBeNull();
+    expect(() => scheduleFrom({ type: "once", at: "2027-02-30 09:00" }, new Date("2026-01-01"))).toThrow();
+    expect(() => scheduleFrom({ type: "interval", every_minutes: 0 }, new Date())).toThrow();
+    expect(() => scheduleFrom({ type: "interval", every_minutes: 1441 }, new Date())).toThrow();
+    expect(() => scheduleFrom({ type: "cron", expression: "0 9 * * *", timeZone: "Not/AZone" }, new Date())).toThrow();
+  });
+
+  it("accepts explicit UTC or offset timestamps and handles fractional-offset zones", () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+    expect(scheduleFrom({ type: "once", at: "2027-01-01T09:00:00+05:45" }, now)).toEqual({ kind: "once", at: "2027-01-01T03:15:00.000Z" });
+    expect(parseLocalDateTime("2027-01-01 09:00", "Asia/Kathmandu")).toEqual(new Date("2027-01-01T03:15:00Z"));
+  });
+});
 
 describe("cron routines", () => {
   it("validates with Paseo's messages", () => {

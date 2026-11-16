@@ -1,43 +1,16 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, copyText } from "@getpaseo/plugin/client/react-native";
+import { copyText, Icon } from "@getpaseo/plugin/client/ui";
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Animated, Easing, Platform, Pressable, Text, View, type StyleProp, type TextStyle } from "react-native";
 import { nativeTokens, useHover } from "../../native";
 import { speak, stopSpeaking, useSpeaking } from "../../speech";
 import { ui } from "../../typography";
 import { tooltip } from "../../ui/Tooltip";
+import { ensureStyle } from "../../web";
 
 type Colors = PluginTheme["colors"];
 
 export const isWeb = Platform.OS === "web";
-
-// This plugin typechecks without the DOM library. Declare only what this module uses.
-interface StyleNode {
-  id: string;
-  textContent: string | null;
-}
-const dom = globalThis as unknown as {
-  document?: {
-    getElementById(id: string): StyleNode | null;
-    createElement(tag: "style"): StyleNode;
-    head?: { appendChild(node: StyleNode): void };
-  };
-};
-
-/** Adds a stylesheet to the page once (web only). */
-function ensureStyle(id: string, css: string): void {
-  const document = dom.document;
-  if (!isWeb || !document?.head) return;
-  const existing = document.getElementById(id);
-  if (existing) {
-    if (existing.textContent !== css) existing.textContent = css;
-    return;
-  }
-  const node = document.createElement("style");
-  node.id = id;
-  node.textContent = css;
-  document.head.appendChild(node);
-}
 
 /** Paseo's LoadingSpinner: an ActivityIndicator, scaled for sizes under the platform's small one. */
 export function Spinner({ color, size = 20 }: { color: string; size?: number }) {
@@ -139,6 +112,12 @@ export const CopyButton = memo(function CopyButton({
     </Pressable>
   );
 });
+
+/** Small, keyboard-accessible actions attached to a single message. */
+export function MessageAction({ colors, icon, label, active = false, onPress }: { colors: Colors; icon: string; label: string; active?: boolean; onPress(): void }) {
+  const { hovered, hoverProps } = useHover();
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active }} {...tooltip(label)} {...hoverProps} onPress={onPress} style={({ pressed }) => ({ padding: 5, borderRadius: 5, backgroundColor: hovered || pressed ? colors.surface2 : "transparent" })}><Icon name={icon} size={14} color={active ? colors.accent : hovered ? colors.foreground : colors.foregroundMuted} /></Pressable>;
+}
 
 /** Reads a turn aloud in the bot's voice, or stops the reading; styled like CopyButton. */
 export function SpeakButton({ colors, text, voice }: { colors: Colors; text: string; voice: string | null }) {

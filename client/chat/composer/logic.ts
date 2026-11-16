@@ -4,11 +4,11 @@ import type { ComposerAttachment } from "../../../shared/attachments";
 
 // ---------------------------------------------------------------- send behaviour
 
-/** Paseo's `sendBehavior` app setting (hooks/use-settings/storage.ts). Default "steer". */
+/** The action for messages sent while a bot is working. Default "steer". */
 export type SendBehavior = "interrupt" | "steer" | "queue";
 export const DEFAULT_SEND_BEHAVIOR: SendBehavior = "steer";
 
-/** Reads `sendBehavior` out of the persisted `@paseo:app-settings` JSON, with Paseo's `.catch("steer")`. */
+/** Parses a saved send preference, falling back to "steer". */
 export function parseSendBehavior(raw: string | null | undefined): SendBehavior {
   if (!raw) return DEFAULT_SEND_BEHAVIOR;
   try {
@@ -127,6 +127,13 @@ export function shouldDrainQueue(input: { running: boolean; queued: number; inFl
   return input.hasAgent && !input.running && input.queued > 0 && !input.inFlight;
 }
 
+export type QueueDrainState = "idle" | "sending" | "awaiting" | "paused" | "stopped";
+
+/** A user stop stays paused even while the daemon still reports the interrupted turn running. */
+export function queueDrainAfterRunning(state: QueueDrainState, running: boolean): QueueDrainState {
+  return running && (state === "awaiting" || state === "paused") ? "idle" : state;
+}
+
 // ---------------------------------------------------------------- drafts
 
 export interface ComposerDraft {
@@ -138,6 +145,12 @@ export interface ComposerDraft {
 /** One draft per chat, like Paseo's `agent:<serverId>:<agentId>` draft keys; new chats share a per-bot draft. */
 export function composerDraftKey(hostKey: string, botId: string, agentId: string | null): string {
   return agentId ? `agent:${hostKey}:${agentId}` : `new:${hostKey}:${botId}`;
+}
+
+/** Keep the user's unfinished reply when a reviewed card adds its text to the composer. */
+export function appendDraftText(current: string, addition: string): string {
+  if (!addition.trim()) return current;
+  return current.trim() ? `${current.replace(/\s+$/, "")}\n\n${addition}` : addition;
 }
 
 export function isDraftEmpty(draft: { text: string; attachments: readonly unknown[] } | null | undefined): boolean {
@@ -168,7 +181,7 @@ export function parseDrafts(raw: string | null | undefined): Record<string, Comp
       const entry = value as Record<string, unknown>;
       const text = typeof entry.text === "string" ? entry.text : "";
       const attachments = Array.isArray(entry.attachments) ? entry.attachments.filter(isAttachment) : [];
-      const updatedAt = typeof entry.updatedAt === "number" ? entry.updatedAt : 0;
+      const updatedAt = typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt) ? entry.updatedAt : 0;
       if (!isDraftEmpty({ text, attachments })) drafts[key] = { text, attachments, updatedAt };
     }
     return drafts;
@@ -179,23 +192,47 @@ export function parseDrafts(raw: string | null | undefined): Record<string, Comp
 
 /**
  * Keeps the newest drafts and, when the store would outgrow storage quotas, drops image
- * data from the oldest drafts first (text and other attachments always survive).
+ * data from the oldest drafts first. If text alone is too large, keep the newest
+ * drafts; a single oversized draft retains the prefix that fits the budget.
  */
 export function serializeDrafts(drafts: Record<string, ComposerDraft>, limits: { maxDrafts?: number; maxBytes?: number } = {}): string {
-  const maxDrafts = limits.maxDrafts ?? MAX_DRAFTS;
-  const maxBytes = limits.maxBytes ?? MAX_DRAFT_BYTES;
+  const maxDrafts = Math.max(0, Math.floor(limits.maxDrafts ?? MAX_DRAFTS));
+  const maxBytes = Math.max(2, Math.floor(limits.maxBytes ?? MAX_DRAFT_BYTES));
   const entries = Object.entries(drafts)
     .filter(([, draft]) => !isDraftEmpty(draft))
     .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
     .slice(0, maxDrafts);
   let json = JSON.stringify(Object.fromEntries(entries));
-  for (let index = entries.length - 1; index >= 0 && json.length > maxBytes; index--) {
+  for (let index = entries.length - 1; index >= 0 && utf8Length(json) > maxBytes; index--) {
     const [key, draft] = entries[index]!;
     if (!draft.attachments.some((attachment) => attachment.kind === "image")) continue;
     entries[index] = [key, { ...draft, attachments: draft.attachments.filter((attachment) => attachment.kind !== "image") }];
     json = JSON.stringify(Object.fromEntries(entries.filter(([, value]) => !isDraftEmpty(value))));
   }
+  while (entries.length > 1 && utf8Length(json) > maxBytes) {
+    entries.pop();
+    json = JSON.stringify(Object.fromEntries(entries.filter(([, value]) => !isDraftEmpty(value))));
+  }
+  if (entries.length === 1 && utf8Length(json) > maxBytes) {
+    const [key, draft] = entries[0]!;
+    let low = 0, high = draft.text.length;
+    const encode = (length: number) => JSON.stringify({ [key]: { ...draft, text: draft.text.slice(0, length), attachments: [] } });
+    if (utf8Length(encode(0)) > maxBytes) return "{}";
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (utf8Length(encode(mid)) <= maxBytes) low = mid;
+      else high = mid - 1;
+    }
+    json = encode(low);
+  }
   return json;
+}
+
+/** UTF-8 byte count without depending on Buffer or a native TextEncoder. */
+function utf8Length(text: string): number {
+  let bytes = 0;
+  for (const char of text) { const point = char.codePointAt(0)!; bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4; }
+  return bytes;
 }
 
 /**

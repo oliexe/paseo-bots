@@ -1,7 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin/client";
-import { useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
+import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, useToast } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { View } from "react-native";
 import { accountLabel, type AppAccount, type AppCard } from "../../shared/apps";

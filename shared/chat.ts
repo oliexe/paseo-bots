@@ -25,6 +25,7 @@ const normalize = (path: string | null | undefined) => (path ?? "").replace(/\/+
 // root, so the app and the server pass their Paseo API in, and it's checked against this.
 
 interface ChatWorkspace {
+  background?: boolean;
   projectId: string;
   projectRootPath: string;
   workspaceDirectory?: string;
@@ -53,10 +54,10 @@ interface WorkspaceHandle {
 export interface ChatApi {
   readonly projects: { list(): Promise<{ projects: ChatWorkspace[] }> };
   readonly workspaces: {
-    list(): Promise<{ entries: ChatWorkspace[] }>;
+    list(options?: { filter: { includeBackground: boolean } }): Promise<{ entries: ChatWorkspace[] }>;
     ref(workspace: string | ChatWorkspace): WorkspaceHandle;
     open(path: string): Promise<WorkspaceHandle>;
-    create(options: { title: string; source: { kind: "directory"; path: string; projectId?: string } }): Promise<WorkspaceHandle>;
+    create(options: { title: string; background: true; source: { kind: "directory"; path: string; projectId?: string } }): Promise<WorkspaceHandle>;
   };
   readonly providers: { snapshot(): Promise<{ entries: { provider: string; models?: { id: string; isDefault?: boolean; isSelectable?: boolean }[] }[] }> };
 }
@@ -80,9 +81,10 @@ async function botsProjectId(api: ChatApi, root: string): Promise<string> {
 
 /** Finds the bot's workspace (by its folder) or creates it, and keeps its title in step with the bot's name. */
 async function ensureBotWorkspace(api: ChatApi, bot: Bot, placement: BotPlacement) {
-  const { entries } = await api.workspaces.list();
+  const { entries } = await api.workspaces.list({ filter: { includeBackground: true } });
   const mine = entries.find(
     (workspace) =>
+      workspace.background === true &&
       normalize(workspace.workspaceDirectory ?? workspace.projectRootPath) === normalize(placement.path) &&
       // A custom folder can have other workspaces; only the one named after the bot is the bot's.
       (placement.projectRoot !== null || workspace.title === bot.name),
@@ -95,6 +97,7 @@ async function ensureBotWorkspace(api: ChatApi, bot: Bot, placement: BotPlacemen
   const projectId = placement.projectRoot ? await botsProjectId(api, placement.projectRoot) : undefined;
   return api.workspaces.create({
     title: bot.name,
+    background: true,
     source: { kind: "directory", path: placement.path, ...(projectId ? { projectId } : {}) },
   });
 }
@@ -102,8 +105,8 @@ async function ensureBotWorkspace(api: ChatApi, bot: Bot, placement: BotPlacemen
 /** Renames the bot's workspace after the bot is renamed; does nothing if it doesn't exist yet. */
 export async function syncBotWorkspaceTitle(api: ChatApi, bot: Bot, placement: BotPlacement): Promise<void> {
   if (placement.projectRoot === null) return;
-  const { entries } = await api.workspaces.list();
-  const mine = entries.find((workspace) => normalize(workspace.workspaceDirectory ?? workspace.projectRootPath) === normalize(placement.path));
+  const { entries } = await api.workspaces.list({ filter: { includeBackground: true } });
+  const mine = entries.find((workspace) => workspace.background === true && normalize(workspace.workspaceDirectory ?? workspace.projectRootPath) === normalize(placement.path));
   if (mine && mine.title !== bot.name) await api.workspaces.ref(mine).setTitle(bot.name);
 }
 

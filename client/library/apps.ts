@@ -10,7 +10,7 @@ export const APPS_KEY = ["paseo-bots", "apps"] as const;
 
 export function useAppsStatus() {
   const status = useRpc(appsStatusRpc);
-  return useQuery({ queryKey: [...APPS_KEY, "status"], queryFn: () => status({}), staleTime: 60_000 });
+  return useQuery({ queryKey: [...APPS_KEY, "status"], queryFn: () => status({}), staleTime: 5_000, refetchInterval: (query) => query.state.data?.login ? 2_000 : false });
 }
 
 export function useAppsCatalog(enabled: boolean) {

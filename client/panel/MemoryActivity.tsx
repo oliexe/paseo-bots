@@ -1,6 +1,5 @@
 import { useRpc } from "@getpaseo/plugin/client";
-import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsCard } from "@getpaseo/plugin/client/ui";
+import { Modal, SettingsCard, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";

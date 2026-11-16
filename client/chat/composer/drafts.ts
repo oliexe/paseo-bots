@@ -1,56 +1,41 @@
 import { useSyncExternalStore } from "react";
-import { Platform } from "react-native";
-import type { ComposerAttachment } from "../../../shared/attachments";
-import { enqueue, isDraftEmpty, parseDrafts, serializeDrafts, takeQueued, type ComposerDraft, type QueuedMessage } from "./logic";
-import { readItem, readItemSync, writeItem } from "./storage";
+import { appendDraftText, enqueue, takeQueued, type QueuedMessage } from "./logic";
+import { useDeviceStorage } from "./storage";
+import type { DeviceStore } from "../../device-store";
+import { ComposerDraftStore } from "./draft-store";
+import { mutateDraft } from "./draft-mutations";
+import { isDraftAttachmentPending, isDraftCreationPending, subscribeDraftCreation } from "./draft-creation";
+import { isQueuePaused, subscribeQueuePause } from "./queue-pause";
 
 // ---------------------------------------------------------------- drafts
 
-// Paseo keeps one draft per chat (stores/draft-store) and persists it every 200ms.
-const DRAFTS_KEY = "@paseo-bots:composer-drafts";
-const PERSIST_INTERVAL_MS = 200;
-
-let drafts: Record<string, ComposerDraft> = Platform.OS === "web" ? parseDrafts(readItemSync(DRAFTS_KEY)) : {};
-let loaded = Platform.OS === "web";
-let loading: Promise<void> | null = null;
-let timer: ReturnType<typeof setTimeout> | null = null;
-
-/** Loads persisted drafts once (phones read AsyncStorage asynchronously; web is already loaded). */
-export function loadDrafts(): Promise<void> {
-  if (loaded) return Promise.resolve();
-  loading ??= readItem(DRAFTS_KEY).then((raw) => {
-    // Drafts touched before the load finished win over the stored copies.
-    drafts = { ...parseDrafts(raw), ...drafts };
-    loaded = true;
-  });
-  return loading;
+const stores = new WeakMap<DeviceStore, ComposerDraftStore>();
+export function useDraftStore(): ComposerDraftStore {
+  const storage = useDeviceStorage();
+  let store = stores.get(storage);
+  if (!store) { store = new ComposerDraftStore(storage); stores.set(storage, store); }
+  return store;
 }
 
-export function getDraft(key: string): ComposerDraft | null {
-  return drafts[key] ?? null;
+export function useDraftCreationPending(store: ComposerDraftStore, key: string): boolean {
+  return useSyncExternalStore(
+    (listener) => subscribeDraftCreation(store, key, listener),
+    () => isDraftCreationPending(store, key),
+    () => isDraftCreationPending(store, key),
+  );
 }
 
-export function setDraft(key: string, draft: { text: string; attachments: ComposerAttachment[] } | null): void {
-  const current = drafts[key];
-  if (isDraftEmpty(draft)) {
-    if (!current) return;
-    const { [key]: _removed, ...rest } = drafts;
-    drafts = rest;
-  } else {
-    if (current && current.text === draft!.text && current.attachments === draft!.attachments) return;
-    drafts = { ...drafts, [key]: { text: draft!.text, attachments: draft!.attachments, updatedAt: Date.now() } };
-  }
-  schedulePersist();
+export function useDraftAttachmentPending(store: ComposerDraftStore, key: string): boolean {
+  return useSyncExternalStore(
+    (listener) => subscribeDraftCreation(store, key, listener),
+    () => isDraftAttachmentPending(store, key),
+    () => isDraftAttachmentPending(store, key),
+  );
 }
 
-function schedulePersist(): void {
-  if (timer) return;
-  timer = setTimeout(() => {
-    timer = null;
-    const write = () => void writeItem(DRAFTS_KEY, serializeDrafts(drafts));
-    if (loaded) write();
-    else void loadDrafts().then(write);
-  }, PERSIST_INTERVAL_MS);
+export async function insertDraftText(store: ComposerDraftStore, key: string, text: string): Promise<void> {
+  if (!text.trim()) return;
+  await mutateDraft(store, key, (current) => ({ ...current, text: appendDraftText(current.text, text) }), { focus: true });
 }
 
 // ---------------------------------------------------------------- queue
@@ -100,4 +85,8 @@ export function useQueue(key: string): QueuedMessage[] {
     () => readQueue(key),
     () => readQueue(key),
   );
+}
+
+export function useQueuePaused(key: string): boolean {
+  return useSyncExternalStore(subscribeQueuePause, () => isQueuePaused(key), () => isQueuePaused(key));
 }

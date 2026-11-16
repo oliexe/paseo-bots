@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppState, NativeModules, Platform, TurboModuleRegistry } from "react-native";
+import { readWebStorage } from "./web";
 
 // Paseo scales its UI from the user's Appearance settings (interface, content and
 // code sizes), but the plugin theme only carries colours. This reads the same
@@ -46,9 +47,6 @@ function parse(raw: string | null | undefined): TypeScale {
   }
 }
 
-// This plugin typechecks without the DOM library. Declare only what this module uses.
-declare const localStorage: { getItem(key: string): string | null } | undefined;
-
 type AsyncStorageModule = { multiGet(keys: string[], callback: (errors: unknown, result: [string, string | null][] | null) => void): void };
 
 function readNative(): Promise<string | null> {
@@ -65,12 +63,7 @@ function readNative(): Promise<string | null> {
 }
 
 async function readScale(): Promise<TypeScale> {
-  if (native) return parse(await readNative());
-  try {
-    return parse(typeof localStorage === "undefined" ? null : localStorage.getItem(SETTINGS_KEY));
-  } catch {
-    return DEFAULTS;
-  }
+  return parse(native ? await readNative() : readWebStorage(SETTINGS_KEY));
 }
 
 /** Interface text scaled like Paseo's ramp: `ui(14)` is the base size. */

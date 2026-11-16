@@ -6,7 +6,7 @@ import { ProposalSchema } from "./proposals";
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 /** "MEMORY.md" or a topic file such as "projects.md" (stored under memory/). */
 const MemoryFileName = z.string().regex(/^[A-Za-z0-9 ._-]+\.md$/);
-const SkillName = z.string().regex(/^[A-Za-z0-9._-]+$/);
+const SkillName = z.string().max(128).regex(/^[A-Za-z0-9._-]+$/).refine((id) => id !== "." && id !== "..", "Invalid skill name");
 
 /**
  * Creates (if needed) the Bots project folder and this bot's folder inside it.
@@ -45,18 +45,18 @@ export const memoryListRpc = defineRpc({
 export const memoryReadRpc = defineRpc({
   name: "bots.memory.read",
   input: z.object({ botId: BotId, name: MemoryFileName }),
-  output: z.object({ text: z.string() }),
+  output: z.object({ text: z.string(), revision: z.string().nullable() }),
 });
 
 export const memoryWriteRpc = defineRpc({
   name: "bots.memory.write",
-  input: z.object({ botId: BotId, name: MemoryFileName, text: z.string().max(200_000) }),
+  input: z.object({ botId: BotId, name: MemoryFileName, text: z.string().max(200_000), expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional() }),
   output: z.object({ ok: z.boolean() }),
 });
 
 export const memoryDeleteRpc = defineRpc({
   name: "bots.memory.delete",
-  input: z.object({ botId: BotId, name: MemoryFileName }),
+  input: z.object({ botId: BotId, name: MemoryFileName, expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional() }),
   output: z.object({ ok: z.boolean() }),
 });
 
@@ -146,43 +146,15 @@ export const mcpSourcesRpc = defineRpc({
   output: z.object({ sources: z.array(z.object({ label: z.string(), count: z.number(), json: z.string() })) }),
 });
 
-// ---------------------------------------------------------------- avatar pictures
-
-/** Whether an OpenAI key for drawing avatars is saved on this host; only its last characters are shown. */
-export const avatarKeyStatusRpc = defineRpc({
-  name: "bots.avatar.status",
-  input: z.object({}),
-  output: z.object({ configured: z.boolean(), keyHint: z.string().nullable() }),
-});
-
-export const avatarSetKeyRpc = defineRpc({
-  name: "bots.avatar.set-key",
-  input: z.object({ key: z.string().min(1).max(400) }),
-  output: z.object({ ok: z.boolean() }),
-});
-
-export const avatarRemoveKeyRpc = defineRpc({
-  name: "bots.avatar.remove-key",
-  input: z.object({}),
-  output: z.object({ ok: z.boolean() }),
-});
-
-/** Draws an avatar from a bot's name, role and an optional direction; returns a WebP data URL. */
-export const avatarGenerateRpc = defineRpc({
-  name: "bots.avatar.generate",
-  input: z.object({ name: z.string().max(200), title: z.string().max(400), description: z.string().max(4000), direction: z.string().max(400) }),
-  output: z.object({ image: z.string() }),
-});
-
 /** One run of a routine, like Paseo's ScheduleRun. */
-const RoutineRunSchema = z.object({
+export const RoutineRunSchema = z.object({
   id: z.string(),
   trigger: z.enum(["schedule", "manual", "webhook"]),
   /** When the run was due; for manual and webhook runs, when it was asked for. */
   scheduledFor: z.string(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
-  status: z.enum(["running", "succeeded", "failed", "skipped-busy", "skipped-missed"]),
+  status: z.enum(["running", "succeeded", "failed", "canceled", "skipped-busy", "skipped-missed"]),
   agentId: z.string().nullable(),
   /** The start of the bot's reply once the run finished. */
   output: z.string().nullable(),
@@ -195,24 +167,32 @@ export const RoutineRunCardSchema = RoutineRunSchema.pick({ trigger: true, sched
 export type RoutineRunCard = z.infer<typeof RoutineRunCardSchema>;
 export const ROUTINE_RUN_CARD = { kind: "routine-run", version: 1 } as const;
 
-const RoutineRecordSchema = z.object({
+export const RoutineRecordSchema = z.object({
   /** The last time the schedule fired (runs, skips and misses), which the next due time counts from. */
   lastRunAt: z.string().nullable(),
   /** The latest runs, oldest first. */
   runs: z.array(RoutineRunSchema),
+  /** Hashes of manual tool requests survive history trimming, so an old retry never reruns work. */
+  manualRequests: z.record(z.string(), z.string()).optional(),
 });
 export type RoutineRecord = z.infer<typeof RoutineRecordSchema>;
 
 export const routineStatusRpc = defineRpc({
   name: "bots.routines.status",
   input: z.object({}),
-  output: z.object({ scheduler: z.boolean(), routines: z.record(z.string(), RoutineRecordSchema) }),
+  output: z.object({ scheduler: z.boolean(), timeZone: z.string(), error: z.string().nullable(), routines: z.record(z.string(), RoutineRecordSchema) }),
 });
 
 export const routineRunNowRpc = defineRpc({
   name: "bots.routines.run-now",
   input: z.object({ botId: BotId, routineId: z.string() }),
   output: z.object({ run: RoutineRunSchema }),
+});
+
+export const routineCancelRunRpc = defineRpc({
+  name: "bots.routines.cancel-run",
+  input: z.object({ botId: BotId, routineId: z.string().min(1).max(100), runId: z.string().min(1).max(100) }).strict(),
+  output: z.object({ run: RoutineRunSchema, sessionReopened: z.boolean() }),
 });
 
 /** The routine's webhook URL on this host; `rotate` replaces its secret so the old URL stops working. */
@@ -270,17 +250,30 @@ export const AppSignInSchema = z.object({ slug: z.string(), url: z.string(), wor
 const Alias = z.string().max(40).regex(/^[\w .@+-]*$/, "Use letters, numbers, spaces, dots and dashes");
 const AppSlug = z.string().regex(/^[a-z0-9_-]+$/);
 
-/** Whether a Composio project key is saved on this host; only its last characters are shown. */
+const ComposioLogin = z.object({ url: z.string().url(), code: z.string(), expiresAt: z.string() });
+
+/** Sign-in progress and account details, with credentials kept on the host. */
 export const appsStatusRpc = defineRpc({
   name: "bots.apps.status",
   input: z.object({}),
-  output: z.object({ configured: z.boolean(), keyHint: z.string().nullable() }),
+  output: z.object({
+    configured: z.boolean(),
+    keyHint: z.string().nullable(),
+    account: z.object({ email: z.string(), organization: z.string() }).nullable(),
+    login: ComposioLogin.nullable(),
+    loginError: z.string().nullable(),
+  }),
 });
 
-/** Saves a Composio project key after opening a session with it. */
-export const appsSetKeyRpc = defineRpc({
-  name: "bots.apps.set-key",
-  input: z.object({ key: z.string().min(1).max(200) }),
+export const appsLoginRpc = defineRpc({
+  name: "bots.apps.login",
+  input: z.object({}),
+  output: ComposioLogin,
+});
+
+export const appsCancelLoginRpc = defineRpc({
+  name: "bots.apps.cancel-login",
+  input: z.object({}),
   output: z.object({ ok: z.boolean() }),
 });
 

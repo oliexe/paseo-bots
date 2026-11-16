@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal } from "@getpaseo/plugin/client/ui";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";
 import { nativeTokens, useHover } from "../native";

@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoApi } from "../paseo";
-import { FlatList, Icon } from "@getpaseo/plugin/client/react-native";
+import { FlatList, Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import type { ComposerAttachment } from "../../shared/attachments";
 import type { BotVoice } from "../../shared/bot";
+import { bookmarkMatchesRow, type MessageBookmark } from "../../shared/bookmarks";
 import { CONTENT_MAX_WIDTH, nativeTokens } from "../native";
 import { sentAttachments } from "../sent-attachments";
 import { canSpeak, speak, stopSpeaking } from "../speech";
@@ -24,7 +25,7 @@ import { ui } from "../typography";
 import type { ChatState } from "../useChat";
 import { PermissionCard } from "./Permission";
 import { FindBar } from "./FindBar";
-import { buildRows, findRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
+import { buildRows, findRows, groupToolRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
 import { tooltip } from "../ui/Tooltip";
@@ -51,6 +52,7 @@ export interface ChatStreamProps {
   /** Bumps when Paseo's font sizes change, so rows re-render. */
   typeVersion: number;
   onOpenChat?(chatId: string): void;
+  onOpenBotChat?(botId: string, chatId: string): void;
   /** Set for bots on this host, whose approval cards can save commands. */
   botId?: string;
   /** How the bot's turns are read aloud. */
@@ -58,6 +60,12 @@ export interface ChatStreamProps {
   /** Whether the find bar is open. */
   findOpen?: boolean;
   onCloseFind?(): void;
+  onUseDraft?(text: string): void;
+  onQuote?(row: Extract<StreamRow, { kind: "user" | "assistant" }>): void;
+  onBookmark?(row: Extract<StreamRow, { kind: "user" | "assistant" }>, saved: boolean): void;
+  bookmarkedRows?: ReadonlySet<string>;
+  revealBookmark?: MessageBookmark | null;
+  onRevealComplete?(): void;
 }
 
 /** Whether a turn is running, as the stream shows it. */
@@ -65,13 +73,16 @@ function isTurnRunning(chat: ChatState): boolean {
   return chat.agent?.status === "running" || chat.agent?.status === "initializing";
 }
 
-export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, botId, voice, findOpen = false, onCloseFind }: ChatStreamProps) {
+export function ChatStream({ colors, chat, api, agentId, compact, platform, typeVersion, onOpenChat, onOpenBotChat, botId, voice, findOpen = false, onCloseFind, onUseDraft, onQuote, onBookmark, bookmarkedRows, revealBookmark, onRevealComplete }: ChatStreamProps) {
+  const toast = useToast();
   const running = isTurnRunning(chat);
   const inverted = platform !== "web";
   const list = useRef<NativeFlatList<StreamLayoutItem>>(null);
+  const scrollRetry = useRef<{ timer: ReturnType<typeof setTimeout> | null; attempts: number }>({ timer: null, attempts: 0 });
+  useEffect(() => () => { if (scrollRetry.current.timer) clearTimeout(scrollRetry.current.timer); }, []);
   const previousLayout = useRef<StreamLayout | null>(null);
   const layout = useMemo(() => {
-    const next = retainLayout(previousLayout.current, layoutStream(buildRows(chat.entries as unknown as StreamEntry[], running), running));
+    const next = retainLayout(previousLayout.current, layoutStream(groupToolRows(buildRows(chat.entries as unknown as StreamEntry[], running)), running));
     previousLayout.current = next;
     return next;
   }, [chat.entries, running]);
@@ -172,6 +183,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
   const reveal = (itemIndex: number) => {
     const item = layout.items[itemIndex];
     if (!item) return;
+    updateNearBottom(false);
+    olderAnchor.current = false;
+    if (scrollRetry.current.timer) clearTimeout(scrollRetry.current.timer);
+    scrollRetry.current = { timer: null, attempts: 0 };
     setFound(item.row.key);
     // A first jump near the row; on the web the row then centres itself once it renders.
     list.current?.scrollToIndex({ index: inverted ? layout.items.length - 1 - itemIndex : itemIndex, animated: inverted, viewPosition: 0.3 });
@@ -216,6 +231,39 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
     } else setOlderPages(0);
   }, [olderPages, chat.loadingOlder, layout.items]);
 
+  // Saved messages can be many pages back. Keep the user informed and allow
+  // another batch after 25 pages, rather than pretending an incomplete search failed.
+  const [bookmarkHighlight, setBookmarkHighlight] = useState<string | null>(null);
+  const [bookmarkPages, setBookmarkPages] = useState(0);
+  const [bookmarkBudget, setBookmarkBudget] = useState(25);
+  const bookmarkPage = useRef<string | null>(null);
+  useEffect(() => { setBookmarkPages(0); setBookmarkBudget(25); bookmarkPage.current = null; }, [revealBookmark]);
+  useEffect(() => {
+    if (!revealBookmark || chat.loading || chat.loadingOlder || (!chat.agent && !chat.error)) return;
+    const index = layout.items.findIndex((item) => item.row.key === revealBookmark.rowKey);
+    if (index >= 0) {
+      if (bookmarkMatchesRow(revealBookmark, layout.items[index]!.row)) {
+        setBookmarkHighlight(revealBookmark.rowKey);
+        reveal(index);
+      } else toast.error("This chat's history has changed and the original saved message is no longer available.");
+      onRevealComplete?.();
+      return;
+    }
+    if (chat.error) { bookmarkPage.current = null; return; }
+    if (bookmarkPages >= bookmarkBudget) return;
+    if (!chat.hasOlder) {
+      toast.error("This saved message is no longer in the chat history. You can remove its bookmark from Saved messages.");
+      onRevealComplete?.();
+      return;
+    }
+    const first = chat.entries[0]?.seqStart;
+    const marker = `${revealBookmark.rowKey}:${first ?? "empty"}`;
+    if (bookmarkPage.current === marker) return;
+    bookmarkPage.current = marker;
+    setBookmarkPages((pages) => pages + 1);
+    chat.loadOlder();
+  }, [revealBookmark, chat.loading, chat.loadingOlder, chat.entries, chat.hasOlder, chat.error, layout.items, bookmarkPages, bookmarkBudget]);
+
   // ---------------------------------------------------------------- rows
 
   const context = useMemo<RowContext>(
@@ -228,12 +276,17 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
         return found.length > 0 ? found : EMPTY_ATTACHMENTS;
       },
       openChat: onOpenChat,
+      openBotChat: onOpenBotChat,
       agentId,
       botId: botId ?? null,
       voice: canSpeak && voice ? voice.name : undefined,
-      highlightKey: findOpen ? found : null,
+      highlightKey: findOpen ? found : bookmarkHighlight,
+      useDraft: onUseDraft,
+      quoteMessage: onQuote,
+      bookmarkMessage: onBookmark,
+      bookmarkedRows,
     }),
-    [colors, compact, cwd, onOpenChat, agentId, botId, voice, findOpen, found],
+    [colors, compact, cwd, onOpenChat, onOpenBotChat, agentId, botId, voice, findOpen, found, onUseDraft, onQuote, onBookmark, bookmarkedRows, bookmarkHighlight],
   );
 
   // A bot that reads its replies aloud reads each one as it finishes, while its chat is open.
@@ -272,6 +325,11 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
+      {revealBookmark ? <View style={{ padding: 10, gap: 8, flexDirection: "row", flexWrap: "wrap", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <Text style={{ flex: 1, minWidth: 160, color: colors.foregroundMuted, fontSize: ui(13) }}>{chat.error ? "Could not load the saved message. Retry the chat sync below." : bookmarkPages >= bookmarkBudget ? `Searched ${bookmarkPages} older pages. The saved message may be further back.` : "Finding saved message…"}</Text>
+        {bookmarkPages >= bookmarkBudget ? <SecondaryButton colors={colors} label="Keep looking" onPress={() => setBookmarkBudget((value) => value + 25)} /> : null}
+        <SecondaryButton colors={colors} label="Cancel" onPress={() => onRevealComplete?.()} />
+      </View> : null}
       {findOpen ? (
         <FindBar
           colors={colors}
@@ -307,7 +365,10 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
         onScrollToIndexFailed={({ index, averageItemLength }) => {
           // Rows outside the rendered window: jump near it, then land on it once it renders.
           list.current?.scrollToOffset({ offset: averageItemLength * index, animated: false });
-          setTimeout(() => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }), 100);
+          if (scrollRetry.current.timer) clearTimeout(scrollRetry.current.timer);
+          if (scrollRetry.current.attempts >= 3) return;
+          scrollRetry.current.attempts += 1;
+          scrollRetry.current.timer = setTimeout(() => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }), 100);
         }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={platform === "ios" ? "interactive" : "on-drag"}

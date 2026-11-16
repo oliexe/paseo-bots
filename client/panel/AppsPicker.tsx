@@ -1,12 +1,11 @@
-import { Icon } from "@getpaseo/plugin/client/react-native";
-import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
+import { Icon, SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { accountLabel, withAppRule, type AppAccount } from "../../shared/apps";
 import type { AppRule } from "../../shared/bot";
 import { useBotHost } from "../data";
 import { connectedApps, useAppsAccounts, useAppsCatalog, useAppsStatus } from "../library/apps";
 import { AppLogo } from "../library/parts";
-import { openLibrary } from "../navigation";
+import { useOpenLibrary } from "../navigation";
 import { AppAccessSheet } from "./AppAccessSheet";
 import type { PanelProps } from "./BotPanel";
 import { CardNote, PressableRow, RowText, SectionLink, Switch } from "./controls";
@@ -27,6 +26,7 @@ function ruleHint(rule: AppRule | undefined, accounts: readonly AppAccount[], ap
  * opens the bot's limits on the app.
  */
 export function AppsPicker({ colors, bot, localHost, onPatch }: Pick<PanelProps, "colors" | "bot" | "localHost" | "onPatch">) {
+  const openLibrary = useOpenLibrary();
   const host = useBotHost(bot.hostId, localHost);
   const status = useAppsStatus();
   const configured = status.data?.configured ?? false;

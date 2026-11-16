@@ -81,6 +81,7 @@ function migrateLegacyHome(): Promise<void> {
  * memory, skills and uploads live so its chats can read and update them.
  */
 export function botDataPath(botId: string): string {
+  if (!botId || botId === "." || botId === ".." || /[\\/\0]/.test(botId)) throw new Error("Invalid bot ID.");
   return join(botsHomePath(), botId);
 }
 

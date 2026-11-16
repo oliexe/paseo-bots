@@ -1,6 +1,6 @@
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
-import { ScrollView, useToast } from "@getpaseo/plugin/client/react-native";
+import { ScrollView, useToast } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { View, type LayoutRectangle } from "react-native";
@@ -39,6 +39,8 @@ interface LibraryViewProps {
   onBack(): void;
   /** The home indicator on phones, kept clear below lists and pages. */
   bottomInset: number;
+  /** Paseo owns the title and Back navigation on mobile routes. */
+  hostNavigation?: boolean;
 }
 
 /**
@@ -48,7 +50,7 @@ interface LibraryViewProps {
  * back row and a 720-wide page on desktop; on compact the list is a screen
  * that pushes the page.
  */
-export function LibraryView({ colors, layout, values, commit, target, onTarget: setTarget, onBack, bottomInset }: LibraryViewProps) {
+export function LibraryView({ colors, layout, values, commit, target, onTarget: setTarget, onBack, bottomInset, hostNavigation = false }: LibraryViewProps) {
   const compact = layout.compact;
   const toast = useToast();
   const menu = useMenu();
@@ -275,7 +277,9 @@ export function LibraryView({ colors, layout, values, commit, target, onTarget: 
 
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: colors.surface0 }}>
-      {compact ? (
+      {compact && hostNavigation ? (
+        <View style={{ flex: 1 }}>{shown ? scrollPage : list}</View>
+      ) : compact ? (
         // Phones stack a page over the list, so a swipe or Back returns to it.
         <View style={{ flex: 1 }}>
           <View style={{ flex: 1, backgroundColor: nativeTokens(colors).surfaceSidebar }}>

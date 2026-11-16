@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, Modal, useRevealedText } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal } from "@getpaseo/plugin/client/ui";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import type { ComposerAttachment } from "../../../shared/attachments";
@@ -14,12 +14,17 @@ import { canSpeak } from "../../speech";
 import { scrollIntoView } from "../../web";
 import { content, contentLine, ui } from "../../typography";
 import { ToolCallDetailsContent } from "./details";
+import { useRevealedText } from "./reveal";
 import type { StreamRow, TurnFooterInfo } from "./model";
 import { PlanCard } from "./PlanCard";
 import { ConnectCard } from "./ConnectCard";
 import { ProposalCard } from "./ProposalCard";
 import { RoutineRunCard } from "./RoutineRunCard";
-import { CopyButton, ExpandableBadge, isWeb, SpeakButton, Spinner } from "./ui";
+import { InteractionCard } from "./InteractionCard";
+import { HandoffCard } from "./HandoffCard";
+import { extractToolSources } from "../../../shared/tool-results";
+import { SourceCards } from "./SourceCards";
+import { CopyButton, ExpandableBadge, isWeb, MessageAction, SpeakButton, Spinner } from "./ui";
 
 type Colors = PluginTheme["colors"];
 type ImageAttachment = Extract<ComposerAttachment, { kind: "image" }>;
@@ -36,6 +41,7 @@ export interface RowContext {
   attachmentsFor(row: Extract<StreamRow, { kind: "user" }>): ComposerAttachment[];
   /** Opens another chat of the same bot (a routine run's own chat). */
   openChat?(agentId: string): void;
+  openBotChat?(botId: string, agentId: string): void;
   agentId: string | null;
   /** Set for bots on this host. */
   botId: string | null;
@@ -43,6 +49,10 @@ export interface RowContext {
   voice?: string | null;
   /** The row of the current find match. */
   highlightKey?: string | null;
+  useDraft?(text: string): void;
+  quoteMessage?(row: Extract<StreamRow, { kind: "user" | "assistant" }>): void;
+  bookmarkMessage?(row: Extract<StreamRow, { kind: "user" | "assistant" }>, saved: boolean): void;
+  bookmarkedRows?: ReadonlySet<string>;
 }
 
 /** One stream item, laid out like Paseo's StreamItemWrapper (820 wide, 8 inset). */
@@ -62,9 +72,9 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
   const { colors } = context;
   switch (row.kind) {
     case "user":
-      return <UserMessage colors={colors} compact={context.compact} text={row.text} timestamp={row.timestamp} attachments={context.attachmentsFor(row)} />;
+      return <UserMessage colors={colors} compact={context.compact} text={row.text} cardReply={row.cardReply} timestamp={row.timestamp} attachments={context.attachmentsFor(row)} actions={<MessageActions row={row} context={context} />} />;
     case "assistant":
-      return <AssistantMessage colors={colors} text={row.text} phase={row.phase} compactBottom={compactBottom} />;
+      return <AssistantMessage colors={colors} text={row.text} phase={row.phase} compactBottom={compactBottom} actions={row.phase === "complete" ? <MessageActions row={row} context={context} /> : null} />;
     case "thought":
       return <ThoughtRow colors={colors} compact={context.compact} text={row.text} loading={row.loading} />;
     case "tool": {
@@ -76,6 +86,8 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
     }
     case "speak":
       return <SpeakMessage colors={colors} text={row.text} />;
+    case "tool-group":
+      return <ToolActivityGroup row={row} context={context} />;
     case "todo":
       return <TodoListCard colors={colors} items={row.items} activity={row.activity} />;
     case "notification":
@@ -84,19 +96,32 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
       return <CompactionMarker colors={colors} status={row.status} trigger={row.trigger} preTokens={row.preTokens} />;
     case "routine-run":
       return <RoutineRunCard colors={colors} card={row.card} onOpenChat={context.openChat} />;
+    case "interaction":
+      return <InteractionCard colors={colors} compact={context.compact} initial={row.card} onUseDraft={context.useDraft} />;
+    case "handoff":
+      return <HandoffCard colors={colors} compact={context.compact} card={row.card} onOpenChat={context.openBotChat} />;
   }
+}
+
+function MessageActions({ row, context }: { row: Extract<StreamRow, { kind: "user" | "assistant" }>; context: RowContext }) {
+  const saved = context.bookmarkedRows?.has(row.key) ?? false;
+  return <>
+    {context.quoteMessage && row.text.trim() ? <MessageAction colors={context.colors} icon="Reply" label="Quote in reply" onPress={() => context.quoteMessage?.(row)} /> : null}
+    {context.bookmarkMessage ? <MessageAction colors={context.colors} icon={saved ? "BookmarkCheck" : "Bookmark"} label={saved ? "Remove bookmark" : "Save message"} active={saved} onPress={() => context.bookmarkMessage?.(row, !saved)} /> : null}
+  </>;
 }
 
 // ---------------------------------------------------------------- user
 
 
-const UserMessage = memo(function UserMessage({ colors, compact, text, timestamp, attachments }: { colors: Colors; compact: boolean; text: string; timestamp: number; attachments: ComposerAttachment[] }) {
+const UserMessage = memo(function UserMessage({ colors, compact, text, cardReply, timestamp, attachments, actions }: { colors: Colors; compact: boolean; text: string; cardReply?: string; timestamp: number; attachments: ComposerAttachment[]; actions?: ReactNode }) {
   const [hovered, setHovered] = useState(false);
   const [lightbox, setLightbox] = useState<ImageAttachment | null>(null);
+  const [showOriginal, setShowOriginal] = useState(false);
   const hasText = text.trim().length > 0;
   const images = attachments.filter((attachment): attachment is ImageAttachment => attachment.kind === "image");
   const files = attachments.filter((attachment) => attachment.kind !== "image");
-  const showTrailing = hasText && (compact || !isWeb || hovered);
+  const showTrailing = compact || !isWeb || hovered;
   const getText = useCallback(() => text, [text]);
   return (
     <View style={{ flexDirection: "row", justifyContent: "flex-end", ...(isWeb ? ({ userSelect: "text" } as object) : {}) }}>
@@ -131,14 +156,16 @@ const UserMessage = memo(function UserMessage({ colors, compact, text, timestamp
           ) : null}
           {hasText ? (
             <Text selectable style={{ color: colors.foreground, fontSize: content(), lineHeight: contentLine(), ...(isWeb ? ({ overflowWrap: "anywhere" } as object) : {}) }}>
-              {text}
+              {cardReply && !showOriginal ? cardReply : text}
             </Text>
           ) : null}
+          {cardReply ? <Pressable accessibilityRole="button" accessibilityLabel={showOriginal ? "Show readable answer" : "Show original response"} accessibilityState={{ expanded: showOriginal }} aria-expanded={showOriginal} onPress={() => setShowOriginal((value) => !value)} style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, paddingTop: 12, minHeight: 36 }}><Icon name={showOriginal ? "ChevronUp" : "Code"} size={13} color={colors.foregroundMuted} /><Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>{showOriginal ? "Show readable answer" : "Show original response"}</Text></Pressable> : null}
         </View>
-        {hasText ? (
+        {hasText || actions ? (
           <View pointerEvents={showTrailing ? "auto" : "none"} style={{ alignSelf: "flex-end", flexDirection: "row", alignItems: "center", height: 24, gap: 8, marginTop: 8, opacity: showTrailing ? 1 : 0 }}>
             <Text style={{ color: colors.foregroundMuted, fontSize: METADATA_SIZE }}>{formatMessageTimestamp(new Date(timestamp))}</Text>
-            <CopyButton colors={colors} getContent={getText} label="Copy message" style={{ alignSelf: "center", marginRight: -4 }} />
+            {hasText ? <CopyButton colors={colors} getContent={getText} label="Copy message" style={{ alignSelf: "center", marginRight: -4 }} /> : null}
+            {actions}
           </View>
         ) : null}
       </HoverArea>
@@ -150,7 +177,7 @@ const UserMessage = memo(function UserMessage({ colors, compact, text, timestamp
 function HoverArea({ onHover, style, children }: { onHover(hovered: boolean): void; style: object; children: ReactNode }) {
   if (!isWeb) return <View style={style}>{children}</View>;
   return (
-    <Pressable onHoverIn={() => onHover(true)} onHoverOut={() => onHover(false)} style={style}>
+    <Pressable onHoverIn={() => onHover(true)} onHoverOut={() => onHover(false)} onFocus={() => onHover(true)} onBlur={() => onHover(false)} style={style}>
       {children}
     </Pressable>
   );
@@ -180,7 +207,7 @@ function Lightbox({ colors, image, onClose }: { colors: Colors; image: ImageAtta
 
 // ---------------------------------------------------------------- assistant
 
-const AssistantMessage = memo(function AssistantMessage({ colors, text, phase, compactBottom }: { colors: Colors; text: string; phase: "streaming" | "complete"; compactBottom: boolean }) {
+const AssistantMessage = memo(function AssistantMessage({ colors, text, phase, compactBottom, actions }: { colors: Colors; text: string; phase: "streaming" | "complete"; compactBottom: boolean; actions?: ReactNode }) {
   const capped = useMemo(() => capMessageForRender(text), [text]);
   const revealed = useRevealedText(capped.text, phase);
   const bytes = useMemo(() => (capped.capped && phase === "complete" ? utf8ByteLength(text) : null), [capped.capped, phase, text]);
@@ -188,6 +215,7 @@ const AssistantMessage = memo(function AssistantMessage({ colors, text, phase, c
     <View style={{ paddingTop: 12, paddingBottom: compactBottom ? 0 : 12, ...(isWeb ? ({ userSelect: "text" } as object) : {}) }}>
       <Markdown colors={colors} text={revealed} streaming={phase === "streaming"} />
       {bytes !== null ? <Text style={{ marginTop: 12, fontSize: ui(14), fontStyle: "italic", color: colors.foregroundMuted }}>This message was capped ({bytes} bytes).</Text> : null}
+      {actions ? <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>{actions}</View> : null}
     </View>
   );
 });
@@ -224,6 +252,7 @@ interface ToolCallRowProps {
 const ToolCallRow = memo(function ToolCallRow({ colors, compact, cwd, name, status, error, detail, metadata, maxDetailHeight = 400 }: ToolCallRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [sheet, setSheet] = useState(false);
+  const sources = useMemo(() => status === "completed" ? extractToolSources(detail, name) : [], [detail, name, status]);
   const presentation = useMemo(() => buildToolCallPresentation({ name, status, error: error ?? null, detail, metadata, cwd }), [name, status, error, detail, metadata, cwd]);
   const toggle = useCallback(() => (compact ? setSheet(true) : setExpanded((value) => !value)), [compact]);
   const renderDetails = useCallback(
@@ -246,6 +275,7 @@ const ToolCallRow = memo(function ToolCallRow({ colors, compact, cwd, name, stat
         isLoading={status === "running"}
         isError={status === "failed"}
       />
+      {sources.length ? <SourceCards colors={colors} sources={sources} /> : null}
       {sheet ? (
         <Modal title={presentation.displayName} icon={<Icon name={presentation.icon} size={20} color={colors.foreground} />} open onOpenChange={(open) => !open && setSheet(false)}>
           <Modal.Content style={{ backgroundColor: colors.surface2 }} contentContainerStyle={{ padding: 0, gap: 0, flexGrow: 1 }}>
@@ -256,6 +286,23 @@ const ToolCallRow = memo(function ToolCallRow({ colors, compact, cwd, name, stat
     </>
   );
 });
+
+function ToolActivityGroup({ row, context }: { row: Extract<StreamRow, { kind: "tool-group" }>; context: RowContext }) {
+  const [expanded, setExpanded] = useState(false);
+  const { colors } = context;
+  const labels = [...new Set(row.tools.map((tool) => buildToolCallPresentation({ ...tool, cwd: context.cwd }).displayName))].slice(0, 3);
+  return (
+    <View style={{ paddingVertical: 4, gap: expanded ? 6 : 0 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${row.tools.length} completed steps: ${labels.join(", ")}`} accessibilityState={{ expanded }} onPress={() => setExpanded((value) => !value)} style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 36 }}>
+        <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14} color={colors.foregroundMuted} />
+        <Icon name="ListChecks" size={15} color={colors.foregroundMuted} />
+        <Text style={{ fontSize: ui(13), color: colors.foregroundMuted }}>{row.tools.length} completed steps</Text>
+        <Text numberOfLines={1} style={{ flex: 1, fontSize: ui(12), color: colors.foregroundMuted }}>{labels.join(" · ")}</Text>
+      </Pressable>
+      {expanded ? <View style={{ marginLeft: 7, paddingLeft: 16, borderLeftWidth: 1, borderLeftColor: colors.border }}>{row.tools.map((tool) => <RowContent key={tool.key} row={tool} context={context} compactBottom={false} />)}</View> : null}
+    </View>
+  );
+}
 
 /** Reasoning renders as Paseo's "Thinking" tool call, paced like assistant text. */
 const ThoughtRow = memo(function ThoughtRow({ colors, compact, text, loading }: { colors: Colors; compact: boolean; text: string; loading: boolean }) {

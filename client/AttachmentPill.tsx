@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/ui";
 import { useState, type ReactNode } from "react";
 import { ActivityIndicator, Image, Platform, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { getFileTypeLabel, type ComposerAttachment } from "../shared/attachments";

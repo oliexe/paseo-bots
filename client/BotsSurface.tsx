@@ -1,12 +1,11 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent } from "./paseo";
-import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
+import type { PluginScreenProps, PluginOpenScreenInput } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
-import { copyText, useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard } from "@getpaseo/plugin/client/ui";
+import { copyText, Icon, SettingsAction, SettingsCard, useToast } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
+import { ActivityIndicator, BackHandler, type LayoutRectangle, Platform, Pressable, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
 import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library } from "../shared/bot";
 import { saveTeam, tabOf, teamTabs, withoutBot } from "../shared/groups";
@@ -23,10 +22,12 @@ import { ChatPane, type OutgoingMessage } from "./ChatPane";
 import { useBotHost, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
 import { takeIntent } from "./intent";
 import { LibraryView } from "./library/LibraryView";
-import { onLibraryTarget, type LibraryTarget } from "./navigation";
+import { LibraryNavigation, type LibraryTarget } from "./navigation";
+import { chatScreen, chatSelectionKey, libraryScreen as libraryRoute, libraryTarget, startedChat, rememberStartedChat, claimAutomaticChat, retryAutomaticChat, parentScreen, teamMapScreen, type BotScreen } from "./screen-navigation";
 import { Splash } from "./Splash";
 import { TeamMap } from "./teams/TeamMap";
 import { TeamSheet } from "./teams/TeamSheet";
+import { TeamFileDialog } from "./teams/TeamFileDialog";
 import { TeamTabsRow, TeamTabSwitcher } from "./teams/TeamTabs";
 import { ResizeHandle, SlideOver } from "./ui/Columns";
 import { fitColumns } from "../shared/layout";
@@ -35,11 +36,16 @@ import { measureAnchor, MenuProvider, useMenu } from "./ui/Menu";
 import { useTooltipTheme } from "./ui/Tooltip";
 import { homeIndicatorInset, useKeyboardHeight } from "./keyboard";
 import { newMessageId } from "./sent-attachments";
-import { BotPanel, type SectionId } from "./panel/BotPanel";
+import { BotPanel, botSectionTitle, type SectionId } from "./panel/BotPanel";
 import { useBotSettings } from "./useBotSettings";
 import { fullTimeline, useChat } from "./useChat";
 import { newUuid } from "../shared/uuid";
 import { ui, useTypeScale } from "./typography";
+import { mergeBotEdit, type BotEdit } from "../shared/bot-edits";
+import { useSurfaceVisibility } from "./useSurfaceVisibility";
+import { useDraftStore } from "./chat/composer/drafts";
+import { composerDraftKey } from "./chat/composer/logic";
+import { beginDraftCreation } from "./chat/composer/draft-creation";
 
 type Colors = PluginTheme["colors"];
 
@@ -50,7 +56,12 @@ const SETUP_PROMPT =
 /** Autosave delay after the last edit in the settings panel. */
 const SAVE_DELAY_MS = 600;
 
-export function BotsSurface(props: PluginSurfaceProps) {
+interface BotsSurfaceProps extends PluginScreenProps {
+  screen?: BotScreen;
+  openScreen?(input: PluginOpenScreenInput): void;
+}
+
+export function BotsSurface(props: BotsSurfaceProps) {
   const { colors } = props.theme;
   useTooltipTheme(colors);
   return (
@@ -63,11 +74,12 @@ export function BotsSurface(props: PluginSurfaceProps) {
 }
 
 
-function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfaceProps) {
+function BotsSurfaceContent({ theme, layout, host, navigation, params, screen = "bots", openScreen }: BotsSurfaceProps) {
   const { colors } = theme;
   const { settings, latest, commit } = useBotSettings();
   const toast = useToast();
   const menu = useMenu();
+  const surfaceVisibility = useSurfaceVisibility();
   const queryClient = useQueryClient();
   const localHost: LocalHost = { id: host.id, label: host.label };
   const localProviders = useProviders(useBotHost(null, localHost));
@@ -76,18 +88,35 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const importBot = useRpc(importBotRpc);
   const importTeam = useRpc(importTeamRpc);
 
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [panel, setPanel] = useState<{ open: boolean; section: SectionId | null }>({ open: false, section: null });
+  const routed = layout.compact && !!openScreen;
+  const initialSelection = (): Selection | null => params.botId ? { botId: params.botId, chatId: params.chatId || startedChat(host.id, params.draftId), ...(params.prompt ? { prompt: params.prompt, title: params.chatTitle } : {}) } : null;
+  const initialPanel = () => ({ open: screen === "bot-settings" || screen === "bot-section" || (!layout.compact && params.panel === "open"), section: botSectionTitle(params.section) ? params.section as SectionId : null });
+  const [selection, setSelection] = useState<Selection | null>(initialSelection);
+  const selectionKey = chatSelectionKey(host.id, selection, params.draftId);
+  const selectionRef = useRef(selectionKey);
+  selectionRef.current = selectionKey;
+  const [panel, setPanel] = useState<{ open: boolean; section: SectionId | null }>(initialPanel);
   const [panelVersion, setPanelVersion] = useState(0);
   const [creating, setCreating] = useState(false);
   /** The team map replaces the chat pane while open. */
-  const [teamMap, setTeamMap] = useState(false);
+  const [teamMap, setTeamMap] = useState(screen === "bot-teams");
   const [editingTeam, setEditingTeam] = useState<BotGroup | "new" | null>(null);
+  const [teamFile, setTeamFile] = useState(false);
   /** Skills & Tools replaces the bot list and chat while open; `target` is its page (null: the list, on compact). */
-  const [libraryView, setLibraryView] = useState<{ target: LibraryTarget | null } | null>(null);
+  const [libraryView, setLibraryView] = useState<{ target: LibraryTarget | null } | null>(() => screen === "bot-library" || screen === "bot-library-item" ? { target: libraryTarget(params) } : null);
+  const routeKey = JSON.stringify([screen, params, layout.compact]);
+  const previousRoute = useRef(routeKey);
+  useEffect(() => {
+    if (previousRoute.current === routeKey) return;
+    previousRoute.current = routeKey;
+    setSelection(initialSelection());
+    setPanel(initialPanel());
+    setTeamMap(screen === "bot-teams");
+    setLibraryView(screen === "bot-library" || screen === "bot-library-item" ? { target: libraryTarget(params) } : null);
+  }, [routeKey]);
   const [renaming, setRenaming] = useState<Bot | null>(null);
   const [exporting, setExporting] = useState<Bot | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, Bot>>({});
+  const [drafts, setDrafts] = useState<Record<string, BotEdit>>({});
   // List state (collapsed groups, pins, order, display options) applies at once and saves behind.
   const [uiOverride, setUiOverride] = useState<BotListUi | null>(null);
   const uiRef = useRef<BotListUi | null>(null);
@@ -98,7 +127,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const [surfaceWidth, setSurfaceWidth] = useState(0);
   /** Widths while a resize handle is being dragged; saved to the list UI on release. */
   const [dragWidths, setDragWidths] = useState<{ list?: number; panel?: number }>({});
-  // Re-renders the whole surface when Paseo's interface/content/code sizes change.
+  // Re-renders the whole surface when platform accessibility text scaling changes.
   const typeVersion = useTypeScale();
   useChatInvalidation();
 
@@ -118,24 +147,25 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         const draft = pending[bot.id];
         if (!draft) return bot;
         history = pushHistory(history, bot);
-        return draft;
+        return { ...mergeBotEdit(bot, draft), updatedAt: new Date().toISOString() };
       });
       return { ...values, bots, history };
     });
     if (ok) {
-      setDrafts((current) => {
-        const next = { ...current };
-        for (const [id, bot] of Object.entries(pending)) if (next[id] === bot) delete next[id];
-        return next;
-      });
+      const next = { ...draftsRef.current };
+      for (const [id, edit] of Object.entries(pending)) if (next[id] === edit) delete next[id];
+      draftsRef.current = next;
+      setDrafts(next);
     }
   };
 
   const patchBot = (botId: string, patch: Partial<Bot>) => {
-    setDrafts((current) => {
-      const base = current[botId] ?? (latest.current.status === "ready" ? latest.current.values.bots.find((bot) => bot.id === botId) : undefined);
-      return base ? { ...current, [botId]: { ...base, ...patch, updatedAt: new Date().toISOString() } } : current;
-    });
+    const current = draftsRef.current;
+    const base = current[botId]?.base ?? (latest.current.status === "ready" ? latest.current.values.bots.find((bot) => bot.id === botId) : undefined);
+    if (!base) return;
+    const next = { ...current, [botId]: { base, patch: { ...current[botId]?.patch, ...patch, updatedAt: new Date().toISOString() } } };
+    draftsRef.current = next;
+    setDrafts(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void flush(), SAVE_DELAY_MS);
   };
@@ -155,7 +185,12 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
 
   /** Applies a patch to the saved bot and to any unsaved draft of it, so autosave can't undo it. */
   const updateBot = (botId: string, patch: Partial<Bot>, recordHistory = false) => {
-    setDrafts((current) => (current[botId] ? { ...current, [botId]: { ...current[botId], ...patch } } : current));
+    const current = draftsRef.current;
+    if (current[botId]) {
+      const next = { ...current, [botId]: { ...current[botId], patch: { ...current[botId].patch, ...patch } } };
+      draftsRef.current = next;
+      setDrafts(next);
+    }
     return commit((values) => {
       const previous = values.bots.find((entry) => entry.id === botId);
       if (!previous) return values;
@@ -170,19 +205,14 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   /** Opens Skills & Tools. Unsaved bot edits are saved first so the library sees them. */
   const enterLibrary = (target: LibraryTarget | null) => {
     void flush();
+    if (routed) {
+      const values = latest.current.status === "ready" ? latest.current.values : null;
+      const title = target?.kind === "mcp" ? values?.library?.mcpServers.find((entry) => entry.id === target.id)?.name : undefined;
+      openScreen!(libraryRoute(target, title));
+      return;
+    }
     setLibraryView({ target });
   };
-
-  // A bot's settings and the bot list ask for Skills & Tools through the navigation store.
-  const enterLibraryRef = useRef(enterLibrary);
-  enterLibraryRef.current = enterLibrary;
-  useEffect(
-    () =>
-      onLibraryTarget((target) => {
-        enterLibraryRef.current(target);
-      }),
-    [],
-  );
 
   // One step back through the Bots screen, as Paseo's own screens go back: a settings page to
   // the settings list, then the settings, Skills & Tools (page, then list), and on phones the
@@ -214,10 +244,10 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const goBackRef = useRef(goBack);
   goBackRef.current = goBack;
   useEffect(() => {
-    if (Platform.OS !== "android") return;
+    if (Platform.OS !== "android" || routed) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => goBackRef.current());
     return () => subscription.remove();
-  }, []);
+  }, [routed]);
 
   // "New bot" from the Command Center opens a fresh Bots screen; only that one consumes it.
   useEffect(() => {
@@ -235,7 +265,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         )}
         {settings.status === "invalid" ? (
           <SettingsCard>
-            <SettingsAction label="Reset bots" hint="Replaces the unreadable bot list with an empty one." actionLabel="Reset" onPress={() => void settings.reset()} />
+            <SettingsAction label="Reset bots" hint="Replaces the unreadable bot list with an empty one." actionLabel="Reset" onPress={() => void confirmDialog({ title: "Reset bot settings?", message: "This replaces all saved bot definitions, teams and preferences on this host with empty settings. Existing chats and memory files stay on the host.", confirmLabel: "Reset settings", destructive: true }).then((confirmed) => confirmed && settings.reset())} />
           </SettingsCard>
         ) : null}
       </View>
@@ -252,7 +282,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     setDragWidths({});
     updateUi((current) => ({ ...current, [key]: Math.round(width) }));
   };
-  const allBots = settings.values.bots.map((bot) => drafts[bot.id] ?? bot);
+  const allBots = settings.values.bots.map((bot) => drafts[bot.id] ? mergeBotEdit(bot, drafts[bot.id]!) : bot);
   const library = settings.values.library ?? EMPTY_LIBRARY;
   const groups = settings.values.groups ?? [];
   const listed = allBots
@@ -266,17 +296,28 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   // ------------------------------------------------------------ actions
 
   /** Opens a chat, showing its bot in the list: expanded, and its team's tab open. */
-  const select = (next: Selection) => {
-    setSelection(next);
-    setTeamMap(false);
+  const select = (next: Selection, nextPanel = panel) => {
+    const bot = allBots.find((entry) => entry.id === next.botId);
     const tab = openTab && tabOf(next.botId, groups) !== openTab.id ? tabOf(next.botId, groups) : null;
     if (tab || currentUi().collapsed.includes(next.botId)) {
       updateUi((current) => ({ ...current, tab: tab ?? current.tab, collapsed: current.collapsed.filter((id) => id !== next.botId) }));
     }
+    if (openScreen) {
+      void flush();
+      openScreen(chatScreen(next, bot?.name || "Chat", layout.compact ? undefined : nextPanel));
+      return;
+    }
+    setSelection(next);
+    setTeamMap(false);
   };
 
   const openPanel = (bot: Bot, section: SectionId | null) => {
-    if (selection?.botId !== bot.id) select({ botId: bot.id, chatId: null });
+    if (routed) {
+      void flush();
+      openScreen!({ screenId: section ? "bot-section" : "bot-settings", params: { botId: bot.id, section: section ?? "", title: section ? botSectionTitle(section)! : `${bot.name} settings` } });
+      return;
+    }
+    if (selection?.botId !== bot.id) select({ botId: bot.id, chatId: null }, { open: true, section });
     setPanel({ open: true, section });
   };
 
@@ -284,8 +325,11 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
   const addBot = async (bot: Bot, section: SectionId = "identity") => {
     const saved = await commit((values) => ({ ...values, bots: [...values.bots, bot] }));
     if (saved) {
-      select({ botId: bot.id, chatId: null });
-      setPanel({ open: true, section });
+      if (routed) openPanel(bot, section);
+      else {
+        select({ botId: bot.id, chatId: null }, { open: true, section });
+        setPanel({ open: true, section });
+      }
     }
   };
 
@@ -316,6 +360,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       ...values,
       bots: values.bots.filter((entry) => entry.id !== bot.id),
       history: values.history.filter((entry) => entry.botId !== bot.id),
+      bookmarks: values.bookmarks?.filter((entry) => entry.botId !== bot.id),
       groups: withoutBot(values.groups ?? [], bot.id, new Date().toISOString()),
     }));
     if (!ok) return;
@@ -468,7 +513,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           }
           try {
             await botHost.api.agents.ref(chat.id).archive();
-            if (selection?.chatId === chat.id) setSelection({ botId: bot.id, chatId: null });
+            if (selection?.chatId === chat.id && selectionRef.current === selectionKey) setSelection({ botId: bot.id, chatId: null });
             if (context.pinned) updateUi(unpin);
             await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", botHost.key, bot.id] });
           } catch (error) {
@@ -484,7 +529,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       anchor,
       align: "end",
       width: 232,
-      title: "Display",
+      title: "Bots",
       entries: [
         {
           label: "Archived bots",
@@ -496,6 +541,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           trailing: listUi.chatSort === "manual" ? "Manual" : "Last activity",
           onSelect: () => updateUi((current) => ({ ...current, chatSort: current.chatSort === "manual" ? "activity" : "manual" })),
         },
+        ...(openScreen ? [{ kind: "separator" as const }, { label: "Manage routines", icon: "Clock", onSelect: () => openScreen({ screenId: "bot-routines" }) }] : []),
       ],
     });
   };
@@ -532,13 +578,44 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       onChatMenu={openChatMenu}
       onDisplayMenu={openDisplayMenu}
       onEditTeam={setEditingTeam}
-      onTeamMap={() => setTeamMap(true)}
+      onTeamMap={() => routed ? openScreen!(teamMapScreen()) : setTeamMap(true)}
+      onDesktop={openScreen ? () => { void flush().then(() => openScreen({ screenId: "bot-desktop" })); } : undefined}
     />
   );
 
   const tabProps = openTab
     ? { colors, tabs, openTab, onTab: (tab: string) => updateUi((current) => ({ ...current, tab })), onTeamMenu: openTeamMenu, onNewTeam: () => setEditingTeam("new" as const) }
     : null;
+
+  const selectedChat = () => selectedBot && selection ? (
+    <SelectedChat
+      key={`${selectedBot.hostId ?? host.id}:${selectedBot.id}:${selection.chatId ?? "new"}`}
+      colors={colors}
+      bot={selectedBot}
+      library={library}
+      selection={selection}
+      selectionIdentity={selectionKey}
+      localHost={localHost}
+      panelOpen={panel.open}
+      hostHeader={routed}
+      layout={layout}
+      keyboardOpen={keyboardHeight > 0}
+      typeVersion={typeVersion}
+      onBack={layout.compact && !routed ? () => setSelection(null) : undefined}
+      onBotMenu={(anchor) => (anchor ? openBotMenu(selectedBot, anchor, "kebab") : openBotMenuFromPane(selectedBot))}
+      onTogglePanel={() => routed ? openPanel(selectedBot, null) : setPanel({ open: !panel.open, section: panel.section })}
+      onStarted={(chatId) => {
+        rememberStartedChat(host.id, params.draftId, chatId);
+        // Finish the originating draft without interrupting a different conversation.
+        if (selectionRef.current !== selectionKey) return;
+        const next = { botId: selectedBot.id, chatId };
+        if (surfaceVisibility.isVisible()) select(next);
+        else setSelection(next);
+      }}
+      onOpenChat={(chatId) => select({ botId: selectedBot.id, chatId })}
+      onOpenBotChat={(botId, chatId) => select({ botId, chatId })}
+    />
+  ) : null;
 
   const pane = teamMap ? (
     <TeamMap
@@ -547,32 +624,20 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
       bots={allBots}
       localHost={localHost}
       compact={layout.compact}
+      hostHeader={routed}
       bottomInset={bottomInset}
       onBack={layout.compact ? () => setTeamMap(false) : undefined}
       onNewTeam={() => setEditingTeam("new")}
+      onTeamFile={() => { void flush().then(() => setTeamFile(true)); }}
       onEditTeam={setEditingTeam}
       onOpenBot={(bot) => {
-        select({ botId: bot.id, chatId: null });
+        if (routed) return openPanel(bot, "overview");
+        select({ botId: bot.id, chatId: null }, { open: true, section: "overview" });
         setPanel({ open: true, section: "overview" });
       }}
     />
   ) : selectedBot && selection ? (
-      <SelectedChat
-        key={`${selectedBot.id}:${selection.chatId ?? "new"}`}
-        colors={colors}
-        bot={selectedBot}
-        library={library}
-        selection={selection}
-        localHost={localHost}
-        panelOpen={panel.open}
-        layout={layout}
-        keyboardOpen={keyboardHeight > 0}
-        typeVersion={typeVersion}
-        onBack={layout.compact ? () => setSelection(null) : undefined}
-        onBotMenu={(anchor) => (anchor ? openBotMenu(selectedBot, anchor, "kebab") : openBotMenuFromPane(selectedBot))}
-        onTogglePanel={() => setPanel({ open: !panel.open, section: panel.section })}
-        onStarted={(chatId) => setSelection({ botId: selectedBot.id, chatId })}
-      />
+    selectedChat()
     ) : (
       <Splash colors={colors} />
     );
@@ -583,6 +648,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         key={`${selectedBot.id}:${panelVersion}`}
         colors={colors}
         compact={layout.compact}
+        hostHeader={routed}
         bottomInset={bottomInset}
         bot={selectedBot}
         localHost={localHost}
@@ -590,7 +656,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         library={library}
         groups={groups}
         section={panel.section}
-        onSection={(section) => setPanel({ open: true, section })}
+        onSection={(section) => routed ? openPanel(selectedBot, section) : setPanel({ open: true, section })}
         onClose={() => setPanel({ open: false, section: panel.section })}
         onPatch={(patch) => patchBot(selectedBot.id, patch)}
         flush={flush}
@@ -603,7 +669,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
         onOpenChat={(chatId) => {
           select({ botId: selectedBot.id, chatId });
           // On phones the panel covers the chat.
-          if (layout.compact) setPanel({ open: false, section: panel.section });
+          if (layout.compact && !routed) setPanel({ open: false, section: panel.section });
         }}
       />
     ) : null;
@@ -612,28 +678,41 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
     <LibraryView
       colors={colors}
       layout={layout}
+      hostNavigation={routed}
       bottomInset={bottomInset}
       values={settings.values}
       commit={commit}
       target={libraryView.target}
-      onTarget={(target) => setLibraryView({ target })}
+      onTarget={(target) => routed ? enterLibrary(target) : setLibraryView({ target })}
       onBack={() => setLibraryView(null)}
     />
   ) : null;
 
   // On desktop Skills & Tools takes over the screen, like Paseo's settings.
   if (libraryScreen && !layout.compact) {
-    return <View style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>{libraryScreen}</View>;
+    return <View ref={surfaceVisibility.ref} collapsable={false} style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>{libraryScreen}</View>;
   }
 
   return (
-    <>
+    <LibraryNavigation.Provider value={(target = null) => enterLibrary(target)}>
     {/* The host gives plugin surfaces no keyboard handling; lift everything above the keyboard. */}
     <View
+      ref={surfaceVisibility.ref}
+      collapsable={false}
       style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}
       onLayout={(event) => setSurfaceWidth(event.nativeEvent.layout.width)}
     >
-      {layout.compact ? (
+      {routed ? (
+        <View ref={paneRef} collapsable={false} style={{ flex: 1 }}>
+          {screen !== "bots" ? <MobileNavigation colors={colors} screen={screen} params={params} openScreen={openScreen!} /> : null}
+          {libraryScreen ?? settingsPanel ?? (selection || teamMap ? pane : (
+            <>
+              {tabProps ? <TeamTabSwitcher {...tabProps} /> : null}
+              {sidebar}
+            </>
+          ))}
+        </View>
+      ) : layout.compact ? (
         <View ref={paneRef} collapsable={false} style={{ flex: 1 }}>
           {tabProps ? <TeamTabSwitcher {...tabProps} /> : null}
           {sidebar}
@@ -686,10 +765,17 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
           colors={colors}
           onClose={() => setCreating(false)}
           presets={settings.status === "ready" ? (settings.values.presets ?? []) : []}
-          onCreate={(start) => {
+          defaults={settings.values.defaults ?? DEFAULT_BOT_DEFAULTS}
+          localHost={localHost}
+          onDefaultsChange={(patch) => { void commit((values) => ({ ...values, defaults: { ...(values.defaults ?? DEFAULT_BOT_DEFAULTS), ...patch } })); }}
+          onDeletePreset={async (preset) => {
+            if (await confirmDialog({ title: "Delete preset", message: `Delete the "${preset.name}" preset? Bots made from it stay.`, confirmLabel: "Delete", destructive: true })) {
+              await commit((values) => ({ ...values, presets: (values.presets ?? []).filter((entry) => entry.id !== preset.id) }));
+            }
+          }}
+          onCreate={(start, defaults) => {
             setCreating(false);
             const bot = start?.preset ? botFromPreset(defaultProvider(), start.preset) : newBot(defaultProvider(), start?.template);
-            const defaults = (settings.status === "ready" ? settings.values.defaults : undefined) ?? DEFAULT_BOT_DEFAULTS;
             void addBot(applyDefaults(bot, defaults, defaultProvider()), start ? "overview" : "identity");
           }}
           onImport={async (json) => {
@@ -698,13 +784,18 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
             const saved = await commit((values) => addImportedBots(values, bots, teams));
             const first = bots[0]?.bot;
             if (saved && first) {
-              select({ botId: first.id, chatId: null });
-              setPanel({ open: true, section: "overview" });
+              if (routed) openPanel(first, "overview");
+              else {
+                select({ botId: first.id, chatId: null }, { open: true, section: "overview" });
+                setPanel({ open: true, section: "overview" });
+              }
               if (bots.length > 1) toast.show(`Added ${bots.length} bots`, { variant: "success" });
             }
           }}
         />
       ) : null}
+
+      {teamFile ? <TeamFileDialog colors={colors} onClose={() => setTeamFile(false)} /> : null}
 
       {renaming ? (
         <RenameDialog
@@ -723,7 +814,34 @@ function BotsSurfaceContent({ theme, layout, host, navigation }: PluginSurfacePr
 
       {exporting ? <ExportDialog colors={colors} bot={exporting} onClose={() => setExporting(null)} /> : null}
     </View>
-    </>
+    </LibraryNavigation.Provider>
+  );
+}
+
+/** Always available, including when a phone restores a detail page with no Back history. */
+function MobileNavigation({ colors, screen, params, openScreen }: {
+  colors: Colors;
+  screen: BotScreen;
+  params: PluginScreenProps["params"];
+  openScreen(input: PluginOpenScreenInput): void;
+}) {
+  const parent = parentScreen(screen, params);
+  const link = (label: string, target: PluginOpenScreenInput) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Back to ${label.toLowerCase()}`}
+      onPress={() => openScreen(target)}
+      style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 8, backgroundColor: pressed ? colors.surface1 : "transparent" })}
+    >
+      <Icon name="ChevronLeft" size={16} color={colors.foregroundMuted} />
+      <Text style={{ color: colors.foregroundMuted, fontSize: ui(14) }}>{label}</Text>
+    </Pressable>
+  );
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 4, backgroundColor: colors.surface0 }}>
+      {link("Bots", { screenId: "bots" })}
+      {parent && parent.target.screenId !== "bots" ? link(parent.label, parent.target) : null}
+    </View>
   );
 }
 
@@ -732,50 +850,60 @@ interface SelectedChatProps {
   bot: Bot;
   library: Library;
   selection: Selection;
+  selectionIdentity: string;
   localHost: LocalHost;
   panelOpen: boolean;
-  layout: PluginSurfaceProps["layout"];
+  hostHeader?: boolean;
+  layout: PluginScreenProps["layout"];
   keyboardOpen: boolean;
   typeVersion: number;
   onBack?(): void;
   onBotMenu(anchor: LayoutRectangle | null): void;
   onTogglePanel(): void;
   onStarted(chatId: string): void;
+  onOpenChat(chatId: string): void;
+  onOpenBotChat?(botId: string, chatId: string): void;
 }
 
-function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStarted }: SelectedChatProps) {
+function SelectedChat({ colors, bot, library, selection, selectionIdentity, localHost, panelOpen, hostHeader, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStarted, onOpenChat, onOpenBotChat }: SelectedChatProps) {
   const host = useBotHost(bot.hostId, localHost);
-  const chat = useChat(host.api, selection.chatId);
+  const chat = useChat(host.api, selection.chatId, host.isLocal);
   const ensureHome = useRpc(ensureBotHomeRpc);
   const compose = useRpc(systemPromptRpc);
   const mountServers = useRpc(mountRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const composerDrafts = useDraftStore();
 
   const start = async (message: OutgoingMessage, title?: string) => {
     if (!host.api) throw new Error(`${host.label} is offline.`);
-    // The bot's folder holds its memory and skills even when it works elsewhere.
-    const home = await ensureHome({ botId: bot.id });
-    const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
-    const { systemPrompt } = await compose({ bot, local: host.isLocal, message: message.text });
-    // The plugin's tools and connected apps go through this host's relay, so only bots here get them.
-    const agentId = newUuid();
-    const plugin = host.isLocal ? await mountServers({ botId: bot.id, agentId }) : {};
-    const id = await startBotChat(host.api, {
-      bot,
-      library,
-      ...(host.isLocal ? { agentId } : {}),
-      plugin,
-      placement,
-      prompt: message.text,
-      title,
-      systemPrompt,
-      images: message.images,
-      attachments: message.attachments,
-      clientMessageId: message.messageId,
-    });
-    await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", host.key, bot.id] });
-    onStarted(id);
+    const release = beginDraftCreation(composerDrafts, composerDraftKey(host.key, bot.id, null));
+    try {
+      // The bot's folder holds its memory and skills even when it works elsewhere.
+      const home = await ensureHome({ botId: bot.id });
+      const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
+      const { systemPrompt } = await compose({ bot, local: host.isLocal, message: message.text });
+      // The plugin's tools and connected apps go through this host's relay, so only bots here get them.
+      const agentId = newUuid();
+      const plugin = host.isLocal ? await mountServers({ botId: bot.id, agentId }) : {};
+      const id = await startBotChat(host.api, {
+        bot,
+        library,
+        ...(host.isLocal ? { agentId } : {}),
+        plugin,
+        placement,
+        prompt: message.text,
+        title,
+        systemPrompt,
+        images: message.images,
+        attachments: message.attachments,
+        clientMessageId: message.messageId,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", host.key, bot.id] });
+      onStarted(id);
+    } finally {
+      release();
+    }
   };
 
   // Keep the bot's workspace named after the bot.
@@ -792,12 +920,16 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
   }, [bot.name, host.api]);
 
   // "Set up with the bot" opens a new chat that sends its first message straight away.
-  const autoStartedSelection = useRef<Selection | null>(null);
+  const autoStartedSelection = useRef<string | null>(null);
   useEffect(() => {
-    if (selection.chatId !== null || !selection.prompt || autoStartedSelection.current === selection || !host.api) return;
-    autoStartedSelection.current = selection;
-    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }, selection.title).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
-  }, [host.api, selection]);
+    if (selection.chatId !== null || !selection.prompt || autoStartedSelection.current === selectionIdentity || !host.api) return;
+    autoStartedSelection.current = selectionIdentity;
+    if (!claimAutomaticChat(selectionIdentity)) return;
+    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }, selection.title).catch((error: unknown) => {
+      retryAutomaticChat(selectionIdentity);
+      toast.error(`Couldn't start: ${errorText(error)}`);
+    });
+  }, [host.api, selection, selectionIdentity]);
 
   return (
     <ChatPane
@@ -807,6 +939,7 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
       chat={chat}
       chatId={selection.chatId}
       panelOpen={panelOpen}
+      hostHeader={hostHeader}
       layout={layout}
       keyboardOpen={keyboardOpen}
       typeVersion={typeVersion}
@@ -814,7 +947,8 @@ function SelectedChat({ colors, bot, library, selection, localHost, panelOpen, l
       onBotMenu={onBotMenu}
       onTogglePanel={onTogglePanel}
       onStart={start}
-      onOpenChat={onStarted}
+      onOpenChat={onOpenChat}
+      onOpenBotChat={onOpenBotChat}
     />
   );
 }

@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { ScrollView } from "@getpaseo/plugin/client/react-native";
+import { ScrollView } from "@getpaseo/plugin/client/ui";
 import { Pressable, Text, View } from "react-native";
 import { nativeTokens } from "../../native";
 import { ui } from "../../typography";

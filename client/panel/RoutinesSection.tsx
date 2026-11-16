@@ -1,19 +1,19 @@
 import { useRpc } from "@getpaseo/plugin/client";
-import { Modal, copyText, useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
+import { copyText, Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { View } from "react-native";
 import { newRoutineId, type Bot, type Routine, type RoutineSchedule } from "../../shared/bot";
 import { displayTitle, ROUTINE_LABEL } from "../../shared/chat";
-import { CRON_PRESETS, describeCron, describeSchedule, formatLocalDateTime, nextRun, parseLocalDateTime, scheduleToCron, upcomingRuns, validateCron } from "../../shared/routines";
-import { routineRunNowRpc, routineStatusRpc, routineWebhookRpc, type RoutineRun } from "../../shared/rpc";
+import { CRON_PRESETS, describeCron, describeSchedule, formatLocalDateTime, nextRun, parseLocalDateTime, scheduleToCron, upcomingRuns, validateCron, localTimeZone, validTimeZone } from "../../shared/routines";
+import { routineCancelRunRpc, routineRunNowRpc, routineStatusRpc, routineWebhookRpc, type RoutineRun } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
 import { useBotChats, useBotHost, type BotHost } from "../data";
 import { confirmDialog, errorText } from "../native";
 import { useMenu } from "../ui/Menu";
 import { Alert, type BadgeVariant, Button, CardNote, DrillRow, InputField, KebabButton, PressableRow, RowText, SectionLink, SheetFooter, StatusBadge, TextAreaField } from "./controls";
 import type { PanelProps } from "./BotPanel";
+import { RoutineStopRequests, routineStopNotice, visibleRoutineRuns } from "./routine-runs";
 
 type Colors = PanelProps["colors"];
 
@@ -43,6 +43,7 @@ function routineMeta(routine: Routine, run: RoutineRun | undefined, next: Date |
   const when = relativeTime(run?.startedAt);
   if (!run) parts.push("Never run");
   else if (run.status === "failed") parts.push(`Failed ${when}: ${run.error ?? "unknown error"}`);
+  else if (run.status === "canceled") parts.push(`Stopped ${when}`);
   else if (run.status === "skipped-busy") parts.push(`Skipped ${when}, still working`);
   else if (run.status === "skipped-missed") parts.push(`Missed ${when}`);
   else parts.push(`Last run ${when}`);
@@ -54,7 +55,7 @@ const ROUTINES_KEY = ["paseo-bots", "routines"];
 const UPCOMING = 6;
 const UPCOMING_DAYS = 7;
 const RECENT = 10;
-const RUN_LABELS: Record<RoutineRun["status"], string> = { running: "Running", succeeded: "Done", failed: "Failed", "skipped-busy": "Skipped, still working", "skipped-missed": "Missed" };
+const RUN_LABELS: Record<RoutineRun["status"], string> = { running: "Running", succeeded: "Done", failed: "Failed", canceled: "Stopped", "skipped-busy": "Skipped, still working", "skipped-missed": "Missed" };
 const TRIGGER_LABELS: Record<RoutineRun["trigger"], string> = { schedule: "on schedule", manual: "run by you", webhook: "from its webhook" };
 
 /** "Today 09:00", "Tomorrow 09:00" or "Mon, Sep 28 09:00". */
@@ -73,13 +74,19 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
   const host = useBotHost(bot.hostId, localHost);
   const status = useRpc(routineStatusRpc);
   const runNow = useRpc(routineRunNowRpc);
+  const cancelRun = useRpc(routineCancelRunRpc);
   const webhook = useRpc(routineWebhookRpc);
   const toast = useToast();
   const menu = useMenu();
   const queryClient = useQueryClient();
-  const records = useQuery({ queryKey: ROUTINES_KEY, queryFn: () => status({}), refetchInterval: 15_000, enabled: host.isLocal });
-  const [editing, setEditing] = useState<Routine | "new" | null>(null);
   const [runs, setRuns] = useState(false);
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
+  const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
+  const stopRequests = useRef(new RoutineStopRequests());
+  const records = useQuery({ queryKey: [...ROUTINES_KEY, host.key], queryFn: () => status({}), refetchInterval: runs ? 3000 : 15_000, enabled: host.isLocal });
+  const hostTimeZone = records.data?.timeZone ?? localTimeZone();
+  const scheduleFor = (schedule: RoutineSchedule): RoutineSchedule => (schedule.kind === "daily" || schedule.kind === "cron") ? { ...schedule, timeZone: schedule.timeZone ?? hostTimeZone } : schedule;
+  const [editing, setEditing] = useState<Routine | "new" | null>(null);
 
   const setRoutines = (routines: Routine[]) => onPatch({ routines });
   const update = (id: string, patch: Partial<Routine>) => setRoutines(bot.routines.map((routine) => (routine.id === id ? { ...routine, ...patch } : routine)));
@@ -95,6 +102,34 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
       void queryClient.invalidateQueries({ queryKey: ["paseo-bots"] });
     } catch (error) {
       toast.error(errorText(error));
+    }
+  };
+
+  const stop = async (routine: Routine, run: RoutineRun) => {
+    if (run.status !== "running") return;
+    const pending = stopRequests.current.request({ botId: bot.id, routineId: routine.id, runId: run.id }, cancelRun);
+    if (!pending) return;
+    setStopping((current) => new Set([...current, run.id]));
+    setStopErrors((current) => ({ ...current, [run.id]: "" }));
+    try {
+      const result = await pending;
+      // Update both this history and the global overview immediately. Refresh
+      // afterward in case the run completed while the interruption was pending.
+      queryClient.setQueriesData<Awaited<ReturnType<typeof status>>>({ queryKey: ROUTINES_KEY }, (current) => {
+        const record = current?.routines[routine.id];
+        if (!current || !record) return current;
+        return { ...current, routines: { ...current.routines, [routine.id]: { ...record, runs: record.runs.map((entry) => entry.id === run.id ? result.run : entry) } } };
+      });
+      const notice = routineStopNotice(result);
+      toast.show(notice.message, notice.variant ? { variant: notice.variant } : undefined);
+      if (result.run.status === "running") setStopErrors((current) => ({ ...current, [run.id]: notice.message }));
+    } catch (error) {
+      const message = errorText(error);
+      setStopErrors((current) => ({ ...current, [run.id]: message }));
+      toast.error(message);
+    } finally {
+      setStopping((current) => new Set([...current].filter((id) => id !== run.id)));
+      void queryClient.invalidateQueries({ queryKey: ROUTINES_KEY });
     }
   };
 
@@ -125,20 +160,19 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
   const now = new Date();
   const upcoming = bot.routines
     .filter((routine) => routine.enabled)
-    .flatMap((routine) => upcomingRuns(routine.schedule, new Date(recordOf(routine)?.lastRunAt ?? routine.createdAt), now, UPCOMING).map((at) => ({ at, routine })))
+    .flatMap((routine) => upcomingRuns(scheduleFor(routine.schedule), new Date(recordOf(routine)?.lastRunAt ?? routine.createdAt), now, UPCOMING).map((at) => ({ at, routine })))
     .filter(({ at }) => at.getTime() - now.getTime() <= UPCOMING_DAYS * 86_400_000)
     .sort((a, b) => a.at.getTime() - b.at.getTime())
     .slice(0, UPCOMING);
-  const recent = bot.routines
-    .flatMap((routine) => (recordOf(routine)?.runs ?? []).map((entry) => ({ run: entry, routine })))
-    .sort((a, b) => Date.parse(b.run.startedAt) - Date.parse(a.run.startedAt))
-    .slice(0, RECENT);
+  const recent = visibleRoutineRuns(bot.routines, records.data?.routines ?? {}, RECENT);
+  const latestRun = recent.reduce<(typeof recent)[number] | null>((latest, entry) => !latest || Date.parse(entry.run.startedAt) > Date.parse(latest.run.startedAt) ? entry : latest, null);
 
   return (
     <>
+      {records.isError ? <Alert colors={colors} description={errorText(records.error)} /> : null}
       {records.data?.scheduler === false ? (
         <View style={{ marginBottom: 24 }}>
-          <Alert colors={colors} variant="warning" description="The scheduler on this host is starting" />
+          <Alert colors={colors} variant="warning" description={records.data.error ?? "The scheduler is connecting to Paseo. Routines resume when the connection is ready."} />
         </View>
       ) : null}
       <SettingsSection
@@ -150,7 +184,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
           {bot.routines.length === 0 ? <CardNote colors={colors} text="No routines yet" /> : null}
           {bot.routines.map((routine) => {
             const record = recordOf(routine);
-            const next = nextRun(routine.schedule, new Date(record?.lastRunAt ?? routine.createdAt), now);
+            const next = nextRun(scheduleFor(routine.schedule), new Date(record?.lastRunAt ?? routine.createdAt), now);
             const badge = routineState(routine, next);
             return (
               <PressableRow key={routine.id} colors={colors} accessibilityLabel={`Edit routine ${routine.name}`} onPress={() => setEditing(routine)}>
@@ -195,7 +229,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
             <DrillRow
               colors={colors}
               label="Runs"
-              hint={[upcoming[0] ? `Next ${runTime(upcoming[0].at, now)}` : null, recent[0] ? `last ${runTime(new Date(recent[0].run.startedAt), now)}` : null].filter(Boolean).join(", ") || "None yet"}
+              hint={[upcoming[0] ? `Next ${runTime(upcoming[0].at, now)}` : null, latestRun ? `last ${runTime(new Date(latestRun.run.startedAt), now)}` : null].filter(Boolean).join(", ") || "None yet"}
               onPress={() => setRuns(true)}
             />
           </SettingsCard>
@@ -204,7 +238,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
       {runs ? (
         <Modal title="Runs" open onOpenChange={(next) => !next && setRuns(false)}>
           <Modal.Content contentContainerStyle={{ gap: 0 }}>
-            <SettingsSection title="Upcoming" info={`The next runs over the coming ${UPCOMING_DAYS} days, in this host's local time.`}>
+            <SettingsSection title="Upcoming" info={`The next runs over the coming ${UPCOMING_DAYS} days, in your device's time zone.`}>
               <SettingsCard>
                 {upcoming.length === 0 ? <CardNote colors={colors} text="Nothing scheduled" /> : null}
                 {upcoming.map(({ at, routine }) => (
@@ -212,27 +246,24 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
                 ))}
               </SettingsCard>
             </SettingsSection>
-            <SettingsSection title="Recent runs" info="The latest runs of this bot's routines. Open one to see its chat.">
+            <SettingsSection title="Active and recent runs" info="Open a run to see its chat. Stop ends an active turn without changing its schedule or undoing actions already completed.">
               <SettingsCard>
                 {recent.length === 0 ? <CardNote colors={colors} text="No runs yet" /> : null}
                 {recent.map(({ run: entry, routine }) => {
                   const hint = [`${runTime(new Date(entry.startedAt), now)} · ${RUN_LABELS[entry.status]} · ${TRIGGER_LABELS[entry.trigger]}`, entry.error ?? entry.output].filter(Boolean).join("\n");
                   const agentId = entry.agentId;
-                  return agentId ? (
-                    <DrillRow
-                      key={entry.id}
-                      colors={colors}
+                  return <Fragment key={entry.id}>
+                    {agentId ? <SettingsAction
                       label={routine.name}
                       hint={hint}
-                      hintLines={2}
+                      actionLabel="Open chat"
                       onPress={() => {
                         setRuns(false);
                         onOpenChat(agentId);
                       }}
-                    />
-                  ) : (
-                    <SettingsRow key={entry.id} label={routine.name} hint={hint} />
-                  );
+                    /> : <SettingsRow label={routine.name} hint={hint} />}
+                    {entry.status === "running" ? <SettingsAction label="Active run" actionLabel={stopping.has(entry.id) ? "Stopping…" : stopErrors[entry.id] ? "Retry stop" : "Stop"} disabled={stopping.has(entry.id)} error={stopErrors[entry.id]} onPress={() => void stop(routine, entry)} /> : null}
+                  </Fragment>;
                 })}
               </SettingsCard>
             </SettingsSection>
@@ -244,6 +275,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
           colors={colors}
           bot={bot}
           host={host}
+          hostTimeZone={hostTimeZone}
           routine={editing === "new" ? null : editing}
           onCancel={() => setEditing(null)}
           onSubmit={(routine) => {
@@ -260,6 +292,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
 
 const CUSTOM_CRON = "Custom cron";
 const ONCE = "once";
+const INTERVAL = "interval";
 const WEBHOOK = "webhook";
 const OWN_CHAT = "own";
 
@@ -274,11 +307,12 @@ interface RoutineFormProps {
   bot: Bot;
   host: BotHost;
   routine: Routine | null;
+  hostTimeZone: string;
   onCancel(): void;
   onSubmit(routine: Routine): void;
 }
 
-function RoutineForm({ colors, bot, host, routine, onCancel, onSubmit }: RoutineFormProps) {
+function RoutineForm({ colors, bot, host, hostTimeZone, routine, onCancel, onSubmit }: RoutineFormProps) {
   const original: RoutineSchedule = routine?.schedule ?? { kind: "cron", expression: "0 9 * * 1-5" };
   // A new routine's id is picked now so its webhook URL can be shown before saving.
   const [id] = useState(() => routine?.id ?? newRoutineId());
@@ -286,21 +320,27 @@ function RoutineForm({ colors, bot, host, routine, onCancel, onSubmit }: Routine
   const [prompt, setPrompt] = useState(routine?.prompt ?? "");
   const [schedule, setSchedule] = useState<RoutineSchedule>(original);
   const [resultsChatId, setResultsChatId] = useState<string | null>(routine?.resultsChatId ?? null);
+  const [timeZone, setTimeZone] = useState((original.kind === "daily" || original.kind === "cron" ? original.timeZone : undefined) ?? hostTimeZone);
+  const [intervalText, setIntervalText] = useState(String(original.kind === "interval" ? original.minutes : 60));
   const [cronText, setCronText] = useState(() => scheduleToCron(original) ?? "0 9 * * *");
-  const [onceText, setOnceText] = useState(() => formatLocalDateTime(original.kind === "once" ? new Date(original.at) : inAnHour()));
+  const [onceText, setOnceText] = useState(() => formatLocalDateTime(original.kind === "once" ? new Date(original.at) : inAnHour(), timeZone));
   // Presets rewrite the cron field; remounting it is how Paseo's CadenceEditor resets it too.
   const [cronKey, setCronKey] = useState(0);
   const chats = useBotChats(host, bot.id);
 
   const once = schedule.kind === "once";
   const hook = schedule.kind === "webhook";
+  const interval = schedule.kind === "interval";
+  const zoneError = !hook && !interval && !validTimeZone(timeZone) ? "Use an IANA time zone, for example Europe/Prague" : null;
+  const minutes = Number(intervalText);
+  const intervalError = interval && (!Number.isInteger(minutes) || minutes < 5 || minutes > 1440) ? "Enter a whole number from 5 to 1440" : null;
   const trimmedCron = cronText.trim();
-  const presetValue = once ? ONCE : hook ? WEBHOOK : (CRON_PRESETS.find((preset) => preset.expression === trimmedCron)?.id ?? CUSTOM_CRON);
-  const cronError = once || hook ? null : validateCron(trimmedCron);
-  const onceDate = once ? parseLocalDateTime(onceText) : null;
+  const presetValue = once ? ONCE : hook ? WEBHOOK : interval ? INTERVAL : (CRON_PRESETS.find((preset) => preset.expression === trimmedCron)?.id ?? CUSTOM_CRON);
+  const cronError = once || hook || interval ? null : validateCron(trimmedCron);
+  const onceDate = once ? parseLocalDateTime(onceText, timeZone) : null;
   const onceChanged = original.kind !== "once" || onceDate?.getTime() !== new Date(original.at).getTime();
-  const onceError = !once ? null : !onceDate ? "Use YYYY-MM-DD HH:MM" : onceChanged && onceDate.getTime() <= Date.now() ? "Pick a time in the future" : null;
-  const canSubmit = prompt.trim().length > 0 && !cronError && !onceError;
+  const onceError = !once || zoneError ? null : !onceDate ? "Use YYYY-MM-DD HH:MM" : onceChanged && onceDate.getTime() <= Date.now() ? "Pick a time in the future" : null;
+  const canSubmit = prompt.trim().length > 0 && prompt.length <= 20_000 && !cronError && !onceError && !zoneError && !intervalError;
 
   // Runs' own chats aren't offered as a results chat; a chosen chat that's gone stays listed so it can be changed.
   const resultChats = (chats.data ?? []).filter((chat) => !chat.labels?.[ROUTINE_LABEL]);
@@ -313,7 +353,12 @@ function RoutineForm({ colors, bot, host, routine, onCancel, onSubmit }: Routine
   const submit = () => {
     const firstLine = prompt.trim().split("\n")[0]!.slice(0, 60);
     const base: Routine = routine ?? { id, name: "", prompt: "", enabled: true, schedule, resultsChatId: null, createdAt: new Date().toISOString() };
-    onSubmit({ ...base, name: name.trim().slice(0, 80) || firstLine, prompt, schedule, resultsChatId });
+    if (!canSubmit) return;
+    const savedSchedule: RoutineSchedule = once ? { kind: "once", at: onceDate!.toISOString() }
+      : interval ? { kind: "interval", minutes }
+      : hook ? { kind: "webhook" }
+      : { kind: "cron", expression: trimmedCron, timeZone };
+    onSubmit({ ...base, name: name.trim().slice(0, 80) || firstLine, prompt: prompt.trim(), schedule: savedSchedule, resultsChatId });
   };
 
   return (
@@ -322,18 +367,20 @@ function RoutineForm({ colors, bot, host, routine, onCancel, onSubmit }: Routine
         <View style={{ marginBottom: 24 }}>
           <SettingsCard>
             <InputField colors={colors} label="Name" initialValue={name} placeholder="Morning check-in" onChangeText={setName} />
-            <TextAreaField colors={colors} label="Prompt" hint="Sent as the first message of each run" defaultValue={prompt} onChangeText={setPrompt} placeholder="What should the bot do each run?" />
+            <TextAreaField colors={colors} label="Prompt" hint="Sent as the first message of each run" error={prompt.length > 20_000 ? "Keep the prompt within 20,000 characters" : null} defaultValue={prompt} onChangeText={setPrompt} placeholder="What should the bot do each run?" />
           </SettingsCard>
         </View>
-        <SettingsSection title="Cadence" info="In this host's local time. A run that's still working when the next is due is skipped.">
+        <SettingsSection title="Cadence" info="A run that is still working when the next is due is skipped. Calendar schedules follow the selected time zone, including daylight saving.">
           <SettingsCard>
             <SettingsSelect
               label="Repeats"
               value={presetValue}
-              options={[...CRON_PRESETS.map((preset) => ({ label: preset.label, value: preset.id })), { label: "Once", value: ONCE }, { label: "When its webhook is called", value: WEBHOOK }]}
+              options={[...CRON_PRESETS.map((preset) => ({ label: preset.label, value: preset.id })), { label: "Custom cron", value: CUSTOM_CRON }, { label: "Fixed interval", value: INTERVAL }, { label: "Once", value: ONCE }, { label: "When its webhook is called", value: WEBHOOK }]}
               onValueChange={(value) => {
+                if (value === INTERVAL) { setSchedule({ kind: "interval", minutes: Number(intervalText) || 60 }); return; }
+                if (value === CUSTOM_CRON) { setSchedule({ kind: "cron", expression: cronText, timeZone }); return; }
                 if (value === ONCE) {
-                  setSchedule({ kind: "once", at: (parseLocalDateTime(onceText) ?? inAnHour()).toISOString() });
+                  setSchedule({ kind: "once", at: (parseLocalDateTime(onceText, timeZone) ?? inAnHour()).toISOString() });
                   return;
                 }
                 if (value === WEBHOOK) {
@@ -344,22 +391,25 @@ function RoutineForm({ colors, bot, host, routine, onCancel, onSubmit }: Routine
                 if (!preset) return;
                 setCronText(preset.expression);
                 setCronKey((key) => key + 1);
-                setSchedule({ kind: "cron", expression: preset.expression });
+                setSchedule({ kind: "cron", expression: preset.expression, timeZone });
               }}
             />
+            {!hook && !interval ? <InputField colors={colors} label="Time zone" initialValue={timeZone} placeholder="Europe/Prague" hint={`Host: ${hostTimeZone}`} error={zoneError} autoCapitalize="none" autoCorrect={false} onChangeText={setTimeZone} /> : null}
             {hook ? (
-              <WebhookRows colors={colors} routineId={id} />
+              routine ? <WebhookRows colors={colors} routineId={id} /> : <CardNote colors={colors} text="Save this routine to get its webhook URL. Only callers on the host can reach this URL." />
+            ) : interval ? (
+              <InputField colors={colors} label="Every (minutes)" initialValue={intervalText} hint="5 to 1440 minutes. Fixed intervals keep their cadence." error={intervalError} onChangeText={setIntervalText} />
             ) : once ? (
               <InputField colors={colors}
                 key="once"
                 label="At"
-                hint={onceDate ? onceDate.toLocaleString() : "YYYY-MM-DD HH:MM"}
+                hint={onceDate ? `${onceDate.toLocaleString()} on your device` : "YYYY-MM-DD HH:MM in the selected time zone"}
                 error={onceError}
                 initialValue={onceText}
                 placeholder="2026-09-27 09:00"
                 onChangeText={(text) => {
                   setOnceText(text);
-                  const at = parseLocalDateTime(text);
+                  const at = parseLocalDateTime(text, timeZone);
                   if (at) setSchedule({ kind: "once", at: at.toISOString() });
                 }}
               />
@@ -376,7 +426,7 @@ function RoutineForm({ colors, bot, host, routine, onCancel, onSubmit }: Routine
                 placeholder="0 9 * * *"
                 onChangeText={(text) => {
                   setCronText(text);
-                  setSchedule({ kind: "cron", expression: text.trim() });
+                  setSchedule({ kind: "cron", expression: text.trim(), timeZone });
                 }}
               />
             )}
@@ -422,7 +472,7 @@ function WebhookRows({ colors, routineId }: { colors: Colors; routineId: string 
         hint={value ?? (url.isError ? errorText(url.error) : "Loading...")}
         actionLabel="Copy"
         disabled={!value}
-        onPress={() => void copyText(value!).then(() => toast.show("Webhook URL copied", { variant: "success" }))}
+        onPress={() => void copyText(value!).then(() => toast.show("Webhook URL copied", { variant: "success" })).catch((error) => toast.error(errorText(error)))}
       />
       <SettingsAction label="New URL" hint="POST to it from this computer; the body reaches the bot as data, not instructions." actionLabel="Replace" disabled={!value} onPress={() => void rotate()} />
     </>

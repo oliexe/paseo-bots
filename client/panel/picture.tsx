@@ -1,10 +1,8 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { SettingsAction } from "@getpaseo/plugin/client/ui";
-import { useState } from "react";
-import { Pressable, View } from "react-native";
-import { PALETTE_COUNT, paletteSwatch } from "../../shared/pixel";
+import { SettingsAction, SettingsInput, SettingsSelect, type SettingsInputHandle } from "@getpaseo/plugin/client/ui";
+import { useEffect, useRef, useState } from "react";
+import { PALETTE_COUNT } from "../../shared/pixel";
 import { pickFileHandles, squareImage } from "../web";
-import { InputField, StackedRow } from "./controls";
 
 // The picture controls bot avatars and team logos share.
 
@@ -25,56 +23,31 @@ export async function pickPicture(): Promise<string | null> {
 
 /** The generated picture's colour: automatic, or one of the palettes. */
 export function ColourRow({ colors, value, onChange }: { colors: Colors; value: number | null; onChange(palette: number | null): void }) {
-  return (
-    <StackedRow colors={colors} label="Colour">
-      <View accessibilityRole="radiogroup" style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-        <Swatch colors={colors} label="Automatic colour" color={null} selected={value === null} onPress={() => onChange(null)} />
-        {Array.from({ length: PALETTE_COUNT }, (_, index) => (
-          <Swatch key={index} colors={colors} label={`Colour ${index + 1}`} color={paletteSwatch(index)} selected={value === index} onPress={() => onChange(index)} />
-        ))}
-      </View>
-    </StackedRow>
-  );
+  return <SettingsSelect label="Colour" value={value === null ? "automatic" : String(value)} options={[
+    { label: "Automatic", value: "automatic" },
+    ...Array.from({ length: PALETTE_COUNT }, (_, index) => ({ label: `Colour ${index + 1}`, value: String(index) })),
+  ]} onValueChange={(next) => onChange(next === "automatic" ? null : Number(next))} />;
 }
 
-/**
- * Paseo's colour swatch (workspace-labels/swatch.tsx): 20pt circle, a 2pt foreground ring drawn
- * inside the box when selected, 12pt hit slop to reach 44pt, radio semantics. The automatic
- * option is an outlined circle.
- */
-function Swatch({ colors, label, color, selected, onPress }: { colors: Colors; label: string; color: string | null; selected: boolean; onPress(): void }) {
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityLabel={label}
-      accessibilityState={{ checked: selected }}
-      aria-checked={selected}
-      hitSlop={12}
-      onPress={onPress}
-      style={{
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: color ?? "transparent",
-        borderWidth: selected ? 2 : color ? 0 : 1,
-        borderColor: selected ? colors.foreground : colors.foregroundMuted,
-        borderStyle: color || selected ? "solid" : "dashed",
-      }}
-    />
-  );
-}
-
-/** A stored picture (uploaded or generated) with Remove, or the Image URL field. */
+/** A stored custom picture with Remove, or the Image URL field. */
 export function PictureSource(props: { colors: Colors; imageUrl: string | null; hint: string; placeholder: string; onChange(imageUrl: string | null): void }) {
-  if (props.imageUrl?.startsWith("data:")) return <SettingsAction label="Image" hint="Uploaded or generated" actionLabel="Remove" onPress={() => props.onChange(null)} />;
+  if (props.imageUrl?.startsWith("data:")) return <SettingsAction label="Image" hint="Custom picture" actionLabel="Remove" onPress={() => props.onChange(null)} />;
   return <ImageUrlField {...props} />;
 }
 
 function ImageUrlField({ colors, imageUrl, hint, placeholder, onChange }: { colors: Colors; imageUrl: string | null; hint: string; placeholder: string; onChange(imageUrl: string | null): void }) {
   const [text, setText] = useState(imageUrl ?? "");
+  const input = useRef<SettingsInputHandle>(null);
+  const applied = useRef(imageUrl);
+  useEffect(() => {
+    if (applied.current === imageUrl) return;
+    applied.current = imageUrl;
+    setText(imageUrl ?? "");
+    input.current?.replaceText(imageUrl ?? "");
+  }, [imageUrl]);
   return (
-    <InputField
-      colors={colors}
+    <SettingsInput
+      ref={input}
       label="Image URL"
       hint={hint}
       error={text.trim() && !IMAGE_URL.test(text.trim()) ? "Use an https:// or data:image URL" : null}
@@ -83,8 +56,10 @@ function ImageUrlField({ colors, imageUrl, hint, placeholder, onChange }: { colo
       onChangeText={(url) => {
         setText(url);
         const trimmed = url.trim();
-        if (!trimmed) onChange(null);
-        else if (IMAGE_URL.test(trimmed)) onChange(trimmed);
+        if (!trimmed || IMAGE_URL.test(trimmed)) {
+          applied.current = trimmed || null;
+          onChange(trimmed || null);
+        }
       }}
     />
   );

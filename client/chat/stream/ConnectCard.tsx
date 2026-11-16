@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl, useAgent, usePaseo } from "@getpaseo/plugin/client";
-import { useToast } from "@getpaseo/plugin/client/react-native";
+import { useToast } from "@getpaseo/plugin/client/ui";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import type { AppSignIn } from "../../../shared/apps";

@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, ScrollView } from "@getpaseo/plugin/client/ui";
 import { useRef } from "react";
 import { Pressable, Text, View, type LayoutRectangle } from "react-native";
 import type { BotGroup } from "../../shared/bot";

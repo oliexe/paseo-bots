@@ -500,6 +500,7 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
         ...values,
         bots: values.bots.filter((entry) => entry.id !== bot.id),
         history: values.history.filter((entry) => entry.botId !== bot.id),
+        bookmarks: values.bookmarks?.filter((entry) => entry.botId !== bot.id),
         groups: withoutBot(groups, bot.id, context.now),
         ui: ui && { ...ui, collapsed: ui.collapsed.filter((id) => id !== bot.id), pinnedChats: ui.pinnedChats.filter((pin) => pin.botId !== bot.id), chatOrder },
       };

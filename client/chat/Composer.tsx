@@ -1,8 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent, PaseoAgentSendOptions } from "../paseo";
 import { useRpc } from "@getpaseo/plugin/client";
-import { Icon, Modal, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsRow } from "@getpaseo/plugin/client/ui";
+import { Icon, Modal, SettingsAction, SettingsCard, SettingsRow, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, View, useWindowDimensions, type TextInput as NativeTextInput } from "react-native";
 import { newAttachmentId, normalizeMimeType, preflightFile, toWire, type ComposerAttachment } from "../../shared/attachments";
@@ -14,13 +13,17 @@ import type { BotHost } from "../data";
 import { homeIndicatorInset } from "../keyboard";
 import { CONTENT_MAX_WIDTH, errorText, nativeTokens, placeholderColor, useHover } from "../native";
 import { newMessageId, rememberSent } from "../sent-attachments";
+import { stopAgent } from "../stop-agent";
 import { measureAnchor, useMenu, type MenuEntry } from "../ui/Menu";
-import { decodeUtf8, domNode, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, type FileHandle } from "../web";
+import { decodeUtf8, domNode, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, surfaceIsVisible, type FileHandle } from "../web";
 import { content, ui } from "../typography";
 import type { ChatPaneProps, OutgoingMessage } from "../ChatPane";
 import { CommandMenu } from "./composer/CommandMenu";
 import { ContextMeter } from "./composer/ContextMeter";
-import { getDraft, loadDrafts, queueMessage, requeueFront, setDraft, takeQueuedMessage, useQueue } from "./composer/drafts";
+import { queueMessage, requeueFront, takeQueuedMessage, useDraftAttachmentPending, useDraftCreationPending, useDraftStore, useQueue, useQueuePaused } from "./composer/drafts";
+import { listenForDraftMutation, mutateDraft } from "./composer/draft-mutations";
+import { beginDraftAttachments, draftCreationGuard, isDraftAttachmentPending, isDraftCreationPending } from "./composer/draft-creation";
+import { setQueuePaused } from "./composer/queue-pause";
 import { useInputHeight } from "./composer/height";
 import {
   activeTurnBehaviorFor,
@@ -40,9 +43,11 @@ import {
   resolvePrimaryAction,
   restoreFailedSend,
   shouldDrainQueue,
+  queueDrainAfterRunning,
   submitAccessibilityLabel,
   type ComposerKeyEvent,
   type QueuedMessage,
+  type QueueDrainState,
   type SendAction,
   type SlashCommand,
   withPluginCommands,
@@ -93,15 +98,21 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   const upload = useRpc(uploadRpc);
   const tokens = nativeTokens(colors);
   const { height: windowHeight } = useWindowDimensions();
-  const initial = useMemo(() => getDraft(draftKey), [draftKey]);
+  const drafts = useDraftStore();
+  const creationPending = useDraftCreationPending(drafts, draftKey) && agentId === null;
+  const attachmentsPending = useDraftAttachmentPending(drafts, draftKey) && agentId === null;
+  const initial = useMemo(() => drafts.get(draftKey), [drafts, draftKey]);
   const [text, setText] = useState(initial?.text ?? "");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(initial?.attachments ?? []);
   const [pending, setPending] = useState<{ id: string; name: string }[]>([]);
   const [processing, setProcessing] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const stopLock = useRef(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [pasting, setPasting] = useState(false);
-  const [drain, setDrain] = useState<"idle" | "sending" | "awaiting" | "paused">("idle");
+  const pasteGuard = useRef<(() => boolean) | null>(null);
+  const queuePaused = useQueuePaused(draftKey);
+  const [drain, setDrain] = useState<QueueDrainState>(() => queuePaused ? "stopped" : "idle");
   const [commandState, setCommandState] = useState<{ agentId: string; commands: SlashCommand[]; error: string | null } | null>(null);
   const [activeCommand, setActiveCommand] = useState(0);
   const [commandsDismissed, setCommandsDismissed] = useState(false);
@@ -122,8 +133,8 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   const desktopWeb = layout.platform === "web" && !layout.compact;
   const buttonIconSize = web ? 16 : 20;
   const hasContent = text.trim().length > 0 || attachments.length > 0;
-  const loading = processing || pending.length > 0;
-  const canInterrupt = running && permissions.length > 0 && agentId !== null && !!host.api;
+  const loading = processing || creationPending || attachmentsPending || pending.length > 0;
+  const canInterrupt = (running || permissions.length > 0) && agentId !== null && !!host.api;
   const canPressLoading = loading && canInterrupt;
   const sendDisabled = !host.api || (!canPressLoading && loading);
   const primary = resolvePrimaryAction({ hasContent, running, loading });
@@ -141,31 +152,38 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
 
   const updateText = (next: string) => {
     touched.current = true;
+    latest.current = { ...latest.current, text: next };
     setText(next);
   };
   const updateAttachments = (update: (current: ComposerAttachment[]) => ComposerAttachment[]) => {
     touched.current = true;
-    setAttachments(update);
+    const next = update(latest.current.attachments);
+    latest.current = { ...latest.current, attachments: next };
+    setAttachments(next);
   };
 
-  // Phones read drafts from AsyncStorage after the first render; apply it unless the user already typed.
+  // Hydration uses the public device settings API. Edits and clears made while
+  // it loads win over persisted drafts, and a slow load never overwrites typing.
   useEffect(() => {
     let alive = true;
-    void loadDrafts().then(() => {
+    const hydrate = () => {
       if (!alive || touched.current) return;
-      const draft = getDraft(draftKey);
-      if (draft) {
-        setText(draft.text);
-        setAttachments(draft.attachments);
-      }
-    });
+      const draft = drafts.get(draftKey);
+      latest.current = { text: draft?.text ?? "", attachments: draft?.attachments ?? [] };
+      setText(latest.current.text);
+      setAttachments(latest.current.attachments);
+    };
+    const remove = drafts.subscribe(hydrate);
+    void drafts.load().then(hydrate).catch((error) => { if (alive) toast.error(errorText(error)); });
     return () => {
       alive = false;
+      remove();
+      if (touched.current) void drafts.flush().catch(() => {});
     };
-  }, [draftKey]);
+  }, [drafts, draftKey]);
 
   useEffect(() => {
-    if (touched.current) setDraft(draftKey, { text, attachments });
+    if (touched.current) drafts.set(draftKey, latest.current);
   }, [draftKey, text, attachments]);
 
   // ------------------------------------------------------------ input
@@ -177,12 +195,28 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     else inputRef.current?.focus();
   };
 
+  useEffect(() => listenForDraftMutation(drafts, draftKey, {
+    isActive: () => mounted.current && surfaceIsVisible(outerRef.current),
+    read: () => latest.current,
+    apply: (next, focus) => {
+      touched.current = true;
+      latest.current = next;
+      setText(next.text);
+      setAttachments(next.attachments);
+      if (focus) focusInput();
+    },
+  }), [drafts, draftKey]);
+
   // Desktop web focuses the composer when a chat opens (Paseo's MessageInputAutoFocus).
   useEffect(() => (desktopWeb ? focusWithRetries(() => domNode(inputRef.current)) : undefined), []);
 
   // ------------------------------------------------------------ attachments
 
   const addFiles = async (files: FileHandle[]) => {
+    if (agentId === null && isDraftCreationPending(drafts, draftKey)) {
+      if (files.length) toast.error("Wait for the new chat to open before adding attachments.");
+      return;
+    }
     const accepted: { file: FileHandle; kind: ComposerAttachment["kind"]; mimeType: string; pendingId: string }[] = [];
     for (const file of files) {
       const mimeType = normalizeMimeType(file.mimeType) || "application/octet-stream";
@@ -195,25 +229,27 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
       accepted.push({ file, kind, mimeType, pendingId: newAttachmentId() });
     }
     if (accepted.length === 0) return;
+    const release = agentId === null ? beginDraftAttachments(drafts, draftKey) : () => {};
     setPending((current) => [...current, ...accepted.map((entry) => ({ id: entry.pendingId, name: entry.file.name }))]);
-    for (const { file, kind, mimeType, pendingId } of accepted) {
-      try {
-        const base64 = await file.readBase64();
-        let attachment: ComposerAttachment;
-        if (kind === "image") attachment = { kind, id: newAttachmentId(), name: file.name, mimeType, size: file.size, data: base64 };
-        else if (kind === "text") attachment = { kind, id: newAttachmentId(), name: file.name, size: file.size, text: decodeUtf8(base64) };
-        else {
-          const stored = await upload({ botId: bot.id, fileName: file.name, dataBase64: base64 });
-          attachment = { kind, id: newAttachmentId(), name: file.name, mimeType, size: stored.size, path: stored.path };
+    try {
+      for (const { file, kind, mimeType, pendingId } of accepted) {
+        try {
+          const base64 = await file.readBase64();
+          let attachment: ComposerAttachment;
+          if (kind === "image") attachment = { kind, id: newAttachmentId(), name: file.name, mimeType, size: file.size, data: base64 };
+          else if (kind === "text") attachment = { kind, id: newAttachmentId(), name: file.name, size: file.size, text: decodeUtf8(base64) };
+          else {
+            const stored = await upload({ botId: bot.id, fileName: file.name, dataBase64: base64 });
+            attachment = { kind, id: newAttachmentId(), name: file.name, mimeType, size: stored.size, path: stored.path };
+          }
+          await mutateDraft(drafts, draftKey, (current) => ({ ...current, attachments: [...current.attachments, attachment] }));
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Failed to upload file");
+        } finally {
+          if (mounted.current) setPending((current) => current.filter((entry) => entry.id !== pendingId));
         }
-        if (mounted.current) updateAttachments((current) => [...current, attachment]);
-        else setDraft(draftKey, { text: latest.current.text, attachments: [...latest.current.attachments, attachment] });
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to upload file");
-      } finally {
-        if (mounted.current) setPending((current) => current.filter((entry) => entry.id !== pendingId));
       }
-    }
+    } finally { release(); }
   };
 
   const addFilesRef = useRef(addFiles);
@@ -221,15 +257,23 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
 
   const pick = async (accept?: string) => {
     try {
-      await addFiles(await pickFileHandles({ accept }));
+      if (agentId === null && isDraftCreationPending(drafts, draftKey)) return;
+      const stillCurrent = draftCreationGuard(drafts, draftKey);
+      const files = await pickFileHandles({ accept });
+      if (agentId === null && files.length && !stillCurrent()) {
+        toast.error("The chat changed while choosing files. Add the attachment to the open thread.");
+        return;
+      }
+      await addFiles(files);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload file");
     }
   };
 
   const openAttachMenu = async () => {
+    if (agentId === null && isDraftCreationPending(drafts, draftKey)) return;
     const anchor = await measureAnchor(attachRef);
-    if (!anchor) return;
+    if (!anchor || (agentId === null && isDraftCreationPending(drafts, draftKey))) return;
     // Paseo's order: Add image, Paste image (phones), issues/PRs, plugin sources, Upload file.
     // Plugins can't read the clipboard or open pickers on phones, so pasting text stands in there.
     const entries: MenuEntry[] = web
@@ -237,7 +281,11 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
           { label: "Add image", icon: "Image", onSelect: () => void pick("image/*") },
           { label: "Upload file", icon: "Paperclip", onSelect: () => void pick() },
         ]
-      : [{ label: "Paste text", icon: "ClipboardPaste", onSelect: () => setPasting(true) }];
+      : [{ label: "Paste text", icon: "ClipboardPaste", onSelect: () => {
+          if (agentId === null && isDraftCreationPending(drafts, draftKey)) return;
+          pasteGuard.current = draftCreationGuard(drafts, draftKey);
+          setPasting(true);
+        } }];
     menu.open({ anchor, align: "start", width: 220, title: "Add attachment", entries });
   };
 
@@ -251,7 +299,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
       label: "Drop files here",
       background: colors.surface0,
       foreground: colors.foreground,
-      isEnabled: () => !loadingRef.current && !!host.api,
+      isEnabled: () => !loadingRef.current && !!host.api && (agentId !== null || !isDraftCreationPending(drafts, draftKey)),
       onFiles: (files) => void addFilesRef.current(files),
     });
   }, [colors.surface0, colors.foreground, host.api]);
@@ -283,27 +331,24 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
 
   // composer/submit.ts: clear at once so typing can continue, put everything back on failure.
   const send = async () => {
+    if (agentId === null && (isDraftCreationPending(drafts, draftKey) || isDraftAttachmentPending(drafts, draftKey))) return;
     const message = { text: text.trim(), attachments };
     if ((!message.text && message.attachments.length === 0) || !host.api) return;
     updateText("");
     updateAttachments(() => []);
     setSendError(null);
     setProcessing(true);
-    if (drain === "paused") setDrain("idle");
+    setQueuePaused(draftKey, false);
+    if (drain === "paused" || drain === "stopped") setDrain("idle");
     try {
       await deliver(message);
       // Give the agent a moment to report the new turn before any queued message drains.
       if (agentId && mounted.current) setDrain((current) => (current === "idle" ? "awaiting" : current));
     } catch (error) {
-      const restored = restoreFailedSend(message, latest.current);
-      if (mounted.current) {
-        updateText(restored.text);
-        updateAttachments(() => restored.attachments);
-        setSendError(errorMessage(error));
-      } else {
-        setDraft(draftKey, restored);
-        toast.error(errorMessage(error));
-      }
+      try { await mutateDraft(drafts, draftKey, (current) => restoreFailedSend(message, current)); }
+      catch (recoveryError) { toast.error(errorText(recoveryError)); }
+      if (mounted.current && surfaceIsVisible(outerRef.current)) setSendError(errorMessage(error));
+      else toast.error(errorMessage(error));
     } finally {
       if (mounted.current) setProcessing(false);
     }
@@ -326,7 +371,10 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
 
   // Queued messages go out one at a time whenever the agent is idle (Paseo drains on "stopped running").
   useEffect(() => {
-    if (running && (drain === "awaiting" || drain === "paused")) setDrain("idle");
+    setDrain((current) => queuePaused ? "stopped" : current === "stopped" ? "idle" : current);
+  }, [queuePaused]);
+  useEffect(() => {
+    setDrain((current) => queueDrainAfterRunning(current, running));
   }, [running, drain]);
   useEffect(() => {
     if (drain !== "awaiting") return;
@@ -335,33 +383,36 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   }, [drain]);
   const draining = useRef(false);
   useEffect(() => {
-    const inFlight = draining.current || drain !== "idle" || processing;
+    const inFlight = draining.current || drain !== "idle" || processing || queuePaused;
     if (!shouldDrainQueue({ running, queued: queue.length, inFlight, hasAgent: agentId !== null && !!host.api })) return;
     const next = takeQueuedMessage(draftKey, queue[0]!.id);
     if (!next) return;
     draining.current = true;
     setDrain("sending");
     deliver(next)
-      .then(() => mounted.current && setDrain("awaiting"))
+      .then(() => mounted.current && setDrain((current) => current === "stopped" ? current : "awaiting"))
       .catch((error: unknown) => {
         requeueFront(draftKey, next);
         if (!mounted.current) return;
         setSendError(errorMessage(error));
-        setDrain("paused");
+        setDrain((current) => current === "stopped" ? current : "paused");
       })
       .finally(() => {
         draining.current = false;
       });
-  }, [running, queue, drain, processing, agentId, host.api]);
+  }, [running, queue, drain, processing, agentId, host.api, queuePaused]);
 
   const sendQueuedNow = async (item: QueuedMessage) => {
     if (!host.api || !takeQueuedMessage(draftKey, item.id)) return;
     setSendError(null);
+    setQueuePaused(draftKey, false);
+    setDrain("sending");
     try {
       await deliver(item);
+      if (mounted.current) setDrain((current) => current === "stopped" ? current : "awaiting");
     } catch (error) {
       requeueFront(draftKey, item);
-      if (mounted.current) setSendError(errorMessage(error));
+      if (mounted.current) { setSendError(errorMessage(error)); setDrain((current) => current === "stopped" ? current : "paused"); }
     }
   };
 
@@ -374,17 +425,19 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
 
   // ------------------------------------------------------------ stop
 
-  // Plugins have no cancel API. The one interrupt path is a pending permission: denying it
-  // with `interrupt` ends the turn, which is what Paseo's stop does in that state.
+  // The public reload API interrupts active work while preserving this chat's history.
   const stop = async () => {
-    const permission = permissions[0];
-    if (!canInterrupt || !permission || !agentId || !host.api || stopping) return;
+    if (!canInterrupt || !agentId || !host.api || stopLock.current) return;
+    stopLock.current = true;
     setStopping(true);
+    setQueuePaused(draftKey, true);
+    setDrain("stopped");
     try {
-      await host.api.agents.ref(agentId).respondToPermission({ requestId: permission.id, response: { behavior: "deny", interrupt: true, message: "Interrupted by the user." } });
+      await stopAgent(host.api, agentId);
     } catch (error) {
       toast.error(errorText(error));
     } finally {
+      stopLock.current = false;
       if (mounted.current) setStopping(false);
     }
     focusInput();
@@ -463,6 +516,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
       <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 12, flexShrink: 1 }}>
         {queue.length > 0 ? (
           <View style={{ gap: 8 }}>
+            {drain === "stopped" ? <Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>Queue paused. Send a queued message now or send a new reply to resume.</Text> : null}
             {queue.map((item) => (
               <QueuedRow key={item.id} colors={colors} item={item} onEdit={() => editQueued(item)} onSendNow={() => void sendQueuedNow(item)} />
             ))}
@@ -533,7 +587,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
             />
             <View style={{ flexShrink: 0, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginHorizontal: -6 }}>
               <View style={{ minWidth: 0, flexShrink: 1, flexGrow: 1, flexDirection: "row", alignItems: "flex-end" }}>
-                <AttachButton colors={colors} anchorRef={attachRef} iconSize={buttonIconSize} disabled={!host.api} onPress={() => void openAttachMenu()} />
+                <AttachButton colors={colors} anchorRef={attachRef} iconSize={buttonIconSize} disabled={!host.api || creationPending} onPress={() => void openAttachMenu()} />
               </View>
               <View style={{ flexShrink: 0, flexDirection: "row", alignItems: "center", gap: 4 }}>
                 {agentId ? (
@@ -570,6 +624,10 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
           colors={colors}
           onClose={() => setPasting(false)}
           onAttach={(pasted, title) => {
+            if (agentId === null && (!pasteGuard.current?.() || isDraftCreationPending(drafts, draftKey))) {
+              toast.error("The chat changed while adding text. Add the attachment to the open thread.");
+              return;
+            }
             updateAttachments((current) => [...current, { kind: "text", id: newAttachmentId(), name: title, size: pasted.length, text: pasted }]);
             setPasting(false);
           }}

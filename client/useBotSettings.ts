@@ -1,5 +1,5 @@
 import { useSettings } from "@getpaseo/plugin/client";
-import { useToast } from "@getpaseo/plugin/client/react-native";
+import { useToast } from "@getpaseo/plugin/client/ui";
 import { useRef } from "react";
 import { botSettings, type BotSettingsValues } from "../shared/bot";
 
@@ -37,7 +37,10 @@ export function useBotSettings() {
       toast.error(latest.current.saveError ?? "Couldn't save bots. Try again.");
       return false;
     };
-    const result = queue.current.then(run);
+    const result = queue.current.then(run).catch((error: unknown) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't save bots. Try again.");
+      return false;
+    });
     queue.current = result.catch(() => false);
     return result;
   };

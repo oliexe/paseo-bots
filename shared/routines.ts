@@ -1,21 +1,17 @@
 import { z } from "zod";
 import type { Routine, RoutineSchedule } from "./bot";
+import { calendarMinute, dayOffsets, localTimeZone, shiftDay, validTimeZone, wallInstants, type CalendarDay } from "./routine-time";
+export { localTimeZone, validTimeZone } from "./routine-time";
 
 /** A run missed by more than this is skipped instead of caught up (OpenMausBot uses 12 hours). */
 const CATCH_UP_MS = 12 * 60 * 60 * 1000;
-
-function atLocalTime(day: Date, time: string): Date {
-  const [hours, minutes] = time.split(":").map(Number) as [number, number];
-  const at = new Date(day);
-  at.setHours(hours, minutes, 0, 0);
-  return at;
-}
 
 /**
  * The most recent scheduled time at or before `now` that hasn't run yet, or
  * null. `since` is the last run (or the routine's creation when it never ran).
  */
 export function latestDue(schedule: RoutineSchedule, since: Date, now: Date): Date | null {
+  if (!Number.isFinite(since.getTime()) || !Number.isFinite(now.getTime())) return null;
   switch (schedule.kind) {
     case "webhook":
       return null;
@@ -24,23 +20,26 @@ export function latestDue(schedule: RoutineSchedule, since: Date, now: Date): Da
       return at > since && at <= now ? at : null;
     }
     case "interval": {
-      const due = new Date(since.getTime() + schedule.minutes * 60_000);
-      return due <= now ? due : null;
+      const period = schedule.minutes * 60_000;
+      const elapsed = now.getTime() - since.getTime();
+      return elapsed >= period ? new Date(since.getTime() + Math.floor(elapsed / period) * period) : null;
     }
     case "cron": {
       const cron = tryParseCron(schedule.expression);
       if (!cron) return null;
-      const at = previousCronTime(cron, now, since);
+      const at = previousCronTime(cron, now, since, schedule.timeZone);
       return at && at > since ? at : null;
     }
     case "daily": {
+      const zone = schedule.timeZone ?? localTimeZone();
+      if (!validTimeZone(zone)) return null;
+      const [hour, minute] = schedule.time.split(":").map(Number);
+      const current = calendarMinute(now, zone);
       for (let back = 0; back <= 7; back++) {
-        const day = new Date(now);
-        day.setDate(now.getDate() - back);
-        if (!schedule.weekdays.includes(day.getDay())) continue;
-        const at = atLocalTime(day, schedule.time);
-        if (at > now) continue;
-        return at > since ? at : null;
+        const day = shiftDay(current, -back);
+        if (!schedule.weekdays.includes(day.weekday)) continue;
+        const at = wallInstants(day, hour!, minute!, zone).reverse().find((value) => value <= now);
+        if (at) return at > since ? at : null;
       }
       return null;
     }
@@ -49,6 +48,7 @@ export function latestDue(schedule: RoutineSchedule, since: Date, now: Date): Da
 
 /** The next time the routine will fire after `now`, for display. */
 export function nextRun(schedule: RoutineSchedule, since: Date, now: Date): Date | null {
+  if (!Number.isFinite(since.getTime()) || !Number.isFinite(now.getTime())) return null;
   switch (schedule.kind) {
     case "webhook":
       return null;
@@ -62,16 +62,18 @@ export function nextRun(schedule: RoutineSchedule, since: Date, now: Date): Date
     }
     case "cron": {
       const cron = tryParseCron(schedule.expression);
-      return cron ? nextCronTime(cron, now) : null;
+      return cron ? nextCronTime(cron, now, schedule.timeZone) : null;
     }
     case "daily": {
-      if (schedule.weekdays.length === 0) return null;
+      const zone = schedule.timeZone ?? localTimeZone();
+      if (!validTimeZone(zone)) return null;
+      const [hour, minute] = schedule.time.split(":").map(Number);
+      const current = calendarMinute(now, zone);
       for (let ahead = 0; ahead <= 7; ahead++) {
-        const day = new Date(now);
-        day.setDate(now.getDate() + ahead);
-        if (!schedule.weekdays.includes(day.getDay())) continue;
-        const at = atLocalTime(day, schedule.time);
-        if (at > now) return at;
+        const day = shiftDay(current, ahead);
+        if (!schedule.weekdays.includes(day.weekday)) continue;
+        const at = wallInstants(day, hour!, minute!, zone).find((value) => value > now);
+        if (at) return at;
       }
       return null;
     }
@@ -83,7 +85,7 @@ export function upcomingRuns(schedule: RoutineSchedule, since: Date, now: Date, 
   const runs: Date[] = [];
   let from = since;
   let after = now;
-  while (runs.length < count) {
+  while (runs.length < Math.min(100, Math.max(0, Math.floor(count)))) {
     const next = nextRun(schedule, from, after);
     if (!next || (runs.length > 0 && next <= runs[runs.length - 1]!)) break;
     runs.push(next);
@@ -94,16 +96,26 @@ export function upcomingRuns(schedule: RoutineSchedule, since: Date, now: Date, 
 }
 
 /** "2026-09-27 09:00" in local time, the format the "At" field edits. */
-export function formatLocalDateTime(date: Date): string {
+export function formatLocalDateTime(date: Date, timeZone?: string): string {
+  if (timeZone) {
+    const at = calendarMinute(date, timeZone);
+    return `${at.year}-${pad2(at.month)}-${pad2(at.day)} ${pad2(at.hour)}:${pad2(at.minute)}`;
+  }
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /** Reads "YYYY-MM-DD HH:MM" (or with a T) as local time; null when it isn't a real date. */
-export function parseLocalDateTime(text: string): Date | null {
+export function parseLocalDateTime(text: string, timeZone?: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$/.exec(text.trim());
   if (!match) return null;
   const [year, month, day, hour, minute] = match.slice(1).map(Number) as [number, number, number, number, number];
+  if (timeZone) {
+    if (!validTimeZone(timeZone)) return null;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (year < 100 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day || hour > 23 || minute > 59) return null;
+    return wallInstants({ year, month, day, weekday: date.getUTCDay() }, hour, minute, timeZone)[0] ?? null;
+  }
   const date = new Date(year, month - 1, day, hour, minute);
   const valid = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && date.getHours() === hour && date.getMinutes() === minute;
   return valid ? date : null;
@@ -116,7 +128,10 @@ export function decide(routine: Routine, lastRunAt: string | null, now: Date): R
   const since = new Date(lastRunAt ?? routine.createdAt);
   const due = latestDue(routine.schedule, since, now);
   if (!due) return { action: "wait" };
-  return now.getTime() - due.getTime() <= CATCH_UP_MS ? { action: "run", due } : { action: "skip-missed", due };
+  // Intervals coalesce missed slots into one run without replaying each missed
+  // occurrence on successive ticks. The oldest missed slot sets catch-up age.
+  const missedAt = routine.schedule.kind === "interval" ? since.getTime() + routine.schedule.minutes * 60_000 : due.getTime();
+  return now.getTime() - missedAt <= CATCH_UP_MS ? { action: "run", due } : { action: "skip-missed", due };
 }
 
 const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -239,43 +254,41 @@ function sorted(values: ReadonlySet<number>, descending: boolean): number[] {
   return [...values].sort((a, b) => (descending ? b - a : a - b));
 }
 
-function dayMatches(cron: ParsedCron, day: Date): boolean {
-  return cron.month.has(day.getMonth() + 1) && cron.dayOfMonth.has(day.getDate()) && cron.dayOfWeek.has(day.getDay());
+function dayMatches(cron: ParsedCron, day: CalendarDay): boolean {
+  return cron.month.has(day.month) && cron.dayOfMonth.has(day.day) && cron.dayOfWeek.has(day.weekday);
 }
 
-/** The first matching minute strictly after `after`, or null within four years. */
-function nextCronTime(cron: ParsedCron, after: Date): Date | null {
-  const hours = sorted(cron.hour, false);
-  const minutes = sorted(cron.minute, false);
-  for (let offset = 0; offset <= CRON_SEARCH_DAYS; offset++) {
-    const day = new Date(after.getFullYear(), after.getMonth(), after.getDate() + offset);
-    if (!dayMatches(cron, day)) continue;
-    for (const hour of hours) {
-      for (const minute of minutes) {
-        const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute);
-        if (at > after) return at;
-      }
-    }
-  }
-  return null;
-}
-
-/** The latest matching minute at or before `atOrBefore`, searching back no further than `notBefore`'s day. */
-function previousCronTime(cron: ParsedCron, atOrBefore: Date, notBefore: Date): Date | null {
-  const hours = sorted(cron.hour, true);
-  const minutes = sorted(cron.minute, true);
-  const span = Math.min(CRON_SEARCH_DAYS, Math.max(0, Math.ceil((atOrBefore.getTime() - notBefore.getTime()) / 86_400_000) + 1));
+function cronTime(cron: ParsedCron, at: Date, backwards: boolean, notBefore?: Date, timeZone = localTimeZone()): Date | null {
+  if (!validTimeZone(timeZone)) return null;
+  const current = calendarMinute(at, timeZone);
+  const hours = sorted(cron.hour, backwards), minutes = sorted(cron.minute, backwards);
+  const span = notBefore ? Math.min(CRON_SEARCH_DAYS, Math.max(0, Math.ceil((at.getTime() - notBefore.getTime()) / 86_400_000) + 1)) : CRON_SEARCH_DAYS;
   for (let offset = 0; offset <= span; offset++) {
-    const day = new Date(atOrBefore.getFullYear(), atOrBefore.getMonth(), atOrBefore.getDate() - offset);
+    const day = shiftDay(current, backwards ? -offset : offset);
     if (!dayMatches(cron, day)) continue;
+    const offsets = dayOffsets(day, timeZone);
+    let found: Date | null = null;
     for (const hour of hours) {
       for (const minute of minutes) {
-        const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute);
-        if (at <= atOrBefore) return at;
+        for (const candidate of wallInstants(day, hour, minute, timeZone, offsets)) {
+          if (backwards ? candidate <= at : candidate > at) {
+            if (!found || (backwards ? candidate > found : candidate < found)) found = candidate;
+          }
+        }
+        // Ordinary days have one offset, and wall-clock order equals UTC order.
+        if (found && offsets.length === 1) return found;
       }
     }
+    if (found) return found;
   }
   return null;
+}
+
+function nextCronTime(cron: ParsedCron, after: Date, timeZone?: string): Date | null {
+  return cronTime(cron, after, false, undefined, timeZone);
+}
+function previousCronTime(cron: ParsedCron, atOrBefore: Date, notBefore: Date, timeZone?: string): Date | null {
+  return cronTime(cron, atOrBefore, true, notBefore, timeZone);
 }
 
 const CRON_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -351,14 +364,17 @@ export const ScheduleInput = z.object({
   time: z.string().max(5).optional().describe('For "daily": local time, "HH:MM".'),
   weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional().describe('For "daily": the days to run, 0 = Sunday to 6 = Saturday. Every day when left out.'),
   expression: z.string().max(100).optional().describe('For "cron": five fields (minute hour day-of-month month day-of-week) in local time.'),
+  timeZone: z.string().max(100).optional().describe("IANA time zone for daily/cron/once, for example Europe/Prague. Omit to use the host zone."),
   every_minutes: z.number().int().min(5).max(1440).optional().describe('For "interval": minutes between runs, 5 to 1440.'),
 });
 
 /** The routine schedule a tool call describes; throws a message the bot can act on. */
 export function scheduleFrom(input: z.infer<typeof ScheduleInput>, now: Date): RoutineSchedule {
+  if (input.timeZone && !validTimeZone(input.timeZone)) throw new Error("Use a valid IANA time zone, for example Europe/Prague.");
+  const zone = input.timeZone ? { timeZone: input.timeZone } : {};
   switch (input.type) {
     case "once": {
-      const at = input.at ? (parseLocalDateTime(input.at) ?? new Date(input.at)) : null;
+      const at = input.at ? (parseLocalDateTime(input.at, input.timeZone) ?? (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(input.at) ? new Date(input.at) : new Date(NaN))) : null;
       if (!at || Number.isNaN(at.getTime())) throw new Error('A "once" routine needs "at" as "YYYY-MM-DD HH:MM".');
       if (at <= now) throw new Error(`${input.at} has already passed. Pick a time in the future.`);
       return { kind: "once", at: at.toISOString() };
@@ -367,16 +383,16 @@ export function scheduleFrom(input: z.infer<typeof ScheduleInput>, now: Date): R
       if (!input.time || !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) throw new Error('A "daily" routine needs "time" as "HH:MM".');
       const weekdays = [...new Set(input.weekdays ?? [0, 1, 2, 3, 4, 5, 6])].sort();
       if (weekdays.length === 0) throw new Error("Give at least one weekday.");
-      return { kind: "daily", time: input.time, weekdays };
+      return { kind: "daily", time: input.time, weekdays, ...zone };
     }
     case "cron": {
       const error = validateCron(input.expression ?? "");
       if (error) throw new Error(`${error}. Use five fields: minute hour day-of-month month day-of-week.`);
-      return { kind: "cron", expression: input.expression!.trim() };
+      return { kind: "cron", expression: input.expression!.trim(), ...zone };
     }
     case "interval":
-      if (!input.every_minutes) throw new Error('An "interval" routine needs "every_minutes" (5 to 1440).');
-      return { kind: "interval", minutes: input.every_minutes };
+      if (!Number.isInteger(input.every_minutes) || input.every_minutes! < 5 || input.every_minutes! > 1440) throw new Error('An "interval" routine needs "every_minutes" (5 to 1440).');
+      return { kind: "interval", minutes: input.every_minutes! };
     case "webhook":
       return { kind: "webhook" };
   }

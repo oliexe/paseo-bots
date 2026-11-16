@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { z } from "zod";
 import { isAbsolute, join } from "node:path";
 import { redactSecrets } from "../shared/activity";
 import { pluginDataPath } from "./bot-home";
+import { atomicWrite, missingFile } from "./files";
 
 // OpenMausBot's command allowlist: an exact command in an exact folder that a
 // bot may run without asking, saved from the command's approval card. Rules
@@ -18,6 +20,7 @@ export interface CommandRule {
 }
 
 type StoredRule = CommandRule & { botId: string };
+const StoredRules = z.object({ rules: z.array(z.object({ id: z.string(), botId: z.string(), command: z.string(), cwd: z.string() })) });
 
 function storePath(): string {
   return join(pluginDataPath(), "commands.json");
@@ -37,18 +40,17 @@ export class CommandAllowlist {
 
   private async load(): Promise<StoredRule[]> {
     try {
-      const saved = JSON.parse(await readFile(storePath(), "utf8")) as { rules?: StoredRule[] };
-      return Array.isArray(saved.rules) ? saved.rules : [];
-    } catch {
-      return [];
+      return StoredRules.parse(JSON.parse(await readFile(storePath(), "utf8"))).rules;
+    } catch (error) {
+      if (missingFile(error)) return [];
+      throw new Error("Couldn't read saved command rules. The existing file was kept intact.", { cause: error });
     }
   }
 
   private change<T>(edit: (rules: StoredRule[]) => { rules: StoredRule[]; result: T }): Promise<T> {
     const run = async () => {
       const { rules, result } = edit(await this.load());
-      await mkdir(pluginDataPath(), { recursive: true });
-      await writeFile(storePath(), JSON.stringify({ version: 1, rules }, null, 2), { encoding: "utf8", mode: 0o600 });
+      await atomicWrite(storePath(), JSON.stringify({ version: 1, rules }, null, 2));
       return result;
     };
     const next = this.queue.then(run);

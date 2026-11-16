@@ -1,15 +1,20 @@
-import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
 import { BotMcpServerSchema, BotSchema, botMcpServers, botSkills, newBotId, newRoutineId, TeamFileTeamSchema, type Bot, type BotGroup, type BotMcpServer, type Library, type TeamFileTeam } from "../shared/bot";
 import { sanitizeSkillName } from "../shared/skills";
 import { botDataPath } from "./bot-home";
 import { librarySkillPath, type ImportedSkill } from "./library";
+import { atomicWrite, ensureRealDirectory, missingFile, readRegularText, safeFileParts } from "./files";
 
 const FORMAT = "paseo-bots";
 /** Files exported before the plugin was renamed. */
 const FORMATS = z.enum([FORMAT, "paseo-bot"]);
 const MAX_FILES = 400;
+const MAX_FILE_BYTES = 512 * 1024;
+const MAX_EXPORT_BYTES = 5_000_000;
+const MAX_TEAM_BYTES = 20_000_000;
+const MAX_DEPTH = 16;
 
 const BotFields = BotSchema.pick({
   name: true,
@@ -57,38 +62,50 @@ function redact(servers: BotMcpServer[]): BotMcpServer[] {
   }));
 }
 
-async function collect(root: string, include: (path: string) => boolean): Promise<Record<string, string>> {
+type ExportBudget = { files: number; bytes: number };
+
+async function collect(root: string, budget: ExportBudget, memoryOnly = false): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
-  const walk = async (dir: string) => {
-    let names: string[];
-    try {
-      names = await readdir(dir);
-    } catch {
-      return;
-    }
-    for (const name of names) {
-      if (Object.keys(files).length >= MAX_FILES) return;
+  const rootInfo = await lstat(root).catch((error: unknown) => {
+    if (missingFile(error)) return null;
+    throw error;
+  });
+  if (!rootInfo || rootInfo.isSymbolicLink()) return files;
+  if (!rootInfo.isDirectory()) throw new Error(`Expected a folder: ${root}`);
+  const walk = async (dir: string, depth: number) => {
+    if (depth > MAX_DEPTH) throw new Error(`Export folders may be at most ${MAX_DEPTH} levels deep.`);
+    for (const name of (await readdir(dir)).sort()) {
+      if (memoryOnly && dir === root && name !== "MEMORY.md" && name !== "memory") continue;
       const path = join(dir, name);
-      const info = await stat(path);
-      if (info.isDirectory()) await walk(path);
-      else {
+      const info = await lstat(path);
+      // A bot or imported skill can contain links into any host folder, or a cycle.
+      if (info.isSymbolicLink()) continue;
+      if (info.isDirectory()) await walk(path, depth + 1);
+      else if (info.isFile()) {
         const key = relative(root, path).split(sep).join("/");
-        if (include(key)) files[key] = await readFile(path, "utf8");
+        if (budget.files >= MAX_FILES) throw new Error(`The export has more than ${MAX_FILES} files. Remove unneeded files and try again.`);
+        const text = await readRegularText(path, MAX_FILE_BYTES);
+        if (text === null) throw new Error(`A file disappeared during export: ${key}`);
+        budget.bytes += Buffer.byteLength(text, "utf8");
+        if (budget.bytes > MAX_EXPORT_BYTES) throw new Error("The bot export exceeds 5 MB. Export without memory or remove large skill files.");
+        budget.files++;
+        files[key] = text;
       }
     }
   };
-  await walk(root);
+  await walk(root, 0);
   return files;
 }
 
 export async function exportBot({ bot, includeMemory }: { bot: Bot; includeMemory: boolean }, library: Library) {
   const skills = botSkills(bot, library);
   const files: Record<string, string> = {};
+  const budget: ExportBudget = { files: 0, bytes: 0 };
   for (const skill of skills) {
-    const skillFiles = await collect(librarySkillPath(skill.id), () => true);
+    const skillFiles = await collect(librarySkillPath(skill.id), budget);
     for (const [path, text] of Object.entries(skillFiles)) files[`skills/${skill.id}/${path}`] = text;
   }
-  if (includeMemory) Object.assign(files, await collect(botDataPath(bot.id), (path) => path === "MEMORY.md" || path.startsWith("memory/")));
+  if (includeMemory) Object.assign(files, await collect(botDataPath(bot.id), budget, true));
   const payload: z.input<typeof ExportV2Schema> = {
     format: FORMAT,
     version: 2,
@@ -111,10 +128,13 @@ export async function exportBot({ bot, includeMemory }: { bot: Bot; includeMemor
     mcpServers: redact(botMcpServers(bot, library).map((server) => ({ name: server.name, enabled: true, config: server.config }))),
     files,
   };
-  return { json: JSON.stringify(payload, null, 2) };
+  const json = JSON.stringify(payload, null, 2);
+  if (Buffer.byteLength(json, "utf8") > MAX_EXPORT_BYTES) throw new Error("The bot export exceeds 5 MB. Export without memory or remove large skill files.");
+  return { json };
 }
 
 function parseExport(json: string): z.infer<typeof ExportV2Schema> {
+  if (Buffer.byteLength(json, "utf8") > MAX_EXPORT_BYTES) throw new Error("Bot files must be at most 5 MB.");
   let raw: unknown;
   try {
     raw = JSON.parse(json);
@@ -122,22 +142,31 @@ function parseExport(json: string): z.infer<typeof ExportV2Schema> {
     throw new Error("That isn't a paseo-bots export.");
   }
   const v2 = ExportV2Schema.safeParse(raw);
-  if (v2.success) return v2.data;
+  if (v2.success) return validateFiles(v2.data);
   const v1 = ExportV1Schema.safeParse(raw);
   if (!v1.success) throw new Error("That isn't a paseo-bots export.");
   const { mcpServers, skills, ...bot } = v1.data.bot;
-  return {
+  return validateFiles({
     format: FORMAT,
     version: 2,
     bot,
     skills: skills.filter((skill) => skill.enabled).map((skill) => ({ id: skill.name, description: skill.description, source: skill.source })),
     mcpServers: mcpServers.filter((server) => server.enabled),
     files: v1.data.files,
-  };
+  });
+}
+
+function validateFiles(parsed: z.infer<typeof ExportV2Schema>) {
+  if (Object.keys(parsed.files).length > MAX_FILES) throw new Error(`Bot files may contain at most ${MAX_FILES} files.`);
+  for (const [path, text] of Object.entries(parsed.files)) {
+    if (safeFileParts(path).length > MAX_DEPTH + 3) throw new Error("The imported file path is too deep.");
+    if (Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES) throw new Error(`An imported file exceeds 512 KB: ${path}`);
+  }
+  return parsed;
 }
 
 async function exists(path: string): Promise<boolean> {
-  return (await lstat(path).catch(() => null)) !== null;
+  return (await lstat(path).catch((error: unknown) => { if (missingFile(error)) return null; throw error; })) !== null;
 }
 
 /**
@@ -153,17 +182,21 @@ export async function importBot({ botId, json }: { botId: string; json: string }
 
   const root = botDataPath(botId);
   for (const [path, text] of Object.entries(parsed.files)) {
-    if (path.includes("..")) continue;
     let target: string | null = null;
-    if (path === "MEMORY.md" || path.startsWith("memory/")) target = join(root, ...path.split("/"));
+    let targetRoot = root;
+    const parts = safeFileParts(path);
+    if (path === "MEMORY.md" || path.startsWith("memory/")) target = join(root, ...parts);
     else if (path.startsWith("skills/")) {
-      const [, id, ...rest] = path.split("/");
+      const [, id, ...rest] = parts;
       const clean = id ? sanitizeSkillName(id) : "";
-      if (fresh.has(clean) && rest.length > 0) target = join(librarySkillPath(clean), ...rest);
+      if (fresh.has(clean) && rest.length > 0) {
+        targetRoot = librarySkillPath(clean);
+        target = join(targetRoot, ...rest);
+      }
     }
     if (!target) continue;
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, text, "utf8");
+    await ensureRealDirectory(targetRoot, dirname(target));
+    await atomicWrite(target, text);
   }
   const now = new Date().toISOString();
   const bot: Bot = {
@@ -216,17 +249,23 @@ function teamsInFile(bots: readonly Bot[], groups: readonly BotGroup[]): TeamFil
 
 /** Several bots in one file, each as its own bot export, and the teams they're on. */
 export async function exportTeam({ bots, groups, includeMemory }: { bots: Bot[]; groups: BotGroup[]; includeMemory: boolean }, library: Library) {
-  const shared = bots.slice(0, MAX_TEAM);
+  if (bots.length === 0 || bots.length > MAX_TEAM) throw new Error(`A team export needs between 1 and ${MAX_TEAM} bots.`);
+  const shared = bots;
   const entries: unknown[] = [];
   for (const bot of shared) entries.push(JSON.parse((await exportBot({ bot, includeMemory }, library)).json));
-  return { json: JSON.stringify({ format: TEAM_FORMAT, version: 1, bots: entries, teams: teamsInFile(shared, groups) }, null, 2) };
+  const json = JSON.stringify({ format: TEAM_FORMAT, version: 1, bots: entries, teams: teamsInFile(shared, groups) }, null, 2);
+  if (Buffer.byteLength(json, "utf8") > MAX_TEAM_BYTES) throw new Error("The team export exceeds 20 MB. Export fewer bots or omit memory.");
+  return { json };
 }
 
 /** Imports every bot of a team file (or a single bot file) as new bots, with its teams. */
 export async function importTeam({ json }: { json: string }) {
+  if (Buffer.byteLength(json, "utf8") > MAX_TEAM_BYTES) throw new Error("Team files must be at most 20 MB.");
   if (!isTeamFile(json)) return { bots: [await importBot({ botId: newBotId(), json })], teams: [] };
   const parsed = TeamSchema.safeParse(JSON.parse(json));
   if (!parsed.success) throw new Error("That team file is damaged or from a newer version.");
+  // Validate every bot before the first one writes anything to disk.
+  for (const entry of parsed.data.bots) parseExport(JSON.stringify(entry));
   const bots = [];
   for (const entry of parsed.data.bots) bots.push(await importBot({ botId: newBotId(), json: JSON.stringify(entry) }));
   const inRange = (position: number) => position < bots.length;

@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon } from "@getpaseo/plugin/client/react-native";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import { Text, View } from "react-native";
 import type { RoutineRunCard as RunCard } from "../../../shared/rpc";
 import { relativeTime } from "../../../shared/time";
@@ -13,6 +13,7 @@ const STATUS: Record<RunCard["status"], { label: string; variant: BadgeVariant }
   running: { label: "Running", variant: "muted" },
   succeeded: { label: "Done", variant: "success" },
   failed: { label: "Failed", variant: "error" },
+  canceled: { label: "Stopped", variant: "muted" },
   "skipped-busy": { label: "Skipped", variant: "muted" },
   "skipped-missed": { label: "Missed", variant: "warning" },
 };

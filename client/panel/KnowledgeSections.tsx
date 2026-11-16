@@ -1,6 +1,5 @@
 import { useRpc } from "@getpaseo/plugin/client";
-import { copyText, Modal, useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
+import { copyText, Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
@@ -81,7 +80,7 @@ function SoulSheet({ colors, saved, onClose, onSave }: { colors: Colors; saved: 
           }
         >
           <Button colors={colors} variant="ghost" label="Reset" disabled={!changed} onPress={() => setDraft(saved)} />
-          <Button colors={colors} variant="default" label="Save" disabled={!changed} onPress={() => onSave(draft)} />
+          <Button colors={colors} variant="default" label="Save" disabled={!changed || bytes > SOUL_MAX_BYTES} onPress={() => onSave(draft)} />
         </SheetActions>
       </Modal.Content>
     </Modal>
@@ -120,13 +119,15 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
     Promise.all([queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory", bot.id] }), queryClient.invalidateQueries({ queryKey: ["paseo-bots", "memory-journal", bot.id] })]);
 
   const data = files.data;
-  const over = data ? data.injectedLines > MEMORY_LINES || data.injectedBytes > MEMORY_BYTES : false;
+  const mainMemory = data?.files.find((file) => !file.topic);
+  const over = !!mainMemory && (mainMemory.lines > MEMORY_LINES || mainMemory.bytes > MEMORY_BYTES);
   const changes = journal.data?.entries.length ?? 0;
   const days = log.data?.days.length ?? 0;
 
   return (
     <>
       {!host.isLocal ? <LocalOnly colors={colors} what="Memory files" /> : null}
+      {files.error ? <Alert colors={colors} variant="error" title="Could not load memory" description={errorText(files.error)} actionLabel="Retry" onAction={() => void files.refetch()} /> : null}
       <SettingsSection
         title="Files"
         info="The bot updates these itself as it learns; edit them to correct or add facts. MEMORY.md is loaded into every chat, topic files are read on demand."
@@ -185,11 +186,17 @@ function TopicSheet({ colors, botId, onClose, onCreated }: { colors: Colors; bot
   const toast = useToast();
   const [topic, setTopic] = useState("");
   const name = topic.trim().replace(/\.md$/, "");
-  const error = name && !TOPIC_NAME.test(name) ? "Use letters, numbers, spaces, dots and dashes" : null;
-  const create = () =>
-    void write({ botId, name: `${name}.md`, text: `# ${name}\n` })
+  const [creating, setCreating] = useState(false);
+  const createLock = useRef(false);
+  const error = name && (!TOPIC_NAME.test(name) || name.length > 252) ? "Use up to 252 letters, numbers, spaces, dots and dashes" : null;
+  const create = () => {
+    if (createLock.current) return;
+    createLock.current = true; setCreating(true);
+    void write({ botId, name: `${name}.md`, text: `# ${name}\n`, expectedRevision: null })
       .then(() => onCreated(`${name}.md`))
-      .catch((caught: unknown) => toast.error(errorText(caught)));
+      .catch((caught: unknown) => toast.error(errorText(caught)))
+      .finally(() => { createLock.current = false; setCreating(false); });
+  };
   return (
     <Modal title="New topic file" open onOpenChange={(value) => !value && onClose()}>
       <Modal.Content>
@@ -198,7 +205,7 @@ function TopicSheet({ colors, botId, onClose, onCreated }: { colors: Colors; bot
         </SettingsCard>
         <SheetActions>
           <Button colors={colors} variant="ghost" label="Cancel" onPress={onClose} />
-          <Button colors={colors} variant="default" label="Create" disabled={!name || !!error} onPress={create} />
+          <Button colors={colors} variant="default" label="Create" loading={creating} disabled={!name || !!error || creating} onPress={create} />
         </SheetActions>
       </Modal.Content>
     </Modal>
@@ -216,23 +223,29 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
   const [text, setText] = useState<string | null>(null);
   const [saved, setSaved] = useState("");
   const [saving, setSaving] = useState(false);
+  const [revision, setRevision] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const operationLock = useRef(false);
   const topic = name !== "MEMORY.md";
   const label = topic ? `memory/${name}` : name;
   const dirty = text !== null && text !== saved;
 
   useEffect(() => {
     let cancelled = false;
+    setLoadError(null);
     void read({ botId, name })
-      .then(({ text: loaded }) => {
+      .then(({ text: loaded, revision }) => {
         if (cancelled) return;
         setText(loaded);
         setSaved(loaded);
+        setRevision(revision);
       })
-      .catch((error: unknown) => !cancelled && toastRef.current.error(errorText(error)));
+      .catch((error: unknown) => { if (!cancelled) setLoadError(errorText(error)); });
     return () => {
       cancelled = true;
     };
-  }, [botId, name, read]);
+  }, [botId, name, read, retry]);
 
   const close = async () => {
     if (dirty && !(await confirmDialog({ title: "Discard changes", message: `Discard your changes to ${label}?`, confirmLabel: "Discard", destructive: true }))) return;
@@ -240,38 +253,39 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
   };
 
   const save = async () => {
-    if (text === null) return;
+    if (text === null || operationLock.current) return;
+    operationLock.current = true;
     setSaving(true);
     try {
-      // Bots edit their memory themselves; don't overwrite a change made since it was opened.
-      const current = (await read({ botId, name })).text;
-      if (current !== saved && current !== text) {
-        toast.error("The bot changed this file since you opened it. Close it and open it again.");
-        return;
-      }
-      await write({ botId, name, text });
+      await write({ botId, name, text, expectedRevision: revision });
       setSaved(text);
       onChanged();
       onClose();
     } catch (error) {
       toast.error(errorText(error));
     } finally {
+      operationLock.current = false;
       setSaving(false);
     }
   };
 
   const destroy = async () => {
-    const confirmed = await confirmDialog({ title: "Delete topic file", message: `Delete ${label}? This cannot be undone.`, confirmLabel: "Delete", destructive: true });
-    if (!confirmed) return;
-    await remove({ botId, name });
-    onChanged();
-    onClose();
+    if (text === null || operationLock.current) return;
+    operationLock.current = true;
+    try {
+      const confirmed = await confirmDialog({ title: "Delete topic file", message: `Delete ${label}? You can restore it from Memory → Changes.`, confirmLabel: "Delete", destructive: true });
+      if (!confirmed) return;
+      setSaving(true);
+      await remove({ botId, name, expectedRevision: revision });
+      onChanged(); onClose();
+    } catch (error) { toast.error(errorText(error)); }
+    finally { operationLock.current = false; setSaving(false); }
   };
 
   return (
     <Modal title={label} open onOpenChange={(value) => !value && void close()}>
       <Modal.Content>
-        {text === null ? (
+        {loadError ? <Alert colors={colors} variant="error" title="Could not read memory" description={loadError} actionLabel="Retry" onAction={() => setRetry((value) => value + 1)} /> : text === null ? (
           <SettingsCard>
             <View style={{ minHeight: 320, alignItems: "center", justifyContent: "center" }}>
               <ActivityIndicator size="small" color={colors.foregroundMuted} />
@@ -280,7 +294,7 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
         ) : (
           <FormTextArea colors={colors} monospace accessibilityLabel={`${label} contents`} value={text} onChangeText={setText} minHeight={320} placeholder={"- Prefers short replies\n- Works Mon-Fri, CET"} />
         )}
-        <SheetActions leading={topic ? <Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={() => void destroy()} /> : null}>
+        <SheetActions leading={topic ? <Button colors={colors} variant="ghost" label="Delete" icon="Trash2" disabled={saving || text === null} onPress={() => void destroy()} /> : null}>
           <Button colors={colors} variant="ghost" label="Reset" disabled={!dirty || saving} onPress={() => setText(saved)} />
           <Button colors={colors} variant="default" label={saving ? "Saving..." : "Save"} disabled={!dirty || saving} onPress={() => void save()} />
         </SheetActions>

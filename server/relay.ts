@@ -38,7 +38,7 @@ function tokenMatches(expected: string, header: string | undefined): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function readBody(request: IncomingMessage, limit = MAX_BODY): Promise<string> {
+export function readBody(request: IncomingMessage, limit = MAX_BODY, destroyOnOverflow = true): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
@@ -46,7 +46,7 @@ export function readBody(request: IncomingMessage, limit = MAX_BODY): Promise<st
       size += chunk.length;
       if (size > limit) {
         reject(new Error("Request too large"));
-        request.destroy();
+        if (destroyOnOverflow) request.destroy();
       } else chunks.push(chunk);
     });
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
@@ -210,13 +210,14 @@ export class Relay {
       return fetch(upstream.mcpUrl, {
         method: "POST",
         headers: {
-          "x-api-key": upstream.apiKey,
+          ...upstream.headers,
           "content-type": "application/json",
           accept: "application/json, text/event-stream",
           ...(typeof transport === "string" ? { "mcp-session-id": transport } : {}),
           ...(typeof request.headers["mcp-protocol-version"] === "string" ? { "mcp-protocol-version": request.headers["mcp-protocol-version"] } : {}),
         },
         body,
+        redirect: "error",
         signal: deadline(10 * 60_000),
       });
     };

@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/ui";
 import { useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { botProblems, type Bot, type BotGroup, type HistoryEntry, type Library } from "../../shared/bot";
@@ -71,6 +71,10 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
 
 const SECTIONS = GROUPS.flatMap((group) => group.sections);
 
+export function botSectionTitle(id: string | undefined): string | null {
+  return SECTIONS.find((entry) => entry.id === id && !entry.modal)?.label ?? null;
+}
+
 export interface PanelProps {
   colors: Colors;
   bot: Bot;
@@ -97,6 +101,7 @@ interface BotPanelProps extends PanelProps {
   compact?: boolean;
   /** The home indicator on phones. */
   bottomInset: number;
+  hostHeader?: boolean;
 }
 
 /**
@@ -116,7 +121,7 @@ export function BotPanel(props: BotPanelProps) {
   if (open) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
-        <PanelHeader colors={colors} compact={compact} title={open.label} onBack={() => onSection(null)} onClose={onClose} />
+        {props.hostHeader ? null : <PanelHeader colors={colors} compact={compact} title={open.label} onBack={() => onSection(null)} onClose={onClose} />}
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: 24, paddingBottom: 32 + bottomInset }}>
           {renderSection(open.id, props)}
         </ScrollView>
@@ -135,7 +140,7 @@ export function BotPanel(props: BotPanelProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
-      <PanelHeader colors={colors} compact={compact} title={bot.name || "Untitled bot"} onClose={onClose} />
+      {props.hostHeader ? null : <PanelHeader colors={colors} compact={compact} title={bot.name || "Untitled bot"} onClose={onClose} />}
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 + bottomInset }}>
         <View style={{ paddingHorizontal: 8, paddingTop: 8, gap: 8 }}>
           <SearchField colors={colors} value={query} onChangeText={setQuery} placeholder="Search settings" />

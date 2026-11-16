@@ -16,6 +16,12 @@ import {
 } from "../../../shared/tools";
 import { ROUTINE_RUN_CARD, RoutineRunCardSchema, type RoutineRunCard } from "../../../shared/rpc";
 import { PLUGIN_ID } from "../../../shared/version";
+import { botToolName } from "../../../shared/bot-tools";
+import { INTERACTION_CARD, InteractionSchema, interactionIdOf, interactionReplySummary, interactionSearchText, type Interaction } from "../../../shared/interaction";
+import { HANDOFF_CARD, HandoffCardSchema, handoffSearchText, type HandoffCard } from "../../../shared/handoff";
+import { appSignIns } from "../../../shared/apps";
+import { proposalIdOf } from "../../../shared/proposals";
+import { extractToolSources } from "../../../shared/tool-results";
 
 /** The fields of a projected timeline entry the stream reads. */
 export interface StreamEntry {
@@ -34,23 +40,28 @@ interface RowBase {
   timestamp: number;
 }
 
+export type ToolStreamRow = RowBase & {
+  kind: "tool";
+  name: string;
+  status: ToolCallStatus;
+  error: unknown;
+  detail: ToolCallDetail;
+  metadata?: Record<string, unknown>;
+};
+
 export type StreamRow =
-  | (RowBase & { kind: "user"; text: string; messageId?: string; clientMessageId?: string })
+  | (RowBase & { kind: "user"; text: string; messageId?: string; clientMessageId?: string; cardReply?: string })
   | (RowBase & { kind: "assistant"; text: string; phase: "streaming" | "complete" })
   | (RowBase & { kind: "thought"; text: string; loading: boolean })
-  | (RowBase & {
-      kind: "tool";
-      name: string;
-      status: ToolCallStatus;
-      error: unknown;
-      detail: ToolCallDetail;
-      metadata?: Record<string, unknown>;
-    })
+  | ToolStreamRow
+  | (RowBase & { kind: "tool-group"; tools: ToolStreamRow[] })
   | (RowBase & { kind: "speak"; text: string })
   | (RowBase & { kind: "todo"; items: TaskEntry[]; activity: TaskActivity })
   | (RowBase & { kind: "notification"; level: "info" | "warning" | "error"; message: string })
   | (RowBase & { kind: "compaction"; status: "loading" | "completed"; trigger?: "auto" | "manual"; preTokens?: number })
-  | (RowBase & { kind: "routine-run"; card: RoutineRunCard });
+  | (RowBase & { kind: "routine-run"; card: RoutineRunCard })
+  | (RowBase & { kind: "interaction"; card: Interaction })
+  | (RowBase & { kind: "handoff"; card: HandoffCard });
 
 export interface TurnFooterInfo {
   /** Key of the assistant row the footer belongs to. */
@@ -95,6 +106,14 @@ function toolStatus(value: unknown): ToolCallStatus {
 export function buildRows(entries: readonly StreamEntry[], running: boolean): StreamRow[] {
   const rows: StreamRow[] = [];
   let lastTodo: Extract<StreamRow, { kind: "todo" }> | null = null;
+  // Only our validated native records can provide a readable rendering of a
+  // card reply. A copied JSON message or a stale/missing card stays plain text.
+  const interactions = new Map<string, Interaction>();
+  for (const { item } of entries) {
+    if (item.type !== "plugin" || item.pluginId !== PLUGIN_ID || item.kind !== INTERACTION_CARD.kind || item.version !== INTERACTION_CARD.version) continue;
+    const card = InteractionSchema.safeParse(item.data);
+    if (card.success) interactions.set(`bots-card-${card.data.id}`, card.data);
+  }
 
   const appendTodo = (entry: StreamEntry, items: TaskEntry[]) => {
     const timestamp = toTime(entry.timestamp);
@@ -132,15 +151,21 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
     const base = { key: `e${entry.seqStart}`, turnId: entry.turnId, timestamp: toTime(entry.timestamp) };
     const isLast = index === entries.length - 1;
     switch (item.type) {
-      case "user_message":
+      case "user_message": {
+        const text = String(item.text ?? "");
+        const messageIds = [item.messageId, item.clientMessageId].filter((id): id is string => typeof id === "string");
+        const card = messageIds[0] ? interactions.get(messageIds[0]) : undefined;
+        const cardReply = card ? interactionReplySummary(card, text, messageIds) : null;
         rows.push({
           ...base,
           kind: "user",
-          text: String(item.text ?? ""),
+          text,
+          ...(cardReply === null ? {} : { cardReply }),
           ...(typeof item.messageId === "string" ? { messageId: item.messageId } : {}),
           ...(typeof item.clientMessageId === "string" ? { clientMessageId: item.clientMessageId } : {}),
         });
         break;
+      }
       case "assistant_message":
         rows.push({ ...base, kind: "assistant", text: String(item.text ?? ""), phase: running && isLast ? "streaming" : "complete" });
         break;
@@ -152,6 +177,10 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
       case "tool_call": {
         const name = String(item.name ?? "");
         const status = toolStatus(item.status);
+        // A rebuilt provider session can lose plugin rows. Keep the tool result
+        // visible until its durable card has been restored.
+        const cardId = interactionIdOf({ name, status, detail: item.detail, error: item.error });
+        if (cardId && interactions.has(`bots-card-${cardId}`)) break;
         const detail = (item.detail ?? { type: "unknown", input: null, output: null }) as ToolCallDetail;
         if (isHiddenToolCall(name, status) || isHiddenTaskTool(name, entry.provider)) break;
         const tasks = extractTaskEntriesFromToolCall(name, detail.type === "unknown" ? detail.input : null);
@@ -199,8 +228,20 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
         });
         break;
       case "plugin": {
-        // This plugin's routine result cards; other plugins' items belong to their renderers.
-        if (item.pluginId !== PLUGIN_ID || item.kind !== ROUTINE_RUN_CARD.kind) break;
+        if (item.pluginId !== PLUGIN_ID) break;
+        if (item.kind === HANDOFF_CARD.kind) {
+          if (item.version !== HANDOFF_CARD.version) break;
+          const card = HandoffCardSchema.safeParse(item.data);
+          if (card.success) rows.push({ ...base, key: `handoff:${card.data.targetAgentId}`, kind: "handoff", card: card.data });
+          break;
+        }
+        if (item.kind === INTERACTION_CARD.kind) {
+          if (item.version !== INTERACTION_CARD.version) break;
+          const card = InteractionSchema.safeParse(item.data);
+          if (card.success) rows.push({ ...base, key: `interaction:${card.data.id}`, kind: "interaction", card: card.data });
+          break;
+        }
+        if (item.kind !== ROUTINE_RUN_CARD.kind) break;
         const card = RoutineRunCardSchema.safeParse(item.data);
         if (card.success) rows.push({ ...base, key: `plugin:${String(item.id ?? entry.seqStart)}`, kind: "routine-run", card: card.data });
         break;
@@ -220,6 +261,25 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
   return rows;
 }
 
+/** Fold only successful, consecutive background steps. Requests, sources and errors stay visible. */
+export function groupToolRows(rows: readonly StreamRow[]): StreamRow[] {
+  const grouped: StreamRow[] = [];
+  let pending: ToolStreamRow[] = [];
+  const flush = () => {
+    if (pending.length >= 3) grouped.push({ key: `steps:${pending[0]!.key}`, turnId: pending[0]!.turnId, timestamp: pending[pending.length - 1]!.timestamp, kind: "tool-group", tools: pending });
+    else grouped.push(...pending);
+    pending = [];
+  };
+  for (const row of rows) {
+    const eligible = row.kind === "tool" && row.status === "completed" && !row.error && row.detail.type !== "plan" && !proposalIdOf(row) && !appSignIns(row).length && !extractToolSources(row.detail, row.name).length;
+    if (!eligible) { flush(); grouped.push(row); continue; }
+    if (pending.length && pending[0]!.turnId !== row.turnId) flush();
+    pending.push(row);
+  }
+  flush();
+  return grouped;
+}
+
 // ---------------------------------------------------------------- turns
 
 type Category = "user" | "assistant" | "tool" | "other";
@@ -232,6 +292,7 @@ function category(row: StreamRow | null | undefined): Category | null {
     case "assistant":
       return "assistant";
     case "tool":
+    case "tool-group":
     case "thought":
     case "todo":
     case "speak":
@@ -243,7 +304,7 @@ function category(row: StreamRow | null | undefined): Category | null {
 
 /** turn-membership.ts continuesTurn: canonical turn ids first, else a user message starts a turn. */
 /** Routine result cards arrive between turns and belong to none. */
-const standsAlone = (row: StreamRow) => row.kind === "routine-run";
+const standsAlone = (row: StreamRow) => row.kind === "routine-run" || row.kind === "interaction" || row.kind === "handoff";
 
 function continuesTurn(previous: StreamRow | null, next: StreamRow | null): boolean {
   if (!previous || !next || standsAlone(previous) || standsAlone(next)) return false;
@@ -436,7 +497,7 @@ export function findRows(items: readonly StreamLayoutItem[], needle: string): nu
   if (!needle) return [];
   return items.flatMap((item, index) => {
     const row = item.row;
-    const text = row.kind === "user" || row.kind === "assistant" || row.kind === "speak" ? row.text : "";
+    const text = row.kind === "user" ? `${row.text}\n${row.cardReply ?? ""}` : row.kind === "assistant" || row.kind === "speak" ? row.text : row.kind === "interaction" ? interactionSearchText(row.card) : row.kind === "handoff" ? handoffSearchText(row.card) : "";
     return text.toLowerCase().includes(needle) ? [index] : [];
   });
 }

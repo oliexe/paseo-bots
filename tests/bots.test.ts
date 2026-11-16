@@ -18,7 +18,7 @@ interface FakeChat {
   pendingPermissions?: unknown[];
 }
 
-function fakePaseo(chats: Record<string, FakeChat>) {
+function fakePaseo(chats: Record<string, FakeChat>, append = vi.fn(async (_input: unknown) => {})) {
   return {
     agents: {
       ref: (id: string) => ({
@@ -35,6 +35,7 @@ function fakePaseo(chats: Record<string, FakeChat>) {
           return { status: "idle", final: null, error: null, lastMessage: chat.reply ?? null };
         },
         timeline: {
+          append,
           refetch: async () => ({
             entries: [
               { item: { type: "user_message", text: "question" } },
@@ -100,5 +101,36 @@ describe("asking other bots", () => {
     expect(granted("allow")).toContain("ask_bot");
     expect(granted("ask")).not.toContain("ask_bot");
     expect(granted("ask")).toContain("check_chat");
+  });
+
+  it("returns the accepted chat when card publication or subsequent status reads fail", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const scout = makeBot({ id: "scout", name: "Scout" });
+    const host = fakeHost([scout, makeBot({ id: "inbox", name: "Inbox" })]);
+    const append = vi.fn(async () => { throw new Error("offline"); });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    host.attach(fakePaseo({}, append));
+    const before = started.length;
+    const caller = { bot: scout, agentId: "requester", host, relay: null as never };
+    expect(await askBot.run({ bot: "inbox", message: "Count emails", wait: false }, caller)).toContain("Asked Inbox in chat chat-new");
+    expect(started.length).toBe(before + 1);
+    expect(started.at(-1)?.labels).toMatchObject({ "paseo-bots.asked-in": "requester" });
+    expect(append).toHaveBeenCalledOnce();
+    expect(await askBot.run({ bot: "inbox", message: "Different task" }, caller)).toContain("Do not ask again; use check_chat");
+    expect(started.length).toBe(before + 2);
+    log.mockRestore();
+  });
+
+  it("rejects ambiguous bot names before dispatch and accepts the exact id", async () => {
+    const { askBot } = await import("../server/tools/bots");
+    const scout = makeBot({ id: "scout", name: "Scout" });
+    const host = fakeHost([scout, makeBot({ id: "inbox-1", name: "Inbox" }), makeBot({ id: "inbox-2", name: "inbox" })]);
+    host.attach(fakePaseo({}));
+    const caller = { bot: scout, agentId: "requester", host, relay: null as never };
+    const before = started.length;
+    await expect(askBot.run({ bot: "Inbox", message: "Count emails" }, caller)).rejects.toThrow("More than one bot");
+    expect(started.length).toBe(before);
+    expect(await askBot.run({ bot: "inbox-2", message: "Count emails", wait: false }, caller)).toContain("Asked inbox");
+    expect(started.at(-1)?.botId).toBe("inbox-2");
   });
 });

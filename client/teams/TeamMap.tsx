@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, ScrollView } from "@getpaseo/plugin/client/ui";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Bot, BotGroup } from "../../shared/bot";
@@ -25,9 +25,11 @@ export function TeamMap({
   bots,
   localHost,
   compact,
+  hostHeader = false,
   bottomInset,
   onBack,
   onNewTeam,
+  onTeamFile,
   onEditTeam,
   onOpenBot,
 }: {
@@ -36,10 +38,12 @@ export function TeamMap({
   bots: readonly Bot[];
   localHost: LocalHost;
   compact: boolean;
+  hostHeader?: boolean;
   /** The home indicator on phones. */
   bottomInset: number;
   onBack?: () => void;
   onNewTeam(): void;
+  onTeamFile(): void;
   onEditTeam(group: BotGroup): void;
   onOpenBot(bot: Bot): void;
 }) {
@@ -52,14 +56,15 @@ export function TeamMap({
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
       <View style={{ height: compact ? 56 : 36, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: compact ? 4 : 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        {onBack ? (
+        {onBack && !hostHeader ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Back to bots" {...tooltip("Back to bots", "bottom")} onPress={onBack} style={({ pressed }) => ({ padding: 12, borderRadius: 8, backgroundColor: pressed ? tokens.interactionHighlight : "transparent" })}>
             <Icon name="ArrowLeft" size={20} color={colors.foregroundMuted} />
           </Pressable>
         ) : null}
-        <Text style={{ fontSize: ui(14), fontWeight: "300", color: colors.foreground }}>Team map</Text>
-        {compact ? null : <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>Your bots, their teams and who leads them</Text>}
+        {hostHeader ? null : <Text style={{ fontSize: ui(14), fontWeight: "300", color: colors.foreground }}>Team map</Text>}
+        {compact ? null : <Text numberOfLines={1} style={{ flexShrink: 1, minWidth: 0, fontSize: ui(14), color: colors.foregroundMuted }}>Your bots, their teams and who leads them</Text>}
         <View style={{ flex: 1 }} />
+        <Button colors={colors} variant="ghost" label="Team file" icon="ArrowLeftRight" onPress={onTeamFile} />
         <Button colors={colors} variant="ghost" label="New team" icon="Plus" onPress={onNewTeam} />
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: compact ? 16 : 24, paddingBottom: (compact ? 16 : 24) + bottomInset, alignItems: "center" }}>

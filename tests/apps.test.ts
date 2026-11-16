@@ -192,7 +192,8 @@ describe("Composio client and relay", () => {
         const url = new URL(request.url!, origin);
         calls.push(`${request.method} ${url.pathname}`);
         const send = (status: number, value: unknown) => response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(value));
-        if (request.headers["x-api-key"] !== "ak_test") return send(401, { message: "Invalid API key" });
+        const personal = request.headers["x-user-api-key"] === "uak_test" && request.headers["x-org-id"] === "org_me" && request.headers["x-project-id"] === "proj_me";
+        if (!personal && request.headers["x-api-key"] !== "ak_test") return send(401, { message: "Invalid API key" });
         if (request.method === "POST" && url.pathname === "/api/v3.1/tool_router/session") {
           const parsed = JSON.parse(body) as { user_id: string };
           expect(parsed.user_id).toMatch(/^paseo_bots_/);
@@ -228,7 +229,7 @@ describe("Composio client and relay", () => {
           return send(200, {});
         }
         if (url.pathname === "/mcp/trs_1") {
-          forwarded.push({ key: request.headers["x-api-key"] as string, body });
+          forwarded.push({ key: (request.headers["x-user-api-key"] ?? request.headers["x-api-key"]) as string, body });
           response.writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "mcp-s1" });
           const id = (JSON.parse(body) as { id?: number }).id ?? null;
           return response.end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id, result: { ok: true } })}\n\n`);
@@ -253,7 +254,7 @@ describe("Composio client and relay", () => {
     await expect(composio.setKey({ key: "sk-wrong" })).rejects.toThrow("start with ak_");
     await expect(composio.setKey({ key: "ak_bad" })).rejects.toThrow("Invalid API key");
     await composio.setKey({ key: "ak_test" });
-    expect(await composio.status()).toEqual({ configured: true, keyHint: "ak_…test" });
+    expect(await composio.status()).toMatchObject({ configured: true, keyHint: "ak_…test" });
     const info = await stat(join(home, "plugin-data", "paseo-bots", "composio.json"));
     expect(info.mode & 0o077).toBe(0);
   });
@@ -376,7 +377,29 @@ describe("Composio client and relay", () => {
     const composio = await import("../server/composio");
     const user = (await composio.readState()).userId;
     await composio.removeKey();
-    expect(await composio.status()).toEqual({ configured: false, keyHint: null });
+    expect(await composio.status()).toMatchObject({ configured: false, keyHint: null });
     expect((await composio.readState()).userId).toBe(user);
   });
+
+  it("forwards signed-in MCP requests with user, organization and project credentials", async () => {
+    const composio = await import("../server/composio");
+    await composio.writeState({ apiKey: "uak_test", account: { orgId: "org_me", projectId: "proj_me", userId: "consumer_me", email: "me@example.com", organization: "Personal" }, sessionId: "trs_1", mcpUrl: `${origin}/mcp/trs_1`, multiAccount: true });
+    const { Relay } = await import("../server/relay");
+    const relay = new Relay(fakeHost([makeBot({ id: "bot-1", apps: ["gmail"] })]), []);
+    try {
+      const mount = (await relay.mountApps("bot-1")) as { url: string; headers: Record<string, string> };
+      const response = await fetch(mount.url, {
+        method: "POST",
+        headers: { authorization: mount.headers.Authorization!, "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 11, method: "initialize", params: {} }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('"ok":true');
+      expect(forwarded.at(-1)?.key).toBe("uak_test");
+    } finally {
+      relay.stop();
+      await composio.removeKey();
+    }
+  });
+
 });

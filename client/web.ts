@@ -33,6 +33,10 @@ interface DomTextArea {
   remove(): void;
 }
 interface DomDiv {
+  textContent: string;
+  offsetWidth: number;
+  offsetHeight: number;
+  appendChild(node: DomDiv): void;
   style: DomStyle;
   innerHTML: string;
   setAttribute(name: string, value: string): void;
@@ -65,6 +69,10 @@ interface DomImage {
   naturalHeight: number;
   decode(): Promise<void>;
 }
+interface DomStyleNode {
+  id: string;
+  textContent: string | null;
+}
 interface DomCanvas {
   width: number;
   height: number;
@@ -77,10 +85,16 @@ declare const document: {
   createElement(tag: "div"): DomDiv;
   createElement(tag: "img"): DomImage;
   createElement(tag: "canvas"): DomCanvas;
+  createElement(tag: "style"): DomStyleNode;
+  getElementById(id: string): DomStyleNode | null;
   body: { appendChild(node: unknown): void };
+  head: { appendChild(node: DomStyleNode): void } | null;
   activeElement: unknown;
+  addEventListener(type: string, listener: (event: TooltipEvent) => void, capture: boolean): void;
+  removeEventListener(type: string, listener: (event: TooltipEvent) => void, capture: boolean): void;
 };
-declare const window: { getComputedStyle(element: unknown): DomStyle };
+declare const window: { innerWidth: number; innerHeight: number; getComputedStyle(element: unknown): DomStyle; matchMedia?(query: string): { matches: boolean } };
+declare const localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void } | undefined;
 declare class FileReader {
   result: string | null;
   onload: (() => void) | null;
@@ -89,6 +103,25 @@ declare class FileReader {
 }
 
 const web = Platform.OS === "web";
+
+interface PressCoordinateEvent {
+  nativeEvent: { clientX?: number; clientY?: number; locationX?: number; locationY?: number; detail?: number };
+  currentTarget?: unknown;
+}
+
+/** Read the pressed view's current bounds before React releases currentTarget. */
+export function pressCoordinates(event: PressCoordinateEvent): { x: number; y: number; box?: { width: number; height: number } } | null {
+  const native = event.nativeEvent;
+  if (!web) {
+    return Number.isFinite(native.locationX) && Number.isFinite(native.locationY) ? { x: native.locationX!, y: native.locationY! } : null;
+  }
+  // A keyboard activation has no pointer location and must not click a host app.
+  if (native.detail === 0 || !Number.isFinite(native.clientX) || !Number.isFinite(native.clientY)) return null;
+  const target = event.currentTarget as { getBoundingClientRect?(): { left: number; top: number; width: number; height: number } } | null;
+  const rect = target?.getBoundingClientRect?.();
+  if (!rect || ![rect.left, rect.top, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) return null;
+  return { x: native.clientX! - rect.left, y: native.clientY! - rect.top, box: { width: rect.width, height: rect.height } };
+}
 
 export interface PickedFile {
   name: string;
@@ -398,6 +431,43 @@ export function createTextMeasurer(): TextMeasurer | null {
 type ResizeObserverLike = { observe(target: unknown): void; disconnect(): void };
 const ResizeObserverCtor = (globalThis as { ResizeObserver?: new (callback: () => void) => ResizeObserverLike }).ResizeObserver;
 
+interface SurfaceElement {
+  clientWidth: number;
+  clientHeight: number;
+  isConnected?: boolean;
+  parentElement?: SurfaceElement | null;
+  getAttribute?(name: string): string | null;
+}
+type MutationObserverLike = { observe(target: unknown, options: { attributes: boolean; attributeFilter: string[] }): void; disconnect(): void };
+
+/** Layout presence, not viewport intersection: scrolling must not disconnect a surface. */
+export function surfaceIsVisible(node: unknown): boolean {
+  if (!node) return false;
+  if (!web) return true;
+  const element = node as SurfaceElement;
+  if (element.isConnected === false || !(element.clientWidth > 0) || !(element.clientHeight > 0)) return false;
+  for (let current: SurfaceElement | null | undefined = element; current; current = current.parentElement) {
+    if (current.getAttribute?.("aria-hidden") === "true" || current.getAttribute?.("hidden") != null) return false;
+    const style = window.getComputedStyle(current);
+    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
+  }
+  return true;
+}
+
+/** Expo may retain a mounted screen under a hidden ancestor after navigation. */
+export function observeSurfaceVisibility(node: unknown, onChange: () => void): () => void {
+  if (!web || !node) return () => {};
+  const element = node as SurfaceElement;
+  const resize = ResizeObserverCtor ? new ResizeObserverCtor(onChange) : null;
+  resize?.observe(element);
+  const MutationObserverCtor = (globalThis as { MutationObserver?: new (callback: () => void) => MutationObserverLike }).MutationObserver;
+  const mutation = MutationObserverCtor ? new MutationObserverCtor(onChange) : null;
+  for (let current: SurfaceElement | null | undefined = element; current; current = current.parentElement) {
+    mutation?.observe(current, { attributes: true, attributeFilter: ["style", "class", "hidden", "aria-hidden"] });
+  }
+  return () => { resize?.disconnect(); mutation?.disconnect(); };
+}
+
 /** Calls back when the element's width changes (the draft re-wraps). */
 export function observeWidth(element: DomElement | null, onChange: () => void): () => void {
   if (!web || !element || !ResizeObserverCtor) return () => {};
@@ -432,5 +502,217 @@ export function focusWithRetries(element: () => DomElement | null, timeoutMs = 1
   requestAnimationFrame(tick);
   return () => {
     cancelled = true;
+  };
+}
+
+// ---------------------------------------------------------------- app state and dialogs
+
+/** A value from the browser's localStorage; null off the web or when storage can't be read. */
+export function readWebStorage(key: string): string | null {
+  if (!web) return null;
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/** Writes to the browser's localStorage; a no-op off the web or when storage refuses (quota, disabled). */
+export function writeWebStorage(key: string, value: string): void {
+  if (!web) return;
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
+  } catch {
+    // Quota exceeded or storage disabled.
+  }
+}
+
+/** Adds a stylesheet to the page once, updating it when the CSS changes; a no-op off the web. */
+export function ensureStyle(id: string, css: string): void {
+  if (!web || typeof document === "undefined" || !document.head) return;
+  const existing = document.getElementById(id);
+  if (existing) {
+    if (existing.textContent !== css) existing.textContent = css;
+    return;
+  }
+  const node = document.createElement("style");
+  node.id = id;
+  node.textContent = css;
+  document.head.appendChild(node);
+}
+
+/** Whether the pointer can hover, as on desktop web; false on phones, true when the browser can't say. */
+export function hoverCapable(): boolean {
+  if (!web) return false;
+  try {
+    return typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(hover: hover)").matches : true;
+  } catch {
+    return true;
+  }
+}
+
+/** Paseo's desktop dialog bridge and the browser's confirm(). */
+const webHost = globalThis as unknown as {
+  paseoDesktop?: { dialog?: { ask?: (message: string, options: { title: string; okLabel: string; cancelLabel: string; kind: "warning" | "info" }) => Promise<boolean> } };
+  confirm?: (message?: string) => boolean;
+};
+
+export interface WebConfirmInput {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  destructive: boolean;
+}
+
+/** Paseo's confirmDialog on the web: the Electron dialog on desktop, confirm() in a browser. False off the web. */
+export async function confirmOnWeb(input: WebConfirmInput): Promise<boolean> {
+  if (!web) return false;
+  (document.activeElement as { blur?: () => void } | null)?.blur?.();
+  const ask = webHost.paseoDesktop?.dialog?.ask;
+  if (typeof ask === "function") {
+    return ask(input.message, { title: input.title, okLabel: input.confirmLabel, cancelLabel: input.cancelLabel, kind: input.destructive ? "warning" : "info" });
+  }
+  return webHost.confirm ? webHost.confirm(`${input.title}\n\n${input.message}`) : false;
+}
+
+
+// Shared DOM tooltips. The caller supplies appearance so this module never imports
+// native.ts or typography.ts, which already use web helpers.
+type TooltipSide = "top" | "bottom";
+interface TooltipElement {
+  closest(selector: string): TooltipElement | null;
+  contains(node: unknown): boolean;
+  getAttribute(name: string): string | null;
+  getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+}
+interface TooltipEvent { target: unknown; relatedTarget: unknown; pointerType?: string; key?: string }
+export interface WebTooltipAppearance {
+  borderColor: string; backgroundColor: string; color: string; mutedColor: string;
+  boxShadow: string; fontSize: number; detailFontSize: number;
+}
+const SELECTOR = "[data-pb-tip]";
+const DELAY_MS = 300;
+const OFFSET = 8;
+const EDGE = 8;
+/** Paseo's compact breakpoint (styles/unistyles.ts: md starts at 720). */
+const COMPACT_WIDTH = 720;
+const UI_FONT = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+
+
+export function webTooltipsShown(): boolean {
+  return web && typeof window !== "undefined" && window.innerWidth >= COMPACT_WIDTH;
+}
+
+/** Starts the shared tooltip on web; returns its cleanup. */
+export function installWebTooltips(appearance: () => WebTooltipAppearance): () => void {
+  if (!web || typeof document === "undefined") return () => {};
+  let anchor: TooltipElement | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let bubble: DomDiv | null = null;
+
+  const hide = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    anchor = null;
+    if (bubble) bubble.style.opacity = "0";
+  };
+
+  const show = (target: TooltipElement) => {
+    const label = target.getAttribute("data-pb-tip");
+    if (!label || !webTooltipsShown()) return;
+    const look = appearance();
+    bubble ??= document.createElement("div");
+    Object.assign(bubble.style, {
+      position: "fixed",
+      zIndex: "2147483000",
+      pointerEvents: "none",
+      maxWidth: "280px",
+      padding: "4px 8px",
+      borderRadius: "12px",
+      borderWidth: "1px",
+      borderStyle: "solid",
+      borderColor: look.borderColor,
+      backgroundColor: look.backgroundColor,
+      color: look.color,
+      boxShadow: look.boxShadow,
+      fontFamily: window.getComputedStyle(target).fontFamily || UI_FONT,
+      fontSize: `${look.fontSize}px`,
+      lineHeight: "1.4",
+      whiteSpace: "normal",
+      transition: "opacity 80ms ease-out",
+      opacity: "0",
+      left: "-9999px",
+      top: "-9999px",
+    });
+    const lines = target.getAttribute("data-pb-tip-lines")?.split("\n") ?? [];
+    const details = target.getAttribute("data-pb-tip-details")?.split("\n") ?? [];
+    bubble.style.minWidth = details.length ? "200px" : "0";
+    bubble.textContent = "";
+    // Paseo's context meter tooltip: foreground 14pt lines, then muted 12pt details, 6 apart.
+    [label, ...lines, ...details].forEach((text, index) => {
+      const line = document.createElement("div");
+      line.textContent = text;
+      const detail = index > lines.length;
+      Object.assign(line.style, {
+        marginTop: index === 0 ? "0" : "6px",
+        color: detail ? look.mutedColor : "inherit",
+        fontSize: detail ? `${look.detailFontSize}px` : "inherit",
+      });
+      bubble?.appendChild(line);
+    });
+    bubble.setAttribute("role", "tooltip");
+    document.body.appendChild(bubble);
+    const rect = target.getBoundingClientRect();
+    const width = bubble.offsetWidth;
+    const height = bubble.offsetHeight;
+    const wanted = (target.getAttribute("data-pb-tip-side") as TooltipSide | null) ?? "top";
+    const above = rect.top - height - OFFSET;
+    const below = rect.top + rect.height + OFFSET;
+    // Paseo flips to the other side when the preferred one hasn't the room.
+    const side: TooltipSide = wanted === "top" ? (above < EDGE && below + height <= window.innerHeight - EDGE ? "bottom" : "top") : below + height > window.innerHeight - EDGE && above >= EDGE ? "top" : "bottom";
+    const left = Math.max(EDGE, Math.min(window.innerWidth - width - EDGE, rect.left + (rect.width - width) / 2));
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${Math.max(EDGE, Math.min(window.innerHeight - height - EDGE, side === "top" ? above : below))}px`;
+    bubble.style.opacity = "1";
+  };
+
+  const over = (event: TooltipEvent) => {
+    if (event.pointerType === "touch") return;
+    const target = (event.target as TooltipElement | null)?.closest?.(SELECTOR) ?? null;
+    if (target === anchor) return;
+    hide();
+    if (!target) return;
+    anchor = target;
+    timer = setTimeout(
+      () => {
+        timer = null;
+        if (anchor === target) show(target);
+      },
+      Number(target.getAttribute("data-pb-tip-delay") ?? DELAY_MS),
+    );
+  };
+  const out = (event: TooltipEvent) => {
+    if (anchor && !anchor.contains(event.relatedTarget)) hide();
+  };
+  const key = (event: { key?: string }) => {
+    if (event.key === "Escape") hide();
+  };
+
+  document.addEventListener("pointerover", over, true);
+  document.addEventListener("pointerout", out, true);
+  document.addEventListener("pointerdown", hide, true);
+  document.addEventListener("keydown", key, true);
+  document.addEventListener("scroll", hide, true);
+  document.addEventListener("wheel", hide, true);
+  return () => {
+    hide();
+    bubble?.remove();
+    document.removeEventListener("pointerover", over, true);
+    document.removeEventListener("pointerout", out, true);
+    document.removeEventListener("pointerdown", hide, true);
+    document.removeEventListener("keydown", key, true);
+    document.removeEventListener("scroll", hide, true);
+    document.removeEventListener("wheel", hide, true);
   };
 }

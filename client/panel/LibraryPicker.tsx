@@ -1,8 +1,7 @@
-import { Icon } from "@getpaseo/plugin/client/react-native";
-import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
+import { Icon, SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import type { Bot } from "../../shared/bot";
 import { mcpServerTested, mcpTarget, setBotUses, type LibraryKind } from "../../shared/library";
-import { openLibrary } from "../navigation";
+import { useOpenLibrary } from "../navigation";
 import type { PanelProps } from "./BotPanel";
 import { CardNote, PressableRow, RowText, SectionLink, Switch } from "./controls";
 
@@ -18,6 +17,7 @@ interface LibraryPickerProps extends Pick<PanelProps, "colors" | "bot" | "librar
  * Skills & Tools page; a row opens its page there.
  */
 export function LibraryPicker({ colors, bot, library, onPatch, kind, title, info }: LibraryPickerProps) {
+  const openLibrary = useOpenLibrary();
   const items =
     kind === "skill"
       ? library.skills.map((skill) => ({

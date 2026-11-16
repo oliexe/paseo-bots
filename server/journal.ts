@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { redactSecrets } from "../shared/activity";
 import { lineDiff } from "../shared/diff";
 import { pluginDataPath } from "./bot-home";
-import { MAIN_MEMORY, memoryFilePath, memoryFolder } from "./memory";
+import { MAIN_MEMORY, MAX_MEMORY_FILE_BYTES, memoryFilePath, memoryFolder, memoryRevision } from "./memory";
+import { atomicWrite, ensureRealDirectory, missingFile, readRegularText } from "./files";
 
 // OpenMausBot's memory journal: every change to a bot's MEMORY.md and topic
 // files, with the earlier text so it can be undone. Bots edit their memory with
@@ -40,11 +41,11 @@ function journalPath(botId: string): string {
 /** MEMORY.md (when it exists) and every topic file, by name. */
 async function snapshot(botId: string): Promise<Snapshot> {
   const files: Snapshot = new Map();
-  const main = await readFile(memoryFilePath(botId, MAIN_MEMORY), "utf8").catch(() => null);
+  const main = await readRegularText(memoryFilePath(botId, MAIN_MEMORY), MAX_MEMORY_FILE_BYTES);
   if (main !== null) files.set(MAIN_MEMORY, main);
-  const names = await readdir(join(memoryFolder(botId), "memory")).catch(() => [] as string[]);
-  for (const name of names.filter((entry) => entry.endsWith(".md")).sort()) {
-    const text = await readFile(memoryFilePath(botId, name), "utf8").catch(() => null);
+  const entries = await readdir(join(memoryFolder(botId), "memory"), { withFileTypes: true }).catch((error: unknown) => { if (missingFile(error)) return []; throw error; });
+  for (const name of entries.filter((entry) => entry.isFile() && /^[A-Za-z0-9 ._-]+\.md$/.test(entry.name)).map((entry) => entry.name).sort()) {
+    const text = await readRegularText(memoryFilePath(botId, name), MAX_MEMORY_FILE_BYTES);
     if (text !== null) files.set(name, text);
   }
   return files;
@@ -58,10 +59,8 @@ export class MemoryJournal {
   /** Runs one change per bot at a time. */
   private serial<T>(botId: string, work: () => Promise<T>): Promise<T> {
     const next = (this.queues.get(botId) ?? Promise.resolve()).then(work);
-    this.queues.set(
-      botId,
-      next.catch(() => {}),
-    );
+    const settled = next.catch(() => {}).finally(() => { if (this.queues.get(botId) === settled) this.queues.delete(botId); });
+    this.queues.set(botId, settled);
     return next;
   }
 
@@ -87,17 +86,19 @@ export class MemoryJournal {
   }
 
   /** The app is about to write or delete a memory file (null) for the person. */
-  write(botId: string, file: string, text: string | null, via: "app" | "undo" = "app"): Promise<void> {
-    return this.serial(botId, () => this.apply(botId, file, text, via));
+  write(botId: string, file: string, text: string | null, via: "app" | "undo" = "app", expectedRevision?: string | null): Promise<void> {
+    return this.serial(botId, () => this.apply(botId, file, text, via, expectedRevision));
   }
 
-  private async apply(botId: string, file: string, text: string | null, via: "app" | "undo"): Promise<void> {
+  private async apply(botId: string, file: string, text: string | null, via: "app" | "undo", expectedRevision?: string | null): Promise<void> {
     const path = memoryFilePath(botId, file);
-    const before = await readFile(path, "utf8").catch(() => null);
+    await ensureRealDirectory(memoryFolder(botId), dirname(path));
+    const before = await readRegularText(path, MAX_MEMORY_FILE_BYTES);
+    if (expectedRevision !== undefined && memoryRevision(before) !== expectedRevision) throw new Error(expectedRevision === null ? "This memory file already exists. Choose another name or edit the existing file." : "This memory file changed since you opened it. Reopen it to review the latest version before saving.");
     if (text === null) await rm(path, { force: true });
     else {
-      await mkdir(join(path, ".."), { recursive: true });
-      await writeFile(path, text, "utf8");
+      if (Buffer.byteLength(text, "utf8") > MAX_MEMORY_FILE_BYTES) throw new Error("A memory file must be at most 2 MB.");
+      await atomicWrite(path, text);
     }
     await this.append(botId, file, before, text, { actor: "you", via, chat: null });
     const seen = this.seen.get(botId);
@@ -146,12 +147,11 @@ export class MemoryJournal {
       removed,
     };
     const entries = [...(await this.load(botId)), entry].slice(-KEEP);
-    await mkdir(join(pluginDataPath(), "journal"), { recursive: true });
-    await writeFile(journalPath(botId), entries.map((item) => JSON.stringify(item)).join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
+    await atomicWrite(journalPath(botId), entries.map((item) => JSON.stringify(item)).join("\n") + "\n");
   }
 
   private async load(botId: string): Promise<JournalEntry[]> {
-    const text = await readFile(journalPath(botId), "utf8").catch(() => "");
+    const text = await readFile(journalPath(botId), "utf8").catch((error: unknown) => { if (missingFile(error)) return ""; throw error; });
     const entries: JournalEntry[] = [];
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;

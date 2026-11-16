@@ -1,11 +1,11 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { matchesQuery } from "../../shared/library";
-import { appsRemoveKeyRpc, appsSetKeyRpc } from "../../shared/rpc";
-import { Button, CardNote, InputField, RowText, SearchField, SectionLink, SectionMeta, StatusBadge } from "../panel/controls";
+import { appsRemoveKeyRpc, appsLoginRpc, appsCancelLoginRpc } from "../../shared/rpc";
+import { Button, CardNote, RowText, SearchField, SectionMeta, StatusBadge } from "../panel/controls";
 import { useAppsAccounts, useAppsCatalog, useAppsInvalidate, useAppsStatus } from "./apps";
 import { AppLogo, DangerZone, PageTitle } from "./parts";
 import { errorText } from "../native";
@@ -14,7 +14,6 @@ type Colors = PluginTheme["colors"];
 
 /** Rows rendered at once; the catalog runs past a thousand apps, so search narrows it. */
 const SHOWN = 50;
-const COMPOSIO_KEYS_URL = "https://platform.composio.dev";
 
 interface AppsPageProps {
   colors: Colors;
@@ -28,25 +27,47 @@ interface AppsPageProps {
 export function AppsPage({ colors, showTitle, pending, onConnect }: AppsPageProps) {
   const status = useAppsStatus();
   const configured = status.data?.configured ?? false;
+  const invalidate = useAppsInvalidate();
+  const email = status.data?.account?.email;
+  const organization = status.data?.account?.organization;
+  useEffect(() => {
+    if (configured) void invalidate();
+  }, [configured, email, organization]);
   return (
     <>
       {showTitle ? <PageTitle colors={colors} title="Connected apps" /> : null}
-      {status.isLoading ? <CardNote colors={colors} loading text="Loading..." /> : configured ? <Catalog colors={colors} pending={pending} onConnect={onConnect} keyHint={status.data?.keyHint ?? null} /> : <Setup colors={colors} />}
+      {status.isError ? <SettingsRow label="Couldn't load Composio status" error={errorText(status.error)} /> : null}
+      {status.isLoading ? <CardNote colors={colors} loading text="Loading..." /> : configured ? <Catalog colors={colors} pending={pending} onConnect={onConnect} accountLabel={status.data?.account ? `${status.data.account.email} · ${status.data.account.organization}` : null} /> : <Setup colors={colors} />}
     </>
   );
 }
 
-function Setup({ colors }: { colors: Colors }) {
-  const setKey = useRpc(appsSetKeyRpc);
+function Setup({ colors, legacy = false }: { colors: Colors; legacy?: boolean }) {
+  const startLogin = useRpc(appsLoginRpc);
+  const cancelLogin = useRpc(appsCancelLoginRpc);
+  const status = useAppsStatus();
   const invalidate = useAppsInvalidate();
-  const [key, setKeyText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const save = async () => {
+  const login = status.data?.login;
+  const start = async () => {
     setBusy(true);
     setError(null);
     try {
-      await setKey({ key: key.trim() });
+      const next = await startLogin({});
+      await invalidate();
+      await openExternalUrl(next.url);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cancel = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelLogin({});
       await invalidate();
     } catch (caught) {
       setError(errorText(caught));
@@ -57,32 +78,27 @@ function Setup({ colors }: { colors: Colors }) {
   return (
     <SettingsSection
       title="Composio"
-      info="Composio signs you in to more than a thousand apps and gives bots their tools. It runs on your own Composio account, and the key stays on this host."
-      trailing={<SectionLink colors={colors} icon="ArrowUpRight" label="Get a key" onPress={() => void openExternalUrl(COMPOSIO_KEYS_URL)} />}
+      info={legacy
+        ? "This host uses a saved project key. Sign in to switch to your personal Composio account and its apps. Existing project connections stay in their original project."
+        : "Sign in to your Composio account in your browser, then choose which apps your bots can use. Your credentials stay on this host."}
     >
       <SettingsCard>
-        <InputField
-          colors={colors}
-          label="Project API key"
-          hint="Starts with ak_. Find it in your Composio project's settings."
-          error={error}
-          initialValue=""
-          placeholder="ak_..."
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          onChangeText={(text) => {
-            setKeyText(text);
-            setError(null);
-          }}
-        />
-        <SettingsAction label="Connect Composio" hint="Checks the key and opens a session" actionLabel={busy ? "Connecting..." : "Connect"} disabled={busy || !key.trim()} onPress={() => void save()} />
+        {login ? (
+          <>
+            <SettingsRow label="Waiting for Composio approval" hint={`Check that the browser shows code ${login.code}. Sign-in expires at ${new Date(login.expiresAt).toLocaleTimeString()}.`} />
+            <SettingsAction label="Continue sign-in" actionLabel="Open browser" onPress={() => void openExternalUrl(login.url).catch((caught) => setError(errorText(caught)))} />
+            <SettingsAction label="Cancel sign-in" actionLabel="Cancel" disabled={busy} onPress={() => void cancel()} />
+          </>
+        ) : (
+          <SettingsAction label="Sign in to Composio" hint="Approve access in your browser" actionLabel={busy ? "Opening..." : "Sign in"} disabled={busy} onPress={() => void start()} />
+        )}
+        {error || status.data?.loginError ? <SettingsRow label="Couldn't sign in" error={error ?? status.data?.loginError ?? undefined} /> : null}
       </SettingsCard>
     </SettingsSection>
   );
 }
 
-function Catalog({ colors, pending, onConnect, keyHint }: { colors: Colors; pending: string | null; onConnect(slug: string): void; keyHint: string | null }) {
+function Catalog({ colors, pending, onConnect, accountLabel }: { colors: Colors; pending: string | null; onConnect(slug: string): void; accountLabel: string | null }) {
   const catalog = useAppsCatalog(true);
   const accounts = useAppsAccounts(true, pending !== null);
   const removeKey = useRpc(appsRemoveKeyRpc);
@@ -95,6 +111,7 @@ function Catalog({ colors, pending, onConnect, keyHint }: { colors: Colors; pend
 
   return (
     <>
+      {!accountLabel ? <Setup colors={colors} legacy /> : null}
       <View style={{ marginBottom: 12 }}>
         <SearchField colors={colors} value={query} onChangeText={setQuery} placeholder="Search apps" />
       </View>
@@ -118,11 +135,11 @@ function Catalog({ colors, pending, onConnect, keyHint }: { colors: Colors; pend
         </SettingsCard>
       </SettingsSection>
       <DangerZone
-        label="Composio key"
-        hint={keyHint ?? "Saved"}
-        actionLabel="Remove"
-        confirmTitle="Remove Composio key?"
-        confirmMessage="Bots lose their connected apps until a key is added again. Your connections stay with your Composio account."
+        label="Composio account"
+        hint={accountLabel ?? "Connected with a saved project key"}
+        actionLabel="Sign out"
+        confirmTitle="Sign out of Composio?"
+        confirmMessage="Bots lose access to connected apps on this host until you sign in again. Your app connections stay in Composio."
         onConfirm={() => void removeKey({}).then(invalidate)}
       />
     </>

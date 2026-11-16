@@ -1,9 +1,11 @@
+import { validTimeZone } from "./routine-time";
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt, type PromptApp } from "./apps";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
+import { MAX_MESSAGE_BOOKMARKS, MessageBookmarkSchema } from "./bookmarks";
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
 export const BOT_LABEL = "paseo-bots.bot";
@@ -32,6 +34,8 @@ export type BotMcpServer = z.infer<typeof BotMcpServerSchema>;
 const BotAvatarSchema = z.object({
   /** Seed for the generated robot face. */
   seed: z.string(),
+  /** Missing on older bots, which keep their original pixel-art face. */
+  style: z.enum(["pixel", "modern", "orbital"]).optional(),
   /** Palette override for the generated face; null lets the seed pick. */
   palette: z.number().int().nullable().default(null),
   shape: z.enum(["circle", "rounded", "square"]).default("circle"),
@@ -96,11 +100,11 @@ export const EMPTY_LIBRARY: Library = { skills: [], mcpServers: [] };
 
 export const RoutineScheduleSchema = z.discriminatedUnion("kind", [
   /** Local time "HH:MM" on the given weekdays (0 = Sunday). */
-  z.object({ kind: z.literal("daily"), time: z.string().regex(/^\d{2}:\d{2}$/), weekdays: z.array(z.number().int().min(0).max(6)).default([0, 1, 2, 3, 4, 5, 6]) }),
+  z.object({ kind: z.literal("daily"), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), timeZone: z.string().refine(validTimeZone, "Use a valid IANA time zone").optional(), weekdays: z.array(z.number().int().min(0).max(6)).default([0, 1, 2, 3, 4, 5, 6]) }),
   z.object({ kind: z.literal("interval"), minutes: z.number().int().min(5).max(1440) }),
   z.object({ kind: z.literal("once"), at: z.string() }),
   /** Five-field cron ("minute hour day-of-month month day-of-week") in the host's local time. */
-  z.object({ kind: z.literal("cron"), expression: z.string() }),
+  z.object({ kind: z.literal("cron"), expression: z.string(), timeZone: z.string().refine(validTimeZone, "Use a valid IANA time zone").optional() }),
   /** Runs when its webhook URL on this host is called; the request body comes with the prompt. */
   z.object({ kind: z.literal("webhook") }),
 ]);
@@ -295,6 +299,8 @@ export const botSettings = defineSettings({
     defaults: BotDefaultsSchema.optional(),
     presets: z.array(PresetSchema).optional(),
     groups: z.array(BotGroupSchema).optional(),
+    /** Message references belong to this host and never travel in bot/team exports. */
+    bookmarks: z.array(MessageBookmarkSchema).max(MAX_MESSAGE_BOOKMARKS).optional(),
   }),
   migrate: (values, fromVersion) => {
     let migrated = values;

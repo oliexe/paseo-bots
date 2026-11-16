@@ -1,13 +1,13 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { z } from "zod";
 import { appDomain, appStatus, canonicalSlug, isComposioUrl, type AppAccount, type AppCard, type AppTool } from "../shared/apps";
 import { pluginDataPath } from "./bot-home";
 
-// Composio over its REST API, the way OpenMausBot's self-hosted mode does it:
-// one Tool Router Session per install, under one Composio user, so every
-// connected account belongs to this Paseo host. The project key stays in a
-// file only this process reads; clients never see it.
+// Browser sign-in uses Composio's CLI approval flow and personal project.
+// Older installations can keep using their project key and host-specific user.
+// Credentials stay on the daemon; clients only receive account and login views.
 
 /** Tests point this at a local fake; its URLs are then trusted like composio.dev's. */
 const ORIGIN_OVERRIDE = () => process.env.PASEO_BOTS_COMPOSIO_ORIGIN?.replace(/\/$/, "");
@@ -21,6 +21,7 @@ const MAX_ACCOUNTS_PER_APP = 5;
 
 interface State {
   apiKey: string | null;
+  account?: Account | null;
   /** Composio user the connections belong to; kept when the key is removed so they survive re-adding it. */
   userId: string;
   sessionId: string | null;
@@ -33,11 +34,21 @@ interface State {
   multiAccount?: boolean;
 }
 
+const AccountSchema = z.object({
+  orgId: z.string().min(1),
+  projectId: z.string().min(1),
+  userId: z.string().min(1),
+  email: z.string(),
+  organization: z.string(),
+});
+type Account = z.infer<typeof AccountSchema>;
+
 function statePath(): string {
   return join(pluginDataPath(), "composio.json");
 }
 
 let cached: State | null = null;
+let stateWrites: Promise<unknown> = Promise.resolve();
 
 export async function readState(): Promise<State> {
   if (cached) return cached;
@@ -49,13 +60,17 @@ export async function readState(): Promise<State> {
   return cached;
 }
 
-export async function writeState(patch: Partial<State>): Promise<State> {
-  const next = { ...(await readState()), ...patch };
-  cached = next;
-  await mkdir(dirname(statePath()), { recursive: true });
-  await writeFile(statePath(), JSON.stringify(next, null, 2), { encoding: "utf8", mode: 0o600 });
-  await chmod(statePath(), 0o600).catch(() => {});
-  return next;
+export function writeState(patch: Partial<State>): Promise<State> {
+  const write = stateWrites.then(async () => {
+    const next = { ...(await readState()), ...patch };
+    await mkdir(dirname(statePath()), { recursive: true });
+    await writeFile(statePath(), JSON.stringify(next, null, 2), { encoding: "utf8", mode: 0o600 });
+    await chmod(statePath(), 0o600);
+    cached = next;
+    return next;
+  });
+  stateWrites = write.catch(() => {});
+  return write;
 }
 
 /** An abort signal that fires after `ms` (AbortSignal.timeout isn't in this project's Node types). */
@@ -70,8 +85,11 @@ function trusted(url: string): boolean {
   return isComposioUrl(url) || (!!override && url.startsWith(`${override}/`));
 }
 
-function headers(apiKey: string, json = false): Record<string, string> {
-  return { "x-api-key": apiKey, ...(json ? { "content-type": "application/json" } : {}) };
+function headers(apiKey: string, json = false, account?: Account | null): Record<string, string> {
+  return {
+    ...(account ? { "x-user-api-key": apiKey, "x-org-id": account.orgId, "x-project-id": account.projectId } : { "x-api-key": apiKey }),
+    ...(json ? { "content-type": "application/json" } : {}),
+  };
 }
 
 async function failure(response: Response, fallback: string): Promise<Error> {
@@ -93,10 +111,11 @@ interface SessionResponse {
   mcp: { type: string; url: string };
 }
 
-async function createSession(apiKey: string, userId: string): Promise<SessionResponse> {
+async function createSession(apiKey: string, userId: string, account?: Account | null): Promise<SessionResponse> {
   const response = await fetch(`${API()}/tool_router/session`, {
     method: "POST",
-    headers: headers(apiKey, true),
+    headers: headers(apiKey, true, account),
+    redirect: "error",
     body: JSON.stringify({
       user_id: userId,
       manage_connections: { enable: true, enable_wait_for_connections: true, enable_connection_removal: false },
@@ -111,48 +130,151 @@ async function createSession(apiKey: string, userId: string): Promise<SessionRes
   return session;
 }
 
-async function sessionExists(apiKey: string, sessionId: string): Promise<boolean> {
-  const response = await fetch(`${API()}/tool_router/session/${encodeURIComponent(sessionId)}`, { headers: headers(apiKey), signal: deadline(15_000) });
-  if (response.status === 404) return false;
-  if (!response.ok) throw await failure(response, `Composio session: HTTP ${response.status}`);
-  return true;
-}
-
 /** Saves a project key after proving it works by opening a session with it. */
 export async function setKey({ key }: { key: string }) {
   const apiKey = key.trim();
   if (!apiKey.startsWith("ak_")) throw new Error("Composio project keys start with ak_.");
   const state = await readState();
   const session = await createSession(apiKey, state.userId);
-  await writeState({ apiKey, sessionId: session.session_id, mcpUrl: session.mcp.url, multiAccount: true });
+  cancelLogin();
+  await writeState({ apiKey, account: null, sessionId: session.session_id, mcpUrl: session.mcp.url, multiAccount: true });
   forgetCaches();
   return { ok: true };
 }
 
 export async function removeKey() {
-  await writeState({ apiKey: null, sessionId: null, mcpUrl: null });
+  cancelLogin();
+  await writeState({ apiKey: null, account: null, sessionId: null, mcpUrl: null });
   forgetCaches();
   return { ok: true };
 }
 
 export async function status() {
-  const { apiKey } = await readState();
-  return { configured: !!apiKey, keyHint: apiKey ? `ak_…${apiKey.slice(-4)}` : null };
+  const { apiKey, account } = await readState();
+  return {
+    configured: !!apiKey,
+    keyHint: apiKey && !account ? `ak_…${apiKey.slice(-4)}` : null,
+    account: apiKey && account ? { email: account.email, organization: account.organization } : null,
+    login: pendingLogin ? loginView(pendingLogin) : null,
+    loginError,
+  };
+}
+
+interface PendingLogin {
+  id: string;
+  code: string;
+  url: string;
+  expiresAt: string;
+  timer?: ReturnType<typeof setTimeout>;
+}
+let pendingLogin: PendingLogin | null = null;
+let loginError: string | null = null;
+let loginGeneration = 0;
+let startingLogin: Promise<ReturnType<typeof loginView>> | null = null;
+const loginView = ({ code, url, expiresAt }: PendingLogin) => ({ code, url, expiresAt });
+
+/** Login session IDs and credentials never leave the daemon except in the approval URL. */
+async function loginRequest(path: string, options: RequestInit = {}): Promise<unknown> {
+  const response = await fetch(`${API()}${path}`, { ...options, redirect: "error", signal: deadline(15_000) });
+  // These endpoints can return credentials, so don't echo response bodies in errors.
+  if (!response.ok) throw new Error(`Composio sign-in failed (HTTP ${response.status}). Please try again.`);
+  return response.json();
+}
+
+export function cancelLogin() {
+  loginGeneration++;
+  if (pendingLogin?.timer) clearTimeout(pendingLogin.timer);
+  pendingLogin = null;
+  startingLogin = null;
+  loginError = null;
+  return { ok: true };
+}
+
+/** The same browser approval used by `composio login`, with no local callback server. */
+export async function startLogin() {
+  if (pendingLogin && Date.parse(pendingLogin.expiresAt) > Date.now()) return loginView(pendingLogin);
+  if (startingLogin) return startingLogin;
+  cancelLogin();
+  const generation = loginGeneration;
+  const attempt = (async () => {
+    const result = z.object({ id: z.string().min(1), code: z.string(), expiresAt: z.string().datetime() }).safeParse(
+      await loginRequest("/cli/create-session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope: "user" }) }),
+    );
+    if (!result.success || Date.parse(result.data.expiresAt) <= Date.now()) throw new Error("Composio returned an invalid sign-in session. Please try again.");
+    if (generation !== loginGeneration) throw new Error("Sign-in was canceled.");
+    pendingLogin = { ...result.data, url: `https://dashboard.composio.dev/?cliKey=${encodeURIComponent(result.data.id)}` };
+    scheduleLogin(pendingLogin);
+    return loginView(pendingLogin);
+  })();
+  startingLogin = attempt;
+  try {
+    return await attempt;
+  } finally {
+    if (startingLogin === attempt) startingLogin = null;
+  }
+}
+
+function scheduleLogin(login: PendingLogin) {
+  login.timer = setTimeout(() => void pollLogin(login), 3_000);
+  login.timer.unref?.();
+}
+
+async function pollLogin(login: PendingLogin) {
+  if (pendingLogin !== login) return;
+  if (Date.parse(login.expiresAt) <= Date.now()) {
+    pendingLogin = null;
+    loginError = "Composio sign-in expired. Please sign in again.";
+    return;
+  }
+  try {
+    const linked = z.object({ status: z.string(), api_key: z.string().nullish() }).safeParse(
+      await loginRequest(`/cli/get-session?${new URLSearchParams({ id: login.id })}`),
+    );
+    if (!linked.success) throw new Error("Composio returned an invalid sign-in response.");
+    if (pendingLogin !== login) return;
+    if (linked.data.status === "pending") return scheduleLogin(login);
+    if (linked.data.status !== "linked" || !linked.data.api_key) throw new Error("Composio sign-in wasn't approved. Please try again.");
+    const apiKey = linked.data.api_key;
+    const info = z.object({ project: z.object({ org: z.object({ id: z.string().min(1), name: z.string() }) }), org_member: z.object({ email: z.string() }) }).safeParse(
+      await loginRequest("/auth/session/info", { headers: { "x-user-api-key": apiKey } }),
+    );
+    if (!info.success) throw new Error("Couldn't read your Composio account. Please sign in again.");
+    const org = info.data.project.org;
+    const consumer = z.object({ project_nano_id: z.string().min(1), consumer_user_id: z.string().min(1) }).safeParse(
+      await loginRequest("/org/consumer/project/resolve", { method: "POST", headers: { "x-user-api-key": apiKey, "x-org-id": org.id } }),
+    );
+    if (!consumer.success) throw new Error("Couldn't open your personal Composio project. Please sign in again.");
+    const account = AccountSchema.parse({ orgId: org.id, projectId: consumer.data.project_nano_id, userId: consumer.data.consumer_user_id, email: info.data.org_member.email, organization: org.name });
+    if (pendingLogin !== login) return;
+    const session = await createSession(apiKey, account.userId, account);
+    if (pendingLogin !== login) return;
+    await writeState({ apiKey, account, sessionId: session.session_id, mcpUrl: session.mcp.url, multiAccount: true });
+    forgetCaches();
+    if (pendingLogin === login) {
+      pendingLogin = null;
+      loginError = null;
+    }
+  } catch {
+    if (pendingLogin !== login) return;
+    // Keep credentials and server responses out of client errors. A new attempt is explicit.
+    pendingLogin = null;
+    loginError = "Couldn't finish signing in to Composio. Please try again.";
+  }
 }
 
 /** The key and a live session, recreating the session when Composio has dropped it. */
-export async function session(options: { recreate?: boolean } = {}): Promise<{ apiKey: string; sessionId: string; mcpUrl: string }> {
+export async function session(options: { recreate?: boolean } = {}): Promise<{ apiKey: string; sessionId: string; mcpUrl: string; headers: Record<string, string> }> {
   const state = await readState();
-  if (!state.apiKey) throw new Error("Connected apps aren't set up. Add a Composio key in Skills & Tools.");
+  if (!state.apiKey) throw new Error("Connected apps aren't set up. Sign in to Composio in Skills & Tools.");
+  const auth = headers(state.apiKey, false, state.account);
   // A session from before several accounts per app were allowed is replaced once.
   const current = !options.recreate && state.multiAccount;
-  if (current && state.sessionId && state.mcpUrl) return { apiKey: state.apiKey, sessionId: state.sessionId, mcpUrl: state.mcpUrl };
-  if (current && state.sessionId && (await sessionExists(state.apiKey, state.sessionId)) && state.mcpUrl) {
-    return { apiKey: state.apiKey, sessionId: state.sessionId, mcpUrl: state.mcpUrl };
-  }
-  const fresh = await createSession(state.apiKey, state.userId);
+  if (current && state.sessionId && state.mcpUrl) return { apiKey: state.apiKey, sessionId: state.sessionId, mcpUrl: state.mcpUrl, headers: auth };
+  const fresh = await createSession(state.apiKey, state.account?.userId ?? state.userId, state.account);
+  const latest = await readState();
+  if (latest.apiKey !== state.apiKey || latest.account !== state.account) throw new Error("Composio account changed. Please try again.");
   await writeState({ sessionId: fresh.session_id, mcpUrl: fresh.mcp.url, multiAccount: true });
-  return { apiKey: state.apiKey, sessionId: fresh.session_id, mcpUrl: fresh.mcp.url };
+  return { apiKey: state.apiKey, sessionId: fresh.session_id, mcpUrl: fresh.mcp.url, headers: auth };
 }
 
 // ---------------------------------------------------------------- catalog and accounts
@@ -167,8 +289,8 @@ function forgetCaches() {
   toolsCache.clear();
 }
 
-function fingerprint(apiKey: string): string {
-  return createHash("sha256").update(apiKey).digest("hex");
+function fingerprint(apiKey: string, account?: Account | null): string {
+  return createHash("sha256").update(JSON.stringify([apiKey, account?.orgId, account?.projectId, account?.userId])).digest("hex");
 }
 
 interface ToolkitItem {
@@ -182,9 +304,9 @@ interface ToolkitItem {
 
 /** Every app Composio offers, most used first. Cached for ten minutes. */
 export async function catalog(): Promise<{ apps: AppCard[] }> {
-  const { apiKey } = await readState();
+  const { apiKey, account } = await readState();
   if (!apiKey) return { apps: [] };
-  const key = fingerprint(apiKey);
+  const key = fingerprint(apiKey, account);
   if (catalogCache?.key === key && Date.now() - catalogCache.at < CATALOG_TTL_MS) return { apps: catalogCache.apps };
   const apps: AppCard[] = [];
   const seen = new Set<string>();
@@ -192,7 +314,7 @@ export async function catalog(): Promise<{ apps: AppCard[] }> {
   for (let page = 0; page < MAX_PAGES; page++) {
     const params = new URLSearchParams({ limit: "500", sort_by: "usage" });
     if (cursor) params.set("cursor", cursor);
-    const response = await fetch(`${CATALOG_API()}/toolkits?${params}`, { headers: headers(apiKey), signal: deadline(20_000) });
+    const response = await fetch(`${account ? API() : CATALOG_API()}/toolkits?${params}`, { headers: headers(apiKey, false, account), redirect: "error", signal: deadline(20_000) });
     if (!response.ok) {
       // Keep what earlier pages returned; only the first page failing is an error.
       if (apps.length) break;
@@ -231,10 +353,10 @@ interface ToolItem {
 
 /** An app's tools, without deprecated ones and ones Composio keeps out of MCP. Cached for ten minutes. */
 export async function appTools({ slug }: { slug: string }): Promise<{ tools: AppTool[] }> {
-  const { apiKey } = await readState();
+  const { apiKey, account } = await readState();
   if (!apiKey) return { tools: [] };
   const app = canonicalSlug(slug);
-  const key = fingerprint(apiKey);
+  const key = fingerprint(apiKey, account);
   const cached = toolsCache.get(app);
   if (cached?.key === key && Date.now() - cached.at < CATALOG_TTL_MS) return { tools: cached.tools };
   const tools: AppTool[] = [];
@@ -242,7 +364,7 @@ export async function appTools({ slug }: { slug: string }): Promise<{ tools: App
   for (let page = 0; page < MAX_PAGES; page++) {
     const params = new URLSearchParams({ toolkit_slug: app, limit: "200" });
     if (cursor) params.set("cursor", cursor);
-    const response = await fetch(`${CATALOG_API()}/tools?${params}`, { headers: headers(apiKey), signal: deadline(20_000) });
+    const response = await fetch(`${account ? API() : CATALOG_API()}/tools?${params}`, { headers: headers(apiKey, false, account), redirect: "error", signal: deadline(20_000) });
     if (!response.ok) throw await failure(response, `Composio tools: HTTP ${response.status}`);
     const body = (await response.json()) as { items?: ToolItem[]; next_cursor?: string | null };
     for (const item of body.items ?? []) {
@@ -271,16 +393,16 @@ interface AccountItem {
 
 /** This host's accounts, newest first. Cached briefly; `fresh` skips the cache while a sign-in is pending. */
 export async function accounts({ fresh }: { fresh?: boolean } = {}): Promise<{ accounts: AppAccount[] }> {
-  const { apiKey, userId } = await readState();
+  const { apiKey, userId, account } = await readState();
   if (!apiKey) return { accounts: [] };
-  const key = fingerprint(apiKey);
+  const key = fingerprint(apiKey, account);
   if (!fresh && connectedCache?.key === key && Date.now() - connectedCache.at < CONNECTED_TTL_MS) return { accounts: connectedCache.accounts };
   const found: AppAccount[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
-    const params = new URLSearchParams({ limit: "50", user_ids: userId, order_by: "updated_at", order_direction: "desc" });
+    const params = new URLSearchParams({ limit: "50", user_ids: account?.userId ?? userId, order_by: "updated_at", order_direction: "desc" });
     if (cursor) params.set("cursor", cursor);
-    const response = await fetch(`${API()}/connected_accounts?${params}`, { headers: headers(apiKey), signal: deadline(15_000) });
+    const response = await fetch(`${API()}/connected_accounts?${params}`, { headers: headers(apiKey, false, account), redirect: "error", signal: deadline(15_000) });
     if (!response.ok) throw await failure(response, `Composio accounts: HTTP ${response.status}`);
     const body = (await response.json()) as { items?: AccountItem[]; next_cursor?: string | null };
     for (const item of body.items ?? []) {
@@ -305,18 +427,19 @@ export async function connectedSlugs(): Promise<string[]> {
 /** A Composio-hosted sign-in link for an app, with an optional alias for the new account ("work"). The user finishes in their browser; the app polls `accounts`. */
 export async function connect({ slug, alias }: { slug: string; alias?: string }) {
   const name = alias?.trim();
-  const link = async (sessionId: string, apiKey: string) =>
-    fetch(`${API()}/tool_router/session/${encodeURIComponent(sessionId)}/link`, {
+  const link = async (current: Awaited<ReturnType<typeof session>>) =>
+    fetch(`${API()}/tool_router/session/${encodeURIComponent(current.sessionId)}/link`, {
       method: "POST",
-      headers: headers(apiKey, true),
+      headers: { ...current.headers, "content-type": "application/json" },
+      redirect: "error",
       body: JSON.stringify({ toolkit: canonicalSlug(slug), ...(name ? { alias: name } : {}) }),
       signal: deadline(30_000),
     });
   let current = await session();
-  let response = await link(current.sessionId, current.apiKey);
+  let response = await link(current);
   if (response.status === 404) {
     current = await session({ recreate: true });
-    response = await link(current.sessionId, current.apiKey);
+    response = await link(current);
   }
   if (!response.ok) throw await failure(response, `Composio sign-in: HTTP ${response.status}`);
   const body = (await response.json()) as { redirect_url?: string };
@@ -327,13 +450,14 @@ export async function connect({ slug, alias }: { slug: string; alias?: string })
 
 /** Names an account ("work"), or clears the name with "". Aliases are unique per app. */
 export async function renameAccount({ accountId, alias }: { accountId: string; alias: string }) {
-  const { apiKey } = await readState();
+  const { apiKey, account } = await readState();
   if (!apiKey) throw new Error("Connected apps aren't set up.");
   const { accounts: mine } = await accounts({ fresh: true });
   if (!mine.some((account) => account.id === accountId)) throw new Error("That account isn't connected on this host.");
-  const response = await fetch(`${CATALOG_API()}/connected_accounts/${encodeURIComponent(accountId)}`, {
+  const response = await fetch(`${account ? API() : CATALOG_API()}/connected_accounts/${encodeURIComponent(accountId)}`, {
     method: "PATCH",
-    headers: headers(apiKey, true),
+    headers: headers(apiKey, true, account),
+    redirect: "error",
     body: JSON.stringify({ alias: alias.trim() }),
     signal: deadline(15_000),
   });
@@ -344,13 +468,14 @@ export async function renameAccount({ accountId, alias }: { accountId: string; a
 
 /** Disconnects one account after checking it belongs to this host's Composio user. */
 export async function disconnect({ accountId }: { accountId: string }) {
-  const { apiKey } = await readState();
+  const { apiKey, account } = await readState();
   if (!apiKey) throw new Error("Connected apps aren't set up.");
   const { accounts: mine } = await accounts({ fresh: true });
   if (!mine.some((account) => account.id === accountId)) throw new Error("That account isn't connected on this host.");
   const response = await fetch(`${API()}/connected_accounts/${encodeURIComponent(accountId)}?revoke_on_delete=true`, {
     method: "DELETE",
-    headers: headers(apiKey),
+    headers: headers(apiKey, false, account),
+    redirect: "error",
     signal: deadline(15_000),
   });
   if (!response.ok && response.status !== 404) throw await failure(response, `Composio disconnect: HTTP ${response.status}`);

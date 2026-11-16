@@ -9,10 +9,13 @@ import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
-import { generateAvatar, imageStatus, removeImageKey, setImageKey } from "./server/images";
 import { mcpSources } from "./server/mcp-sources";
-import { accounts, appTools, catalog, connect, disconnect, removeKey, renameAccount, setKey, status as appsStatus } from "./server/composio";
+import { accounts, appTools, catalog, connect, disconnect, removeKey, renameAccount, startLogin, cancelLogin, status as appsStatus } from "./server/composio";
 import { BotsHost } from "./server/host";
+import { registerDesktop } from "./server/desktop";
+import { registerInteractions } from "./server/interactions";
+import { registerHandoffs } from "./server/handoffs";
+import { connectSchedulerHost } from "./server/connection";
 import { Relay } from "./server/relay";
 import { acceptProposal, dismissProposal, getProposal } from "./server/proposals";
 import { BOT_TOOLS } from "./server/tools";
@@ -44,19 +47,17 @@ import {
   proposalDismissRpc,
   proposalGetRpc,
   appsAccountsRpc,
-  avatarGenerateRpc,
-  avatarKeyStatusRpc,
-  avatarRemoveKeyRpc,
-  avatarSetKeyRpc,
   appsCatalogRpc,
   appsConnectRpc,
   appsDisconnectRpc,
   appsRenameRpc,
   appsToolsRpc,
   appsRemoveKeyRpc,
-  appsSetKeyRpc,
+  appsLoginRpc,
+  appsCancelLoginRpc,
   appsStatusRpc,
   routineRunNowRpc,
+  routineCancelRunRpc,
   routineStatusRpc,
   routineWebhookRpc,
   skillDeleteRpc,
@@ -77,12 +78,16 @@ export default function contribute(server: PluginServerContext) {
   void ensureBotsHome()
     .then(migrateBotSkills)
     .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
+  const stopDesktop = registerDesktop(server);
   const settings = server.registerSettings(botSettings);
   const library = async () => {
     const state = await settings.read();
     return state.status === "ready" ? (state.values.library ?? EMPTY_LIBRARY) : EMPTY_LIBRARY;
   };
   const host = new BotsHost(settings);
+  const stopInteractions = registerInteractions(server, host);
+  registerHandoffs(server, host);
+  const disconnectSchedulerHost = connectSchedulerHost(host);
   // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
@@ -103,12 +108,12 @@ export default function contribute(server: PluginServerContext) {
   server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
   server.handle(memoryReadRpc, ({ botId, name }) => readMemory(botId, name));
-  server.handle(memoryWriteRpc, async ({ botId, name, text }) => {
-    await journal.write(botId, name, text);
+  server.handle(memoryWriteRpc, async ({ botId, name, text, expectedRevision }) => {
+    await journal.write(botId, name, text, "app", expectedRevision);
     return { ok: true };
   });
-  server.handle(memoryDeleteRpc, async ({ botId, name }) => {
-    await journal.write(botId, name, null);
+  server.handle(memoryDeleteRpc, async ({ botId, name, expectedRevision }) => {
+    await journal.write(botId, name, null, "app", expectedRevision);
     return { ok: true };
   });
   server.handle(memoryJournalRpc, async ({ botId }) => ({
@@ -126,12 +131,9 @@ export default function contribute(server: PluginServerContext) {
   server.handle(skillDeleteRpc, deleteSkill);
   server.handle(mcpProbeRpc, probeMcpServer);
   server.handle(mcpSourcesRpc, () => mcpSources());
-  server.handle(avatarKeyStatusRpc, () => imageStatus());
-  server.handle(avatarSetKeyRpc, setImageKey);
-  server.handle(avatarRemoveKeyRpc, () => removeImageKey());
-  server.handle(avatarGenerateRpc, generateAvatar);
   server.handle(appsStatusRpc, () => appsStatus());
-  server.handle(appsSetKeyRpc, setKey);
+  server.handle(appsLoginRpc, () => startLogin());
+  server.handle(appsCancelLoginRpc, () => cancelLogin());
   server.handle(appsRemoveKeyRpc, () => removeKey());
   server.handle(appsCatalogRpc, () => catalog());
   server.handle(appsAccountsRpc, accounts);
@@ -154,6 +156,10 @@ export default function contribute(server: PluginServerContext) {
     attach(context);
     return scheduler.runNow(botId, routineId);
   });
+  server.handle(routineCancelRunRpc, ({ botId, routineId, runId }, context) => {
+    attach(context);
+    return scheduler.cancelRun(botId, routineId, runId);
+  });
   server.handle(routineWebhookRpc, ({ routineId, rotate }) => scheduler.webhookUrl(routineId, rotate));
   server.handle(commandListRpc, async ({ botId }) => ({ rules: await commands.list(botId) }));
   server.handle(commandAllowRpc, async ({ botId, command, cwd }) => ({ rule: await commands.add(botId, command, cwd) }));
@@ -163,12 +169,12 @@ export default function contribute(server: PluginServerContext) {
   server.handle(exportTeamRpc, async (input) => exportTeam(input, await library()));
   server.handle(importTeamRpc, importTeam);
   server.handle(uploadRpc, saveUpload);
-  server.on("agent.turn_started", async (event, context) => {
+  server.addHook("agent.turn.before", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
   });
   // A bot's saved commands (exact command, exact folder) are approved here instead of asking.
-  server.on("agent.permission_requested", async ({ agent, request }, context) => {
+  server.addHook("agent.permission.before", async ({ agent, request }, context) => {
     host.attach(context.paseo);
     const shell = shellCommand(request, agent.cwd);
     if (!shell) return;
@@ -179,13 +185,17 @@ export default function contribute(server: PluginServerContext) {
       .respondToPermission({ requestId: request.id, response: { behavior: "allow" } })
       .catch((error: unknown) => console.error("paseo-bots: couldn't approve an allowed command", error));
   });
-  server.on("agent.turn_ended", async (event, context) => {
+  server.addHook("agent.turn.after", async (event, context) => {
     host.attach(context.paseo);
     await turnEnded(host, journal, scheduler, event).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
   });
 
-  return () => {
-    scheduler.stop();
+  return async () => {
+    cancelLogin();
+    stopDesktop();
+    stopInteractions();
+    await scheduler.stop();
+    await disconnectSchedulerHost();
     relay.stop();
   };
 }

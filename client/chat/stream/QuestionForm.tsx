@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgentPermissionResponse } from "../../paseo";
-import { Icon, TextInput } from "@getpaseo/plugin/client/react-native";
+import { Icon, TextInput } from "@getpaseo/plugin/client/ui";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View, type TextStyle } from "react-native";
 import { nativeTokens } from "../../native";
@@ -268,7 +268,8 @@ function OptionRow({ colors, question, label, description, selected, disabled, o
     <Pressable
       accessibilityRole={multi ? "checkbox" : "radio"}
       accessibilityLabel={label}
-      accessibilityState={{ checked: selected }}
+      accessibilityState={{ checked: selected, disabled }}
+      aria-checked={selected}
       onPress={onPress}
       disabled={disabled}
       onHoverIn={() => setHovered(true)}

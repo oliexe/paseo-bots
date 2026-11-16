@@ -1,27 +1,35 @@
-import { appendFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { appendFile, lstat, readdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { localDay, parseLog, type LogEntry } from "../shared/activity";
 import { botDataPath } from "./bot-home";
+import { ensureRealDirectory, missingFile, readRegularText } from "./files";
 
 /** OpenMausBot's budget: the first 200 lines or 24 KB of MEMORY.md go into every chat. */
 const MEMORY_MAX_LINES = 200;
 const MEMORY_MAX_BYTES = 24_000;
 export const MAIN_MEMORY = "MEMORY.md";
+export const MAX_MEMORY_FILE_BYTES = 2 * 1024 * 1024;
 
 export function memoryFolder(botId: string): string {
   return botDataPath(botId);
 }
 
 export function memoryFilePath(botId: string, name: string): string {
+  if (!/^[A-Za-z0-9 ._-]+\.md$/.test(name) || name.length > 255) throw new Error("Invalid memory file name.");
   return name === MAIN_MEMORY ? join(botDataPath(botId), MAIN_MEMORY) : join(botDataPath(botId), "memory", name);
 }
 
 async function readText(path: string): Promise<string> {
-  try {
-    return await readFile(path, "utf8");
-  } catch {
-    return "";
-  }
+  return (await readRegularText(path, MAX_MEMORY_FILE_BYTES)) ?? "";
+}
+
+async function topicNames(botId: string): Promise<string[]> {
+  const directory = join(botDataPath(botId), "memory");
+  const info = await lstat(directory).catch((error: unknown) => { if (missingFile(error)) return null; throw error; });
+  if (!info) return [];
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("The memory folder must be a real directory.");
+  return (await readdir(directory, { withFileTypes: true })).filter((entry) => entry.isFile() && /^[A-Za-z0-9 ._-]+\.md$/.test(entry.name)).map((entry) => entry.name).sort();
 }
 
 function trimForPrompt(text: string): string {
@@ -43,17 +51,11 @@ export async function listMemory(botId: string) {
   const files: { name: string; bytes: number; lines: number; topic: boolean }[] = [];
   const main = await readText(memoryFilePath(botId, MAIN_MEMORY));
   files.push({ name: MAIN_MEMORY, bytes: Buffer.byteLength(main, "utf8"), lines: main ? main.split("\n").length : 0, topic: false });
-  try {
-    for (const name of (await readdir(join(botDataPath(botId), "memory"))).sort()) {
-      if (!name.endsWith(".md")) continue;
-      const path = join(botDataPath(botId), "memory", name);
-      if (!(await stat(path)).isFile()) continue;
+    for (const name of await topicNames(botId)) {
+      const path = memoryFilePath(botId, name);
       const text = await readText(path);
       files.push({ name, bytes: Buffer.byteLength(text, "utf8"), lines: text.split("\n").length, topic: true });
     }
-  } catch {
-    // No topic files yet.
-  }
   const injected = trimForPrompt(main);
   return {
     folder: botDataPath(botId),
@@ -64,7 +66,12 @@ export async function listMemory(botId: string) {
 }
 
 export async function readMemory(botId: string, name: string) {
-  return { text: await readText(memoryFilePath(botId, name)) };
+  const text = await readRegularText(memoryFilePath(botId, name), MAX_MEMORY_FILE_BYTES);
+  return { text: text ?? "", revision: memoryRevision(text) };
+}
+
+export function memoryRevision(text: string | null): string | null {
+  return text === null ? null : createHash("sha256").update(text).digest("hex");
 }
 
 // ---------------------------------------------------------------- daily log
@@ -82,13 +89,17 @@ function logPath(botId: string, day: string): string {
 
 /** Adds a line to today's log, memory/log/YYYY-MM-DD.md. */
 export async function appendDailyLog(botId: string, line: string, at = new Date()): Promise<void> {
-  await mkdir(logFolder(botId), { recursive: true });
+  await ensureRealDirectory(botDataPath(botId), logFolder(botId));
+  const existing = await lstat(logPath(botId, localDay(at))).catch((error: unknown) => { if (missingFile(error)) return null; throw error; });
+  if (existing && !existing.isFile()) throw new Error("The daily log must be a regular file.");
   await appendFile(logPath(botId, localDay(at)), `${line}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
 /** The log's days, newest first, with how many lines each has. */
 export async function listLogDays(botId: string) {
-  const names = await readdir(logFolder(botId)).catch(() => [] as string[]);
+  const info = await lstat(logFolder(botId)).catch((error: unknown) => { if (missingFile(error)) return null; throw error; });
+  if (info && (!info.isDirectory() || info.isSymbolicLink())) throw new Error("The log folder must be a real directory.");
+  const names = info ? (await readdir(logFolder(botId), { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name) : [];
   const days = names.filter((name) => LOG_DAY.test(name.replace(/\.md$/, "")) && name.endsWith(".md")).map((name) => name.replace(/\.md$/, ""));
   const out: { day: string; lines: number }[] = [];
   for (const day of days.sort().reverse()) {
@@ -120,8 +131,7 @@ export async function recentLogEntries(botId: string, days: number, now = new Da
 /** Every memory file with its text, as the bot sees the paths: MEMORY.md, memory/<topic>.md and memory/log/<day>.md. */
 export async function memoryTexts(botId: string): Promise<{ path: string; text: string }[]> {
   const files = [{ path: MAIN_MEMORY, text: await readText(memoryFilePath(botId, MAIN_MEMORY)) }];
-  const topics = await readdir(join(botDataPath(botId), "memory")).catch(() => [] as string[]);
-  for (const name of topics.filter((entry) => entry.endsWith(".md")).sort()) files.push({ path: `memory/${name}`, text: await readText(memoryFilePath(botId, name)) });
+  for (const name of await topicNames(botId)) files.push({ path: `memory/${name}`, text: await readText(memoryFilePath(botId, name)) });
   for (const { day } of (await listLogDays(botId)).days) files.push({ path: `memory/log/${day}.md`, text: await readText(logPath(botId, day)) });
   return files.filter((file) => file.text);
 }

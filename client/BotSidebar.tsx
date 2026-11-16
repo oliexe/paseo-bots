@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent } from "./paseo";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, ScrollView } from "@getpaseo/plugin/client/ui";
 import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Animated, Easing, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";
 import type { Bot, BotGroup, BotListUi } from "../shared/bot";
@@ -9,10 +9,11 @@ import type { TeamTab } from "../shared/groups";
 import { aggregateBuckets, BUCKET_LABELS, chatBucket, orderChats, SIDEBAR_GROUP_LIMIT, type ChatBucket } from "../shared/sidebar";
 import { Avatar } from "./Avatar";
 import { useBotChats, useBotHost, type LocalHost } from "./data";
-import { openLibrary } from "./navigation";
+import { useOpenLibrary } from "./navigation";
 import { nativeTokens, useHover, type NativeTokens } from "./native";
 import { Splash } from "./Splash";
 import { ui } from "./typography";
+import { SearchField } from "./panel/controls";
 import { contextMenuProps, measureAnchor } from "./ui/Menu";
 import { tooltip } from "./ui/Tooltip";
 
@@ -65,6 +66,7 @@ interface BotSidebarProps {
   onDisplayMenu(anchor: LayoutRectangle): void;
   onEditTeam(group: BotGroup): void;
   onTeamMap(): void;
+  onDesktop?(): void;
 }
 
 const noSelect = { userSelect: "none" } as object;
@@ -74,7 +76,13 @@ const CHEVRON_COLOR = "#9ca3af";
 export function BotSidebar(props: BotSidebarProps) {
   const { colors, bots, openTab, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onTeamMap, onEditTeam } = props;
   const tokens = nativeTokens(colors);
-  const shown = openTab?.bots ?? bots;
+  const [query, setQuery] = useState("");
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const available = openTab?.bots ?? bots;
+  const shown = available.filter((bot) => {
+    const text = `${bot.name} ${bot.title} ${bot.description}`.toLocaleLowerCase();
+    return terms.every((term) => text.includes(term));
+  });
   const pinnedIds = new Set(listUi.pinnedChats.map((pin) => pin.chatId));
   const listedBots = new Map(shown.map((bot) => [bot.id, bot]));
   const pins = listUi.pinnedChats.filter((pin) => listedBots.has(pin.botId));
@@ -83,12 +91,13 @@ export function BotSidebar(props: BotSidebarProps) {
     return (
       <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
         <Splash colors={colors} background={tokens.surfaceSidebar} />
-        <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
+        <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} onDesktop={props.onDesktop} />
       </View>
     );
   }
   return (
     <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
+      {available.length || query ? <View style={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: 6 }}><SearchField colors={colors} value={query} onChangeText={setQuery} placeholder="Find bots…" /></View> : null}
       <ScrollView
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
@@ -96,11 +105,11 @@ export function BotSidebar(props: BotSidebarProps) {
         contentContainerStyle={{ paddingHorizontal: 8, paddingTop: 2, paddingBottom: 16 }}
       >
         {pins.length > 0 ? <PinnedSection {...props} pins={pins} botById={listedBots} tokens={tokens} /> : null}
-        {shown.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} onDisplayMenu={props.onDisplayMenu} /> : null}
+        {available.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} onDisplayMenu={props.onDisplayMenu} /> : null}
         {shown.map((bot) => (
           <BotGroup key={bot.id} {...props} tokens={tokens} bot={bot} lead={bot.id === leadId} pinnedIds={pinnedIds} />
         ))}
-        {openTab?.group && shown.length === 0 ? (
+        {terms.length > 0 && shown.length === 0 ? <EmptyState colors={colors} title="No matching bots" description="Search by name, role or description." action={{ icon: "X", label: "Clear search", onPress: () => setQuery("") }} /> : openTab?.group && shown.length === 0 ? (
           <EmptyState colors={colors} title="No bots on this team" description="Add bots to it in the team's settings." action={{ icon: "Pencil", label: "Edit team", onPress: () => onEditTeam(openTab.group!) }} />
         ) : bots.length === 0 ? (
           hiddenArchivedCount > 0 ? (
@@ -115,7 +124,7 @@ export function BotSidebar(props: BotSidebarProps) {
           )
         ) : null}
       </ScrollView>
-      <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} />
+      <Footer colors={colors} onNewBot={onNewBot} onTeamMap={onTeamMap} onDesktop={props.onDesktop} />
     </View>
   );
 }
@@ -131,8 +140,8 @@ function SectionHeader({ colors, onDisplayMenu }: { colors: Colors; onDisplayMen
       <Pressable
         ref={ref}
         accessibilityRole="button"
-        accessibilityLabel="Display preferences"
-        {...tooltip("Display preferences", "bottom")}
+        accessibilityLabel="Bot list options"
+        {...tooltip("Bot list options", "bottom")}
         onPress={() => void measureAnchor(ref).then((anchor) => anchor && onDisplayMenu(anchor))}
         {...hoverProps}
         style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: hovered ? colors.surface1 : "transparent" }}
@@ -143,7 +152,8 @@ function SectionHeader({ colors, onDisplayMenu }: { colors: Colors; onDisplayMen
   );
 }
 
-function Footer({ colors, onNewBot, onTeamMap }: { colors: Colors; onNewBot(): void; onTeamMap(): void }) {
+function Footer({ colors, onNewBot, onTeamMap, onDesktop }: { colors: Colors; onNewBot(): void; onTeamMap(): void; onDesktop?(): void }) {
+  const openLibrary = useOpenLibrary();
   const { hovered, hoverProps } = useHover();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
@@ -175,6 +185,7 @@ function Footer({ colors, onNewBot, onTeamMap }: { colors: Colors; onNewBot(): v
       </Pressable>
       <FooterIconButton colors={colors} icon="Network" label="Team map" onPress={onTeamMap} />
       <FooterIconButton colors={colors} icon="Blocks" label="Skills & Tools" onPress={() => openLibrary()} />
+      {onDesktop ? <FooterIconButton colors={colors} icon="Monitor" label="Host desktop" onPress={onDesktop} /> : null}
     </View>
   );
 }

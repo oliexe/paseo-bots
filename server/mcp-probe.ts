@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import type { McpServerConfig, McpTool } from "../shared/bot";
 import { PLUGIN_VERSION } from "../shared/version";
 
@@ -10,6 +11,7 @@ const TIMEOUT_MS = 30_000;
 const MAX_TOOLS = 200;
 const MAX_PAGES = 5;
 const PROTOCOL_VERSION = "2025-06-18";
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export type ProbeResult = { ok: true; tools: McpTool[] } | { ok: false; error: string };
 
@@ -31,10 +33,13 @@ async function listTools(request: Request, notify: Notify): Promise<McpTool[]> {
   const tools: McpTool[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES && tools.length < MAX_TOOLS; page++) {
-    const result = (await request("tools/list", cursor ? { cursor } : {})) as { tools?: { name?: unknown; description?: unknown }[]; nextCursor?: string };
+    const result = (await request("tools/list", cursor ? { cursor } : {})) as { tools?: { name?: unknown; description?: unknown }[]; nextCursor?: unknown } | null;
+    if (!result || !Array.isArray(result.tools)) throw new Error("The server returned an invalid tools list.");
     for (const tool of result.tools ?? []) {
-      if (typeof tool.name === "string") tools.push({ name: tool.name, description: typeof tool.description === "string" ? tool.description.split("\n")[0]!.slice(0, 300) : "" });
+      if (tool && typeof tool.name === "string" && tool.name.length && !tools.some((existing) => existing.name === tool.name)) tools.push({ name: tool.name.slice(0, 256), description: typeof tool.description === "string" ? tool.description.split("\n")[0]!.slice(0, 300) : "" });
+      if (tools.length >= MAX_TOOLS) break;
     }
+    if (result.nextCursor !== undefined && typeof result.nextCursor !== "string") throw new Error("The server returned an invalid tools cursor.");
     cursor = result.nextCursor;
     if (!cursor) break;
   }
@@ -55,31 +60,48 @@ function probeStdio(config: Extract<McpServerConfig, { type: "stdio" }>, signal:
       // npx, uvx and friends are .cmd shims on Windows.
       shell: process.platform === "win32",
       windowsHide: true,
+      detached: process.platform !== "win32",
     });
     let nextId = 1;
     const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
     let stdout = "";
     let stderr = "";
     let settled = false;
+    const decoder = new StringDecoder("utf8");
+    const kill = (signal: NodeJS.Signals) => {
+      try {
+        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
+        else child.kill(signal);
+      } catch { /* The process may already have exited. */ }
+    };
 
     const finish = (error: Error | null, tools?: McpTool[]) => {
       if (settled) return;
       settled = true;
       signal.removeEventListener("abort", onAbort);
-      child.kill();
+      for (const waiter of pending.values()) waiter.reject(error ?? new Error("The test connection closed."));
+      pending.clear();
+      child.stdin.destroy();
+      kill("SIGTERM");
+      const forceKill = setTimeout(() => kill("SIGKILL"), 1000);
+      forceKill.unref();
       if (error) reject(error);
       else resolve(tools ?? []);
     };
     const onAbort = () => finish(new Error(`No answer within ${TIMEOUT_MS / 1000} seconds.${lastLine(stderr)}`));
     signal.addEventListener("abort", onAbort);
+    if (signal.aborted) { onAbort(); return; }
 
+    child.stdin.on("error", (error) => finish(new Error(`Couldn't send to the server: ${error.message}`)));
     child.on("error", (error) => finish(new Error(`Couldn't start "${config.command}": ${error.message}`)));
     child.on("exit", (code) => finish(new Error(`The server exited${code === null ? "" : ` with code ${code}`} before answering.${lastLine(stderr)}`)));
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString("utf8")).slice(-4000);
     });
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
+      if (settled) return;
+      stdout += decoder.write(chunk);
+      if (Buffer.byteLength(stdout, "utf8") > MAX_RESPONSE_BYTES) { finish(new Error("The server response exceeds 2 MB.")); return; }
       let index: number;
       while ((index = stdout.indexOf("\n")) !== -1) {
         const line = stdout.slice(0, index).trim();
@@ -91,7 +113,7 @@ function probeStdio(config: Extract<McpServerConfig, { type: "stdio" }>, signal:
         } catch {
           continue;
         }
-        const waiter = typeof message.id === "number" ? pending.get(message.id) : undefined;
+        const waiter = message && typeof message.id === "number" ? pending.get(message.id) : undefined;
         if (!waiter) continue;
         pending.delete(message.id as number);
         if (message.error) waiter.reject(rpcError(message));
@@ -132,14 +154,17 @@ async function* serverEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<{
     for (;;) {
       const { value, done } = await reader.read();
       if (done) return;
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_RESPONSE_BYTES) throw new Error("The server event exceeds 2 MB.");
       let index: number;
-      while ((index = buffer.indexOf("\n\n")) !== -1) {
+      let delimiter: RegExpExecArray | null;
+      while ((delimiter = /\r?\n\r?\n/.exec(buffer)) !== null) {
+        index = delimiter.index;
         const block = buffer.slice(0, index);
-        buffer = buffer.slice(index + 2);
+        buffer = buffer.slice(index + delimiter[0].length);
         let event = "message";
         const data: string[] = [];
-        for (const line of block.split("\n")) {
+        for (const line of block.split(/\r?\n/)) {
           if (line.startsWith("event:")) event = line.slice(6).trim();
           else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
         }
@@ -151,8 +176,24 @@ async function* serverEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<{
   }
 }
 
+async function responseText(response: Response, limit = MAX_RESPONSE_BYTES): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  let bytes = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return Buffer.concat(chunks).toString("utf8");
+      bytes += value.byteLength;
+      if (bytes > limit) throw new Error("The server response exceeds 2 MB.");
+      chunks.push(value);
+    }
+  } finally { await reader.cancel().catch(() => {}); }
+}
+
 async function httpFailure(response: Response): Promise<Error> {
-  const text = (await response.text().catch(() => "")).trim().slice(0, 200);
+  const text = (await responseText(response).catch(() => "")).trim().slice(0, 200);
   const hint = response.status === 401 || response.status === 403 ? " Check the server's headers (for example an Authorization token)." : "";
   return new Error(`The server answered ${response.status}${text ? `: ${text}` : "."}${hint}`);
 }
@@ -189,21 +230,25 @@ async function probeHttp(config: Extract<McpServerConfig, { type: "http" }>, sig
         }
       }
     } else {
-      message = (await response.json()) as JsonRpcResponse;
+      message = JSON.parse(await responseText(response)) as JsonRpcResponse;
     }
-    if (!message) throw new Error("The server closed the connection without answering.");
+    if (!message || message.id !== id) throw new Error("The server closed the connection without answering this request.");
     if (message.error) throw rpcError(message);
     return message.result;
   };
   const notify: Notify = async (method) => {
     const response = await post({ jsonrpc: "2.0", method });
+    if (!response.ok) throw await httpFailure(response);
     await response.body?.cancel().catch(() => {});
   };
   try {
     return await listTools(request, notify);
   } finally {
     if (sessionId) {
-      void fetch(config.url, { method: "DELETE", headers: { ...config.headers, "Mcp-Session-Id": sessionId } }).catch(() => {});
+      const cleanup = new AbortController();
+      const timeout = setTimeout(() => cleanup.abort(), 3000);
+      timeout.unref();
+      void fetch(config.url, { method: "DELETE", signal: cleanup.signal, headers: { ...config.headers, "Mcp-Session-Id": sessionId, "MCP-Protocol-Version": PROTOCOL_VERSION } }).then((response) => response.body?.cancel()).catch(() => {}).finally(() => clearTimeout(timeout));
     }
   }
 }
@@ -215,13 +260,17 @@ async function probeSse(config: Extract<McpServerConfig, { type: "sse" }>, signa
   const events = serverEvents(stream.body);
   try {
     let endpoint: string | null = null;
-    for await (const { event, data } of events) {
+    for (;;) {
+      const item = await events.next();
+      if (item.done) break;
+      const { event, data } = item.value;
       if (event === "endpoint") {
         endpoint = new URL(data, config.url).toString();
         break;
       }
     }
     if (!endpoint) throw new Error("The server's event stream didn't say where to send messages.");
+    if (new URL(endpoint).origin !== new URL(config.url).origin) throw new Error("The server named an endpoint on another origin. Use its direct HTTP address to keep your credentials on the configured server.");
     const target = endpoint;
     let nextId = 1;
     const send = async (payload: object) => {
@@ -232,7 +281,10 @@ async function probeSse(config: Extract<McpServerConfig, { type: "sse" }>, signa
     const request: Request = async (method, params) => {
       const id = nextId++;
       await send({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
-      for await (const { event, data } of events) {
+      for (;;) {
+        const item = await events.next();
+        if (item.done) break;
+        const { event, data } = item.value;
         if (event !== "message") continue;
         const parsed = JSON.parse(data) as JsonRpcResponse;
         if (parsed.id !== id) continue;
@@ -267,5 +319,6 @@ export async function probeMcpServer({ config }: { config: McpServerConfig }): P
     return { ok: false, error: redact(message, config) };
   } finally {
     clearTimeout(timer);
+    controller.abort();
   }
 }

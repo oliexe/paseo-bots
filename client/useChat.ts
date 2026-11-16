@@ -1,5 +1,7 @@
 import type { PaseoAgent, PaseoApi } from "./paseo";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRpc } from "@getpaseo/plugin/client";
+import { interactionRestoreRpc } from "../shared/interaction";
 import { mergeEntries } from "./chat/stream/model";
 
 type AgentHandle = ReturnType<PaseoApi["agents"]["ref"]>;
@@ -53,7 +55,10 @@ function message(error: unknown): string {
  * the tail page once, then only what's new ("after" the end cursor) on each live
  * event, merged by the projected entry's first seq. Older pages load on demand.
  */
-export function useChat(api: PaseoApi | null, agentId: string | null): ChatState {
+export function useChat(api: PaseoApi | null, agentId: string | null, restoreCards = true): ChatState {
+  const restore = useRpc(interactionRestoreRpc);
+  const restoreRef = useRef(restore);
+  restoreRef.current = restore;
   const [state, setState] = useState<ChatState>(EMPTY);
   const actions = useRef<{ loadOlder(): void; retry(): void }>({ loadOlder: noop, retry: noop });
 
@@ -82,6 +87,12 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
       }
       busy = true;
       try {
+        let recoveryError: string | null = null;
+        if (restoreCards && mode === "tail") {
+          try { await restoreRef.current({ agentId }); }
+          catch (error) { recoveryError = `Could not restore saved cards: ${message(error)}`; }
+          if (disposed) return;
+        }
         let replace = mode === "tail" || endCursor === null;
         for (let pages = 0; pages < 25 && !disposed; pages++) {
           const page = replace
@@ -100,7 +111,7 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
             entries: reset ? page.entries : mergeEntries(current.entries, page.entries),
             agent: agentFrom(page, current.agent),
             loading: false,
-            error: null,
+            error: recoveryError,
             retrying: false,
             hasOlder: reset ? page.hasOlder : current.hasOlder,
           }));
@@ -159,7 +170,7 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
 
     const retry = () => {
       setState((current) => ({ ...current, retrying: true }));
-      void sync(endCursor ? "after" : "tail");
+      void sync("tail");
     };
     actions.current = { loadOlder, retry };
 
@@ -186,7 +197,7 @@ export function useChat(api: PaseoApi | null, agentId: string | null): ChatState
       timeline();
       unsubscribeAgent();
     };
-  }, [api, agentId]);
+  }, [api, agentId, restoreCards]);
 
   const loadOlder = useCallback(() => actions.current.loadOlder(), []);
   const retry = useCallback(() => actions.current.retry(), []);

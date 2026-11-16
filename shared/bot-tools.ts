@@ -4,7 +4,7 @@
 
 export const TOOLS_MCP_NAME = "bots";
 
-const BOT_TOOL_NAMES = ["list_bots", "ask_bot", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app"] as const;
+const BOT_TOOL_NAMES = ["list_bots", "ask_bot", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "show_card", "list_routines", "run_routine", "cancel_routine_run"] as const;
 export type BotToolName = (typeof BOT_TOOL_NAMES)[number];
 
 /**
@@ -12,7 +12,7 @@ export type BotToolName = (typeof BOT_TOOL_NAMES)[number];
  * run without a permission prompt. Asking another bot is left to the bot's
  * "Contact other bots" setting.
  */
-export const QUIET_TOOLS: readonly BotToolName[] = ["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app"];
+export const QUIET_TOOLS: readonly BotToolName[] = ["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "show_card", "list_routines"];
 
 /**
  * The bot tool a timeline tool call is, whatever the provider calls it:
@@ -32,5 +32,5 @@ export function supportsToolGrants(provider: string): boolean {
 /** The prompt section for the plugin's own tools, given to chats that get them (bots on the plugin's host). */
 export function botToolsPrompt(canAsk: boolean): string {
   const others = canAsk ? "list_bots to see the other bots and ask_bot to ask one for help (check_chat follows up)" : "list_bots to see the other bots";
-  return `Your own tools come from the MCP server "bots". Use propose_routine for your own recurring or webhook-started work (rather than Paseo schedules) and propose_skill to keep a way of working for next time. When the user asks you to set up or change bots, teams, skills, MCP servers or defaults, read get_setup and put all the changes in one propose_changes call. The user confirms proposals on a card in the chat. Use search_chats to look through your past chats and daily log, and ${others}.`;
+  return `Your own tools come from the MCP server "bots". Use propose_routine for your own recurring or webhook-started work (rather than Paseo schedules) and propose_skill to keep a way of working for next time. Use list_routines for your schedules and run history; run_routine starts an existing routine and cancel_routine_run stops its active run when the user asks. Keep the same run request key when retrying. When the user asks you to set up or change bots, teams, skills, MCP servers or defaults, read get_setup and put all the changes in one propose_changes call. The user confirms proposals on a card in the chat. Use show_card to present an editable draft, an action to confirm, choices, or a short form. Finish your turn after showing a card; the user's answer arrives in this chat. Cards must not request passwords or secrets. Use search_chats to look through your past chats and daily log, and ${others}.`;
 }

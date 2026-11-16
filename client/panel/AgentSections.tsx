@@ -1,6 +1,5 @@
 import { useHosts, useRpc } from "@getpaseo/plugin/client";
-import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
-import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
+import { Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { APPS_MCP_NAME } from "../../shared/apps";

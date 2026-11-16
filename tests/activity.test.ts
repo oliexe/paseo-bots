@@ -95,6 +95,24 @@ describe("memory journal, daily log and search_chats", () => {
     await rm(home, { recursive: true, force: true });
   });
 
+  it("refuses duplicate topic creation and stale saves or deletes inside the write queue", async () => {
+    const { MemoryJournal } = await import("../server/journal");
+    const { readMemory } = await import("../server/memory");
+    const journal = new MemoryJournal();
+    await journal.write("bot-cas", "topic.md", "original", "app", null);
+    await expect(journal.write("bot-cas", "topic.md", "replacement", "app", null)).rejects.toThrow("already exists");
+    const first = await readMemory("bot-cas", "topic.md");
+    const [saved, stale] = await Promise.allSettled([
+      journal.write("bot-cas", "topic.md", "newer", "app", first.revision),
+      journal.write("bot-cas", "topic.md", "older", "app", first.revision),
+    ]);
+    expect(saved.status).toBe("fulfilled");
+    expect(stale.status).toBe("rejected");
+    await expect(journal.write("bot-cas", "topic.md", null, "app", first.revision)).rejects.toThrow("changed since");
+    expect((await readMemory("bot-cas", "topic.md")).text).toBe("newer");
+    expect(await readMemory("bot-cas", "missing.md")).toEqual({ text: "", revision: null });
+  });
+
   it("journals the bot's edits during a turn, the person's edits, and undoes them", async () => {
     const { MemoryJournal } = await import("../server/journal");
     const { memoryFilePath } = await import("../server/memory");
@@ -145,14 +163,33 @@ describe("memory journal, daily log and search_chats", () => {
     const journal = new MemoryJournal();
     const agent = { id: newUuid(), workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/", title: null };
 
-    const timeline = [
+    // Since Paseo 0.13 the hook's own `timeline` is always empty; the turn is read back from the chat.
+    const items = [
       { type: "user_message", text: "Send the Q3 invoices" },
       { type: "tool_call", name: "mcp__apps__GMAIL_SEND", callId: "1", status: "completed", detail: { type: "unknown", input: null, output: null }, error: null },
       { type: "assistant_message", text: "Sent the three Q3 invoices to Acme." },
-    ] as never;
+    ];
+    const refetched: unknown[] = [];
+    host.attach({
+      agents: {
+        ref: (id: string) => ({
+          timeline: {
+            refetch: async (options: unknown) => {
+              refetched.push({ id, options });
+              return { entries: items.map((item) => ({ item, timestamp: new Date().toISOString() })) };
+            },
+          },
+        }),
+      },
+    } as never);
+    const timeline = [] as never;
     await turnEnded(host, journal, scheduler, { agent, turnId: "t1", outcome: { kind: "completed" }, timeline });
     await turnEnded(host, journal, scheduler, { agent: { ...agent, id: "other-agent" }, turnId: "t2", outcome: { kind: "completed" }, timeline });
     await turnEnded(host, journal, scheduler, { agent, turnId: "t3", outcome: { kind: "canceled", reason: "stopped" }, timeline });
+    expect(refetched).toEqual([
+      { id: agent.id, options: { direction: "tail", projection: "projected", limit: 80 } },
+      { id: agent.id, options: { direction: "tail", projection: "projected", limit: 80 } },
+    ]);
     expect((await listLogDays("bot-s")).days).toEqual([{ day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), lines: 1 }]);
     const [entry] = await recentLogEntries("bot-s", 1);
     expect(entry).toMatchObject({ chat: "Invoices", text: "Sent the three Q3 invoices to Acme. [tools: apps/GMAIL_SEND]" });

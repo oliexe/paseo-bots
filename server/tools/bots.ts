@@ -2,7 +2,9 @@ import type { PaseoApi } from "../paseo";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
 import { BOT_LABEL } from "../../shared/bot";
+import { ASKED_BY_LABEL, ASKED_IN_LABEL, type HandoffCard } from "../../shared/handoff";
 import { startChat } from "../chats";
+import { publishHandoff } from "../handoffs";
 import { defineTool, type ToolCaller } from "./mcp";
 
 // Other bots on this host: who they are, so a bot can hand work to the right one.
@@ -24,7 +26,7 @@ export const listBots = defineTool({
 });
 
 /** Label on a chat started by another bot's ask_bot, carrying the asking bot's id. */
-export const ASKED_BY_LABEL = "paseo-bots.asked-by";
+export { ASKED_BY_LABEL } from "../../shared/handoff";
 /** MCP clients give up on a tool call after about a minute (Codex after 60 seconds), so answers are awaited a little less. */
 const ASK_WAIT_MS = 50_000;
 const REPLY_MAX = 8_000;
@@ -41,10 +43,11 @@ interface ChatState {
   reply: string;
 }
 
-async function readChat(paseo: PaseoApi, chatId: string): Promise<ChatState & { labels: Record<string, string> }> {
+async function readChat(paseo: PaseoApi, chatId: string, callerBotId?: string): Promise<ChatState & { labels: Record<string, string> }> {
   const snapshot = await paseo.agents.ref(chatId).refresh().catch(() => null);
   const agent = snapshot?.agent;
   if (!agent) throw new Error("There's no chat with that id.");
+  if (callerBotId && agent.labels?.[BOT_LABEL] !== callerBotId && agent.labels?.[ASKED_BY_LABEL] !== callerBotId) throw new Error("You can only check your own chats and ones you started with ask_bot.");
   const page = await paseo.agents.ref(chatId).timeline.refetch({ direction: "tail", projection: "projected", limit: 80 });
   const busy = agent.status === "running" || agent.status === "initializing";
   return {
@@ -90,13 +93,25 @@ export const askBot = defineTool({
     const { bot, host, relay } = caller;
     const others = (await host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived);
     const key = wanted.trim().toLowerCase();
-    const target = others.find((entry) => entry.id === wanted.trim()) ?? others.find((entry) => entry.name.trim().toLowerCase() === key);
+    const exact = others.find((entry) => entry.id === wanted.trim());
+    const named = others.filter((entry) => entry.name.trim().toLowerCase() === key);
+    if (!exact && named.length > 1) throw new Error(`More than one bot is called "${wanted}". Use one of their ids: ${named.map((entry) => entry.id).join(", ")}.`);
+    const target = exact ?? named[0];
     if (!target) throw new Error(others.length ? `There's no other bot called "${wanted}". Ask one of: ${others.map((entry) => entry.name).join(", ")}.` : "There are no other bots to ask.");
-    const chatId = await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id } });
-    if (!wait) return `Asked ${target.name} in chat ${chatId}. Use check_chat with that id for the answer.`;
+    const chatId = await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id, [ASKED_IN_LABEL]: caller.agentId } });
     const paseo = host.requirePaseo();
+    const handoff: HandoffCard = { requesterBotId: bot.id, requesterAgentId: caller.agentId, targetBotId: target.id, targetAgentId: chatId, targetName: target.name.slice(0, 200), request: foldText(message, 600), createdAt: new Date().toISOString(), status: { state: "running", reply: "", error: null } };
+    await publishHandoff(paseo, handoff);
+    if (!wait) return `Asked ${target.name} in chat ${chatId}. Use check_chat with that id for the answer.`;
     await paseo.agents.ref(chatId).waitForFinish(ASK_WAIT_MS).catch(() => null);
-    return describeChat(await readChat(paseo, chatId), target.name, chatId);
+    try {
+      const chat = await readChat(paseo, chatId);
+      await publishHandoff(paseo, { ...handoff, status: { state: chat.state === "idle" ? "finished" : chat.state, reply: chat.reply.slice(0, 6000), error: chat.error?.slice(0, 1000) ?? null } });
+      return describeChat(chat, target.name, chatId);
+    } catch {
+      // The task was accepted. Report its handle rather than inviting a second dispatch.
+      return `Asked ${target.name} in chat ${chatId}, but its status could not be checked. Do not ask again; use check_chat with that id for the answer.`;
+    }
   },
 });
 
@@ -109,12 +124,12 @@ export const checkChat = defineTool({
   }),
   async run({ chat_id: chatId, wait = false }, { bot, host }) {
     const paseo = host.requirePaseo();
-    let chat = await readChat(paseo, chatId.trim());
+    let chat = await readChat(paseo, chatId.trim(), bot.id);
     const owner = chat.labels[BOT_LABEL];
     if (owner !== bot.id && chat.labels[ASKED_BY_LABEL] !== bot.id) throw new Error("You can only check your own chats and ones you started with ask_bot.");
     if (wait && chat.state === "running") {
       await paseo.agents.ref(chatId.trim()).waitForFinish(ASK_WAIT_MS).catch(() => null);
-      chat = await readChat(paseo, chatId.trim());
+      chat = await readChat(paseo, chatId.trim(), bot.id);
     }
     const who = owner === bot.id ? "You" : ((await host.bot(owner ?? ""))?.name ?? "The other bot");
     return `"${chat.title}": ${describeChat(chat, who, chatId.trim())}`;
