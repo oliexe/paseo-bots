@@ -106,7 +106,7 @@ describe("the bots MCP server", () => {
 
   it("proposes a skill that the user saves or dismisses once", async () => {
     const { proposeSkill } = await import("../server/tools/skills");
-    const { acceptProposal, dismissProposal, getProposal } = await import("../server/proposals");
+    const { acceptProposal, dismissProposal, getProposal, prepareProposal } = await import("../server/proposals");
     const { librarySkillPath } = await import("../server/library");
     const host = fakeHost([makeBot({ id: "bot-a" })]);
     const caller = { bot: makeBot({ id: "bot-a" }), agentId: newUuid(), host, relay: null as never };
@@ -118,16 +118,19 @@ describe("the bots MCP server", () => {
     expect(proposal).toMatchObject({ botId: "bot-a", agentId: caller.agentId, kind: "skill", status: "pending", data: { name: "weekly-report", description: "Use for the weekly report" } });
     expect(proposal!.kind === "skill" && proposal!.data.text).toBe("---\nname: weekly-report\ndescription: Use for the weekly report\n---\n\n1. Collect PRs.\n");
 
-    const accepted = await acceptProposal(id);
+    const prepared = await prepareProposal(id);
+    expect(prepared.skill).toMatchObject({ id: "weekly-report", description: "Use for the weekly report" });
+    (await host.values())!.proposalDecisions = [{ id, status: "accepted" }];
+    const accepted = await acceptProposal(id, host);
     expect(accepted.proposal.status).toBe("accepted");
-    expect(accepted.skill).toMatchObject({ id: "weekly-report", description: "Use for the weekly report" });
     expect(await readFile(join(librarySkillPath("weekly-report"), "SKILL.md"), "utf8")).toBe(proposal!.kind === "skill" ? proposal!.data.text : "");
-    await expect(acceptProposal(id)).rejects.toThrow("already saved");
-    await expect(dismissProposal(id)).rejects.toThrow("already saved");
+    expect((await acceptProposal(id, host)).proposal.status).toBe("accepted");
+    await expect(dismissProposal(id, host)).rejects.toThrow("already saved");
 
     const other = proposalIdOf({ name: "bots.propose_skill", status: "completed", detail: { output: await proposeSkill.run({ name: "x", description: "y", instructions: "z" }, caller) } })!;
-    expect((await dismissProposal(other)).status).toBe("dismissed");
-    await expect(acceptProposal(other)).rejects.toThrow("dismissed");
-    await expect(acceptProposal("p-0000000000")).rejects.toThrow("no longer available");
+    (await host.values())!.proposalDecisions!.push({ id: other, status: "dismissed" });
+    expect((await dismissProposal(other, host)).status).toBe("dismissed");
+    await expect(acceptProposal(other, host)).rejects.toThrow("dismissed");
+    await expect(acceptProposal("p-0000000000", host)).rejects.toThrow("no longer available");
   });
 });

@@ -14,7 +14,17 @@ const ProposalBase = z.object({
   status: z.enum(["pending", "accepted", "dismissed"]),
   createdAt: z.string(),
   resolvedAt: z.string().nullable(),
+  /** Absent on historical decisions, which must not wake old chats on upgrade. */
+  notification: z.object({
+    status: z.enum(["pending", "waiting", "sent", "unavailable"]),
+    text: z.string().max(500),
+    error: z.string().max(2000).nullable(),
+  }).optional(),
 });
+
+export const ProposalSkillSchema = z.object({ id: z.string(), description: z.string(), sha: z.string() });
+export type ProposalSkill = z.infer<typeof ProposalSkillSchema>;
+export type ProposalDecision = "accepted" | "dismissed";
 
 /** A new or updated library skill: its folder name and full SKILL.md. */
 const SkillProposalSchema = z.object({ name: z.string(), description: z.string(), text: z.string() });

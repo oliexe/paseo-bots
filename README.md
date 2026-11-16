@@ -69,6 +69,8 @@ You can use Bots through Paseo's desktop, browser or mobile client, including wh
 
 Bots can do the setting up too. Ask one in a chat, for example "Create a research team of three bots with Scout as Chief of Staff", and it shows every change on one card; **Apply changes** makes them. A bot can create, edit and delete bots, teams, routines, library skills and MCP servers, and change what new bots start with. Each bot's earlier settings stay under **History** in its settings.
 
+Applying or dismissing a proposal notifies the chat that proposed it, so the bot can continue. Changes are confirmed only after saving succeeds; notifications wait while the bot is working or needs permission. If notification fails, **Retry notification** sends the saved decision without applying it again.
+
 Use **Pin to top** in a bot's menu for quick access. The same action on a chat puts it in the **Pinned** section. **Find bots…** filters the bot list; **Bot list options** controls archived bots and chat order. Threads stay nested beneath bots inside the single **Bots** sidebar entry. Existing conversations remain accessible, and older visible workspaces keep their original visibility. Command Center also offers **Open Bots** and **New bot**.
 
 The chat menu also offers **Copy transcript**, **Copy path**, **Copy chat ID** and **Archive**.

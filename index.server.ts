@@ -16,7 +16,7 @@ import { registerInteractions } from "./server/interactions";
 import { registerHandoffs } from "./server/handoffs";
 import { connectSchedulerHost } from "./server/connection";
 import { Relay } from "./server/relay";
-import { acceptProposal, dismissProposal, getProposal } from "./server/proposals";
+import { acceptProposal, dismissProposal, getProposal, prepareProposal, registerProposalNotifications } from "./server/proposals";
 import { BOT_TOOLS } from "./server/tools";
 import { saveUpload } from "./server/uploads";
 import { botSettings, EMPTY_LIBRARY } from "./shared/bot";
@@ -45,6 +45,7 @@ import {
   proposalAcceptRpc,
   proposalDismissRpc,
   proposalGetRpc,
+  proposalPrepareRpc,
   appsAccountsRpc,
   appsCatalogRpc,
   appsConnectRpc,
@@ -85,6 +86,7 @@ export default function contribute(server: PluginServerContext) {
   const host = new BotsHost(settings);
   const stopInteractions = registerInteractions(server, host);
   const stopHandoffs = registerHandoffs(server, host);
+  const stopProposalNotifications = registerProposalNotifications(server, host);
   const disconnectSchedulerHost = connectSchedulerHost(host);
   // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
@@ -144,8 +146,9 @@ export default function contribute(server: PluginServerContext) {
     return { tools: await relay.mountTools(botId, agentId), apps: bot?.apps.length ? await relay.mountApps(botId) : null };
   });
   server.handle(proposalGetRpc, async ({ id }) => ({ proposal: await getProposal(id) }));
-  server.handle(proposalAcceptRpc, ({ id }) => acceptProposal(id));
-  server.handle(proposalDismissRpc, async ({ id }) => ({ proposal: await dismissProposal(id) }));
+  server.handle(proposalPrepareRpc, ({ id, receiptIds }) => prepareProposal(id, receiptIds));
+  server.handle(proposalAcceptRpc, ({ id }, context) => { attach(context); return acceptProposal(id, host); });
+  server.handle(proposalDismissRpc, async ({ id }, context) => { attach(context); return { proposal: await dismissProposal(id, host) }; });
   server.handle(routineStatusRpc, (_input, context) => {
     attach(context);
     return scheduler.status();
@@ -192,6 +195,7 @@ export default function contribute(server: PluginServerContext) {
     cancelLogin();
     stopInteractions();
     await stopHandoffs();
+    await stopProposalNotifications();
     await scheduler.stop();
     await disconnectSchedulerHost();
     relay.stop();

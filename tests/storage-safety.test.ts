@@ -10,7 +10,7 @@ import { MemoryJournal } from "../server/journal";
 import { acceptProposal, createProposal, dismissProposal } from "../server/proposals";
 import { exportBot, importBot, importTeam } from "../server/share";
 import { saveUpload } from "../server/uploads";
-import { makeBot, NOW } from "./helpers";
+import { fakeHost, makeBot, NOW } from "./helpers";
 
 let home: string;
 const previousHome = process.env.PASEO_HOME;
@@ -123,7 +123,9 @@ describe("durable user data", () => {
 
   it("serializes dismiss and accept so a dismissed proposal cannot write a skill", async () => {
     const proposal = await createProposal({ botId: "bot-1", agentId: "chat", kind: "skill", data: { name: "race", description: "", text: "new" } });
-    const results = await Promise.allSettled([dismissProposal(proposal.id), acceptProposal(proposal.id)]);
+    const host = fakeHost([makeBot()]);
+    (await host.values())!.proposalDecisions = [{ id: proposal.id, status: "dismissed" }];
+    const results = await Promise.allSettled([dismissProposal(proposal.id, host), acceptProposal(proposal.id, host)]);
     expect(results[0].status).toBe("fulfilled");
     expect(results[1].status).toBe("rejected");
     expect((await readSkill({ id: "race" })).missing).toBe(true);

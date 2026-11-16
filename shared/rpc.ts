@@ -1,7 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import { BotGroupSchema, BotMcpServerSchema, BotSchema, McpServerConfigSchema, McpToolSchema, TeamFileTeamSchema } from "./bot";
-import { ProposalSchema } from "./proposals";
+import { ProposalSchema, ProposalSkillSchema } from "./proposals";
 
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 /** "MEMORY.md" or a topic file such as "projects.md" (stored under memory/). */
@@ -344,11 +344,18 @@ export const proposalGetRpc = defineRpc({
   output: z.object({ proposal: ProposalSchema.nullable() }),
 });
 
-/** Accepts a proposal. A skill is written to the library here; the app then records it (and routines) in the bots' settings. */
+/** Validates without side effects; only receipts for retired cards may be removed. */
+export const proposalPrepareRpc = defineRpc({
+  name: "bots.proposals.prepare",
+  input: z.object({ id: ProposalId, receiptIds: z.array(ProposalId).max(200) }),
+  output: z.object({ proposal: ProposalSchema, skill: ProposalSkillSchema.optional(), expiredReceiptIds: z.array(ProposalId) }),
+});
+
+/** Completes an application already committed to settings, then notifies its original chat. */
 export const proposalAcceptRpc = defineRpc({
   name: "bots.proposals.accept",
   input: z.object({ id: ProposalId }),
-  output: z.object({ proposal: ProposalSchema, skill: z.object({ id: SkillName, description: z.string(), sha: z.string() }).optional() }),
+  output: z.object({ proposal: ProposalSchema }),
 });
 
 export const proposalDismissRpc = defineRpc({

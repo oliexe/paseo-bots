@@ -301,6 +301,10 @@ export const botSettings = defineSettings({
     groups: z.array(BotGroupSchema).optional(),
     /** Message references belong to this host and never travel in bot/team exports. */
     bookmarks: z.array(MessageBookmarkSchema).max(MAX_MESSAGE_BOOKMARKS).optional(),
+    /** Atomic receipts for proposal application; retained until the server retires the card. */
+    proposalDecisions: z.array(z.object({ id: z.string(), status: z.enum(["accepted", "dismissed"]) })).max(200).optional(),
+    /** Invalidates a delayed client's prepared application when retired receipts are removed. */
+    proposalDecisionEpoch: z.number().int().nonnegative().optional(),
   }),
   migrate: (values, fromVersion) => {
     let migrated = values;

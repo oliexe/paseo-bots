@@ -2,20 +2,20 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Text, View } from "react-native";
-import { EMPTY_LIBRARY, newRoutineId, type Bot } from "../../../shared/bot";
-import { applyChanges, changeWarnings, describeChange } from "../../../shared/changes";
-import { setBotUses, updateSkill, upsertSkills } from "../../../shared/library";
-import type { Proposal } from "../../../shared/proposals";
+import type { Bot } from "../../../shared/bot";
+import { changeWarnings, describeChange } from "../../../shared/changes";
+import type { Proposal, ProposalDecision } from "../../../shared/proposals";
 import { describeSchedule, upcomingRuns } from "../../../shared/routines";
-import { proposalAcceptRpc, proposalDismissRpc, proposalGetRpc } from "../../../shared/rpc";
+import { proposalAcceptRpc, proposalDismissRpc, proposalGetRpc, proposalPrepareRpc } from "../../../shared/rpc";
 import { scanSkillText, skillBody } from "../../../shared/skills";
 import { skillQueryKey } from "../../library/SkillPage";
 import { errorText } from "../../native";
 import { Alert } from "../../panel/controls";
 import { ui } from "../../typography";
 import { useBotSettings } from "../../useBotSettings";
+import { decideProposal } from "../proposal-decision";
 import { PlanCard } from "./PlanCard";
 import { CardButton } from "./ui";
 
@@ -35,12 +35,22 @@ const OUTCOME = { pending: "pending", accepted: "approved", dismissed: "rejected
 export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; compact: boolean; proposalId: string }) {
   const get = useRpc(proposalGetRpc);
   const accept = useRpc(proposalAcceptRpc);
+  const prepare = useRpc(proposalPrepareRpc);
   const dismiss = useRpc(proposalDismissRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { settings, commit } = useBotSettings();
+  const { settings, latest, commit } = useBotSettings();
+  const decisionLock = useRef(false);
   const [busy, setBusy] = useState<"save" | "dismiss" | null>(null);
-  const query = useQuery({ queryKey: proposalQueryKey(proposalId), queryFn: () => get({ id: proposalId }) });
+  const query = useQuery({
+    queryKey: proposalQueryKey(proposalId),
+    queryFn: () => get({ id: proposalId }),
+    refetchInterval: ({ state }) => {
+      const current = state.data?.proposal;
+      if (current?.notification?.status === "waiting" || current?.notification?.status === "pending") return 3000;
+      return current?.status === "pending" && settings.status === "ready" && settings.values.proposalDecisions?.some((entry) => entry.id === proposalId) ? 3000 : false;
+    },
+  });
   const proposal = query.data?.proposal;
 
   if (query.isPending) return null;
@@ -57,66 +67,50 @@ export function ProposalCard({ colors, compact, proposalId }: { colors: Colors; 
         ? routineView(proposal, bot)
         : changesView(proposal);
 
-  const save = async () => {
-    setBusy("save");
+  const decide = async (status: ProposalDecision) => {
+    if (decisionLock.current) return;
+    decisionLock.current = true;
+    setBusy(status === "accepted" ? "save" : "dismiss");
     try {
-      if (proposal.kind === "changes") {
-        // Applied before the proposal counts as accepted: a change that no longer fits leaves the card pending.
-        const context = { now: new Date().toISOString(), provider: proposal.data.provider };
-        if (!(await commit((current) => applyChanges(current, proposal.data.changes, context)))) return;
-        queryClient.setQueryData(proposalQueryKey(proposal.id), await accept({ id: proposal.id }));
-        return;
-      }
-      const { proposal: saved, skill } = await accept({ id: proposal.id });
-      await commit((current) => {
-        if (proposal.kind === "routine") {
-          const routine = { id: newRoutineId(), ...proposal.data, enabled: true, createdAt: new Date().toISOString() };
-          return { ...current, bots: current.bots.map((entry) => (entry.id === saved.botId ? { ...entry, routines: [...entry.routines, routine] } : entry)) };
-        }
-        if (!skill) return current;
-        return {
-          ...current,
-          library: updateSkill(upsertSkills(current.library ?? EMPTY_LIBRARY, [{ id: skill.id, description: skill.description, source: "", reviewedSha: skill.sha }]), skill.id, { enabled: true }),
-          bots: current.bots.map((entry) => (entry.id === saved.botId ? setBotUses(entry, "skill", skill.id, true) : entry)),
-        };
+      const saved = await decideProposal(proposal, status, {
+        values: () => latest.current.status === "ready" ? latest.current.values : null,
+        prepare,
+        commit,
+        complete: async (id, decision) => (await (decision === "accepted" ? accept({ id }) : dismiss({ id }))).proposal,
       });
+      if (!saved) return;
       queryClient.setQueryData(proposalQueryKey(proposal.id), { proposal: saved });
-      if (skill) void queryClient.invalidateQueries({ queryKey: skillQueryKey(skill.id) });
+      if (saved.kind === "skill" && saved.status === "accepted") void queryClient.invalidateQueries({ queryKey: skillQueryKey(saved.data.name) });
     } catch (error) {
-      toast.error(`Couldn't save it: ${errorText(error)}`);
+      toast.error(`Couldn't finish the proposal: ${errorText(error)}`);
       void query.refetch();
     } finally {
+      decisionLock.current = false;
       setBusy(null);
     }
   };
-
-  const drop = async () => {
-    setBusy("dismiss");
-    try {
-      queryClient.setQueryData(proposalQueryKey(proposal.id), await dismiss({ id: proposal.id }));
-    } catch (error) {
-      toast.error(`Couldn't dismiss it: ${errorText(error)}`);
-      void query.refetch();
-    } finally {
-      setBusy(null);
-    }
-  };
+  const receipt = values?.proposalDecisions?.find((entry) => entry.id === proposal.id);
 
   const footer =
     proposal.status === "pending" ? (
       <>
-        {view.warnings.length ? <Alert colors={colors} variant="warning" title="Check these first" description={view.warnings} /> : null}
-        {view.notes.map((note) => (
+        {!receipt && view.warnings.length ? <Alert colors={colors} variant="warning" title="Check these first" description={view.warnings} /> : null}
+        {(receipt ? ["Your decision is saved. Finish it to update this card and notify the proposing chat."] : view.notes).map((note) => (
           <Text key={note} style={{ fontSize: ui(14), color: colors.foregroundMuted }}>
             {note}
           </Text>
         ))}
         <View style={compact ? { gap: 8, marginTop: 4 } : { gap: 8, marginTop: 4, flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
-          <CardButton colors={colors} label="Dismiss" icon="X" busy={!!busy} spinning={busy === "dismiss"} onPress={() => void drop()} />
-          <CardButton colors={colors} label={view.action} icon="Check" primary busy={!!busy} spinning={busy === "save"} onPress={() => void save()} />
+          {receipt ? <CardButton colors={colors} label={receipt.status === "accepted" ? "Finish saving" : "Finish dismissal"} icon="RefreshCw" primary busy={!!busy || !values} spinning={!!busy} onPress={() => void decide(receipt.status)} /> : <>
+            <CardButton colors={colors} label="Dismiss" icon="X" busy={!!busy || !values} spinning={busy === "dismiss"} onPress={() => void decide("dismissed")} />
+            <CardButton colors={colors} label={view.action} icon="Check" primary busy={!!busy || !values} spinning={busy === "save"} onPress={() => void decide("accepted")} />
+          </>}
         </View>
       </>
-    ) : undefined;
+    ) : proposal.notification && proposal.notification.status !== "sent" ? <>
+      {proposal.notification.status === "waiting" ? <Text style={{ fontSize: ui(14), color: colors.foregroundMuted }}>Decision saved. The chat will be notified when the bot finishes its current turn and any permission request is resolved.</Text> : <Alert colors={colors} variant="warning" title="Decision saved" description={proposal.notification.error ?? "The proposing chat has not been notified yet."} />}
+      {proposal.notification.status !== "unavailable" ? <CardButton colors={colors} label="Retry notification" icon="RefreshCw" busy={!!busy} spinning={!!busy} onPress={() => void decide(proposal.status === "accepted" ? "accepted" : "dismissed")} /> : null}
+    </> : undefined;
 
   return <PlanCard colors={colors} title={view.titles[proposal.status]} description={view.description} text={view.text} outcome={OUTCOME[proposal.status]} footer={footer} />;
 }
