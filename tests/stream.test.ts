@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, deriveTurnTiming, findRows, gapBetween, layoutStream, mergeEntries, retainLayout, type StreamEntry, type StreamRow } from "../client/chat/stream/model";
+import { buildRows, chatKeyboardDismissMode, deriveTurnTiming, findRows, gapBetween, layoutStream, mergeEntries, retainLayout, type StreamEntry, type StreamRow } from "../client/chat/stream/model";
 import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
@@ -298,5 +298,18 @@ describe("find in chat", () => {
     const matched = findRows(items, "invoice").map((index) => items[index]!.row.kind);
     expect(matched).toEqual(["user", "assistant"]);
     expect(findRows(items, "")).toEqual([]);
+  });
+});
+
+describe("chatKeyboardDismissMode", () => {
+  // On the web every scroll counts as a drag, including the list following new output or a
+  // composer that grows a line, so dismissing there blurred the composer mid-sentence.
+  it("never dismisses the keyboard on the web", () => {
+    expect(chatKeyboardDismissMode("web")).toBe("none");
+  });
+
+  it("keeps native dismissal on phones", () => {
+    expect(chatKeyboardDismissMode("ios")).toBe("interactive");
+    expect(chatKeyboardDismissMode("android")).toBe("on-drag");
   });
 });

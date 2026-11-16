@@ -413,6 +413,18 @@ export function retainLayout(previous: StreamLayout | null, next: StreamLayout):
   return { items: changed ? items : previous.items, auxiliaryFooter };
 }
 
+// ---------------------------------------------------------------- keyboard
+
+/**
+ * How the chat list dismisses the keyboard as it scrolls. React Native Web treats every scroll
+ * event as a drag, including the list's own scroll to the bottom when output arrives or the
+ * composer grows a line, so "on-drag" there blurs the composer while the user is typing.
+ */
+export function chatKeyboardDismissMode(platform: "ios" | "android" | "web"): "none" | "on-drag" | "interactive" {
+  if (platform === "web") return "none";
+  return platform === "ios" ? "interactive" : "on-drag";
+}
+
 // ---------------------------------------------------------------- timeline merge
 
 export interface MergeableEntry {
