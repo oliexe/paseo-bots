@@ -10,6 +10,10 @@ import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
 import { probeMcpServer } from "./server/mcp-probe";
 import { mcpSources } from "./server/mcp-sources";
+import { McpOAuth } from "./server/mcp-oauth";
+import { McpOAuthProxy } from "./server/mcp-oauth-proxy";
+import { registerMcpOAuthLifecycle } from "./server/mcp-oauth-lifecycle";
+import { mcpOAuthCancelRpc, mcpOAuthDisconnectRpc, mcpOAuthFinishRpc, mcpOAuthStartRpc, mcpOAuthStatusRpc } from "./shared/mcp-oauth";
 import { accounts, appTools, catalog, connect, disconnect, removeKey, renameAccount, startLogin, cancelLogin, status as appsStatus } from "./server/composio";
 import { BotsHost } from "./server/host";
 import { registerInteractions } from "./server/interactions";
@@ -90,6 +94,9 @@ export default function contribute(server: PluginServerContext) {
   const disconnectSchedulerHost = connectSchedulerHost(host);
   // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
+  const oauth = new McpOAuth(host, () => relay.start());
+  const oauthProxy = new McpOAuthProxy(host, relay, oauth);
+  registerMcpOAuthLifecycle(server, host, oauthProxy);
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
   const scheduler = new RoutineScheduler(host, relay);
   const journal = new MemoryJournal();
@@ -129,7 +136,18 @@ export default function contribute(server: PluginServerContext) {
   server.handle(skillReadRpc, readSkill);
   server.handle(skillWriteRpc, writeSkill);
   server.handle(skillDeleteRpc, deleteSkill);
-  server.handle(mcpProbeRpc, probeMcpServer);
+  server.handle(mcpProbeRpc, async ({ config, serverId }) => {
+    if (config.type === "stdio" || !config.oauth) return probeMcpServer({ config });
+    if (!serverId) return { ok: false as const, error: "Save this OAuth server before testing it." };
+    const saved = await oauth.server(serverId);
+    if (JSON.stringify(saved.config) !== JSON.stringify(config)) return { ok: false as const, error: "The connection changed. Wait for it to save before testing." };
+    return probeMcpServer({ config: await oauthProxy.mount(serverId, "probe", "probe") });
+  });
+  server.handle(mcpOAuthStatusRpc, ({ serverId }) => oauth.status(serverId));
+  server.handle(mcpOAuthStartRpc, ({ serverId, ...input }) => oauth.start(serverId, input));
+  server.handle(mcpOAuthFinishRpc, ({ serverId, callbackUrl }) => oauth.finish(serverId, callbackUrl));
+  server.handle(mcpOAuthCancelRpc, ({ serverId }) => oauth.cancel(serverId));
+  server.handle(mcpOAuthDisconnectRpc, ({ serverId }) => oauth.disconnect(serverId));
   server.handle(mcpSourcesRpc, () => mcpSources());
   server.handle(appsStatusRpc, () => appsStatus());
   server.handle(appsLoginRpc, () => startLogin());
@@ -192,6 +210,8 @@ export default function contribute(server: PluginServerContext) {
   });
 
   return async () => {
+    oauthProxy.stop();
+    await oauth.stop();
     cancelLogin();
     stopInteractions();
     await stopHandoffs();

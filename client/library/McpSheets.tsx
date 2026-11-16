@@ -38,7 +38,7 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
   const setType = (type: McpServerConfig["type"]) => {
     if (type === config.type) return;
     const next: McpServerConfig =
-      type === "stdio" ? { type, command: "", args: [], env: {} } : { type, url: config.type === "stdio" ? "" : config.url, headers: config.type === "stdio" ? {} : config.headers };
+      type === "stdio" ? { type, command: "", args: [], env: {} } : { type, url: config.type === "stdio" ? "" : config.url, headers: config.type === "stdio" ? {} : config.headers, ...(config.type !== "stdio" && config.oauth !== undefined ? { oauth: config.oauth } : {}) };
     setConfig(next);
     setPairsText(formatPairs(next.type === "stdio" ? next.env : next.headers));
   };
@@ -79,6 +79,13 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
             ) : (
               <InputField colors={colors} key={`url-${config.type}`} label="URL" error={urlError} initialValue={config.url} placeholder="https://example.com/mcp" onChangeText={(url) => setConfig({ ...config, url: url.trim() })} />
             )}
+            {config.type !== "stdio" ? <SettingsSelect
+              label="Authentication"
+              value={config.oauth ? "oauth" : "headers"}
+              options={[{ label: "Headers or no authentication", value: "headers" }, { label: "OAuth sign-in", value: "oauth" }]}
+              hint={config.oauth ? "Save this server, then connect your account. OAuth credentials stay on the host." : "Add any required authentication in Headers below."}
+              onValueChange={(value) => setConfig({ ...config, oauth: value === "oauth" })}
+            /> : null}
             {config.type === "stdio" ? (
               <InputField colors={colors}
                 key="args"
@@ -97,7 +104,7 @@ export function ServerSheet({ colors, initial, isNew, otherNames, onClose, onSav
               colors={colors}
               monospace
               label={config.type === "stdio" ? "Environment" : "Headers"}
-              hint="KEY=value, one per line"
+              hint={config.type !== "stdio" && config.oauth ? "Optional additional headers, one KEY=value per line. OAuth supplies Authorization." : "KEY=value, one per line"}
               value={pairsText}
               onChangeText={(text) => {
                 setPairsText(text);

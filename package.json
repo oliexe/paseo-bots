@@ -51,6 +51,7 @@
     "composio"
   ],
   "dependencies": {
-    "@getpaseo/client": "0.16.0"
+    "@getpaseo/client": "0.16.0",
+    "@modelcontextprotocol/sdk": "1.32.2"
   }
 }

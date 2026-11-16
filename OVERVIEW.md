@@ -19,6 +19,8 @@ Requires Paseo 0.16.0 or later. Bots run on the agent providers already set up o
 
 For connected apps, open Skills & Tools in the Bots screen and sign in to Composio in your browser. Bots uses your personal Composio project and its app connections. Credentials stay on the Paseo host: bots reach Composio through a local relay that only allows the apps and tools you switched on for each bot.
 
+Remote MCP servers support browser OAuth sign-in, automatic token refresh and optional pre-registered client credentials. Choose OAuth in the server's Authentication setting, then Connect. Credentials stay on this host; Disconnect removes them and blocks the connection. A full callback URL can finish sign-in when the browser is on another device.
+
 ## Data and permissions
 
 Bot settings, memory, logs, skills and MCP server definitions are stored on the Paseo host. A bot's instructions, memory, prompts and tool results go to the agent provider it runs on, and app tool calls go to Composio. A bot can create, edit and delete bots, teams, routines, skills and MCP servers once you apply the changes it proposes. Shell commands you have allowed for a bot run again in the same folder without asking.

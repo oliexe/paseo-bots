@@ -151,6 +151,8 @@ Press **Skills & Tools** at the bottom of the bot list.
 
 Then give them to a bot in its settings: skills under **Skills**, MCP servers under **Access**.
 
+Remote HTTP and SSE servers also support **OAuth** under **Authentication**. Save the server, then press **Connect** to approve access in your browser. Tokens and client secrets stay on the host; the local proxy refreshes tokens for bots automatically. **Client registration** accepts a pre-registered client ID and optional secret when automatic registration is unavailable, and shows the redirect URI to register. From another device, use **Signing in from another device?** and paste the complete callback URL if the browser cannot reach the host's loopback address. **Disconnect** removes the saved credentials and blocks existing proxy connections. Start a new chat after changing a server from headers to OAuth; OAuth connections run on the host where this plugin is installed. In Paseo 0.16, exact **Always allowed** OAuth tool grants work with Claude; other providers keep their native approval rules. Legacy SSE requires a provider that supports it, such as Claude; use Streamable HTTP with Codex.
+
 ### Learning
 
 After a task, send `/learn` in the chat, or `/learn <what to focus on>`. The bot writes up what worked as a skill and shows it as a card; press **Save skill** to add it to Skills & Tools and turn it on for that bot.

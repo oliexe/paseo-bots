@@ -19,8 +19,8 @@ export const McpServerConfigSchema = z.discriminatedUnion("type", [
     args: z.array(z.string()).default([]),
     env: StringRecord.default({}),
   }),
-  z.object({ type: z.literal("http"), url: z.string(), headers: StringRecord.default({}) }),
-  z.object({ type: z.literal("sse"), url: z.string(), headers: StringRecord.default({}) }),
+  z.object({ type: z.literal("http"), url: z.string(), headers: StringRecord.default({}), oauth: z.boolean().optional() }),
+  z.object({ type: z.literal("sse"), url: z.string(), headers: StringRecord.default({}), oauth: z.boolean().optional() }),
 ]);
 export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 
@@ -576,7 +576,7 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
   for (const server of servers) {
     const name = server.name.trim();
     // Paseo adds its own "paseo" server and connected apps use "composio"; ours can't replace them.
-    if (name && !RESERVED_MCP_NAMES.includes(name)) record[name] = server.config;
+    if (name && !RESERVED_MCP_NAMES.includes(name) && (server.config.type === "stdio" || !server.config.oauth)) record[name] = server.config;
   }
   return record;
 }
@@ -674,7 +674,7 @@ export function parseMcpJson(text: string): BotMcpServer[] {
       servers.push({ name, enabled: true, config: { type: "stdio", command: entry.command, args, env: stringRecord(entry.env) } });
     } else if (typeof entry.url === "string") {
       const kind = type === "sse" ? "sse" : "http";
-      servers.push({ name, enabled: true, config: { type: kind, url: entry.url, headers: stringRecord(entry.headers) } });
+      servers.push({ name, enabled: true, config: { type: kind, url: entry.url, headers: stringRecord(entry.headers), ...(entry.oauth === true ? { oauth: true } : {}) } });
     }
   }
   if (servers.length === 0) throw new Error("No MCP servers found in that JSON.");

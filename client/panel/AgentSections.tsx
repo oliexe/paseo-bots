@@ -90,8 +90,10 @@ function GrantsSection({ colors, bot, library, localHost, onPatch }: PanelProps)
   const host = useBotHost(bot.hostId, localHost);
   const [allowText, setAllowText] = useState(bot.alwaysAllow.join("\n"));
   const lines = allowText.split("\n").map((line) => line.trim()).filter(Boolean);
+  const servers = botMcpServers(bot, library);
+  const oauthNeedsProviderApproval = bot.provider !== "claude" && servers.some((server) => server.config.type !== "stdio" && server.config.oauth);
   // Only grants for the bot's own servers are sent; Paseo rejects the rest.
-  const active = new Set([...botMcpServers(bot, library).map((server) => server.name), ...(host.isLocal && bot.apps.length ? [APPS_MCP_NAME] : []), ...(host.isLocal ? [TOOLS_MCP_NAME] : [])]);
+  const active = new Set([...servers.map((server) => server.name), ...(host.isLocal && bot.apps.length ? [APPS_MCP_NAME] : []), ...(host.isLocal ? [TOOLS_MCP_NAME] : [])]);
   const grants = toolGrants(lines).filter((grant) => active.has(grant.server));
   const ignored = lines.length - grants.length;
   return (
@@ -101,6 +103,7 @@ function GrantsSection({ colors, bot, library, localHost, onPatch }: PanelProps)
       trailing={<SectionMeta colors={colors} text={`${grants.length} valid${ignored ? ` · ${ignored} ignored` : ""}`} tone={ignored ? "warning" : undefined} />}
     >
       <SettingsCard>
+        {oauthNeedsProviderApproval ? <SettingsRow label="OAuth approvals" hint="With this Paseo version, automatic approval of individual OAuth tools is available only with Claude. Other providers use their normal approval prompts." /> : null}
         <TextAreaField
           colors={colors}
           monospace

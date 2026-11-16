@@ -1,7 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import type { Bot, LibraryMcpServer } from "../../shared/bot";
 import { mcpServerTested, mcpTarget } from "../../shared/library";
@@ -11,6 +11,7 @@ import { errorText, MONO_FONT, MONO_PROPS } from "../native";
 import { Alert, Button, CardNote, SectionLink, SectionMeta } from "../panel/controls";
 import { code, ui } from "../typography";
 import { ServerSheet, type McpDraft } from "./McpSheets";
+import { McpOAuth } from "./McpOAuth";
 import { BotsCard, DangerZone, PageTitle } from "./parts";
 
 type Colors = PluginTheme["colors"];
@@ -37,18 +38,35 @@ export function McpPage({ colors, server, bots, otherNames, showTitle, onPatch, 
   const probe = useRpc(mcpProbeRpc);
   const [editing, setEditing] = useState(false);
   const [testing, setTesting] = useState(false);
+  const testRequest = useRef(0);
+  const testRunning = useRef(false);
+  const latest = useRef(server);
+  latest.current = server;
+  const configKey = JSON.stringify(server.config);
+  useEffect(() => {
+    testRunning.current = false;
+    setTesting(false);
+    return () => { testRequest.current++; };
+  }, [probe]);
 
   /** Tests the connection; `enable` turns the server on when it connects. */
-  const test = async (config = server.config, enable = false) => {
+  const test = async (enable = false) => {
+    if (testRunning.current) return;
+    const snapshot = latest.current;
+    const config = JSON.stringify(snapshot.config);
+    const request = ++testRequest.current;
+    testRunning.current = true;
     setTesting(true);
     try {
-      const result = await probe({ config });
+      // OAuth credentials are looked up against the saved server, never an unsaved draft.
+      const result = await probe({ config: snapshot.config, serverId: snapshot.id });
+      if (request !== testRequest.current || latest.current.id !== snapshot.id || JSON.stringify(latest.current.config) !== config) return;
       const checkedAt = new Date().toISOString();
       onPatch(result.ok ? { tools: result.tools, checkError: null, checkedAt, ...(enable ? { enabled: true } : {}) } : { checkError: result.error, checkedAt });
     } catch (error) {
-      onPatch({ checkError: errorText(error), checkedAt: new Date().toISOString() });
+      if (request === testRequest.current && latest.current.id === snapshot.id && JSON.stringify(latest.current.config) === config) onPatch({ checkError: errorText(error), checkedAt: new Date().toISOString() });
     } finally {
-      setTesting(false);
+      if (request === testRequest.current) { testRunning.current = false; setTesting(false); }
     }
   };
   const tested = mcpServerTested(server);
@@ -63,7 +81,7 @@ export function McpPage({ colors, server, bots, otherNames, showTitle, onPatch, 
         <View style={{ marginBottom: 24, gap: 12 }}>
           <Alert colors={colors} variant="warning" title="Test before bots use it" description="New servers arrive switched off. The test starts it on this host and lists its tools; it turns on once it connects." />
           <View style={{ alignItems: "flex-start" }}>
-            <Button colors={colors} variant="outline" icon="PlugZap" label={testing ? "Testing..." : "Test and turn on"} disabled={testing} onPress={() => void test(server.config, true)} />
+            <Button colors={colors} variant="outline" icon="PlugZap" label={testing ? "Testing..." : "Test and turn on"} disabled={testing} onPress={() => void test(true)} />
           </View>
         </View>
       ) : null}
@@ -74,11 +92,23 @@ export function McpPage({ colors, server, bots, otherNames, showTitle, onPatch, 
             hint={tested ? "When off, no bot gets this server" : "Test it to turn it on"}
             value={server.enabled}
             disabled={testing}
-            onValueChange={(enabled) => (enabled && !tested ? void test(server.config, true) : onPatch({ enabled }))}
+            onValueChange={(enabled) => (enabled && !tested ? void test(true) : onPatch({ enabled }))}
           />
           <SettingsAction label="Connection" hint={[mcpTarget(server.config), keysHint(server)].filter(Boolean).join("\n")} actionLabel="Edit" onPress={() => setEditing(true)} />
         </SettingsCard>
       </SettingsSection>
+
+      {server.config.type !== "stdio" && server.config.oauth ? <McpOAuth
+        key={`${server.id}:${configKey}`}
+        serverId={server.id}
+        onConnected={(newConnection) => void test(newConnection)}
+        onDisconnected={() => {
+          testRequest.current++;
+          testRunning.current = false;
+          setTesting(false);
+          onPatch({ enabled: false, tools: null, checkedAt: null, checkError: null });
+        }}
+      /> : null}
 
       <SettingsSection
         title="Tools"
@@ -133,9 +163,10 @@ export function McpPage({ colors, server, bots, otherNames, showTitle, onPatch, 
           onSave={(draft: McpDraft) => {
             setEditing(false);
             const changed = JSON.stringify(draft.config) !== JSON.stringify(server.config);
-            // A changed connection makes the old tool list stale; test the new one right away.
-            onPatch({ ...draft, ...(changed ? { tools: null, checkError: null, checkedAt: null } : {}) });
-            if (changed) void test(draft.config);
+            // Wait for the saved settings to reach this page before testing or signing in.
+            // An old in-flight test cannot enable or populate a newly edited connection.
+            if (changed) { testRequest.current++; testRunning.current = false; setTesting(false); }
+            onPatch({ ...draft, ...(changed ? { enabled: false, tools: null, checkError: null, checkedAt: null } : {}) });
           }}
         />
       ) : null}

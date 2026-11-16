@@ -135,7 +135,7 @@ export const skillDeleteRpc = defineRpc({
 /** Starts or connects to an MCP server, lists its tools and disconnects. */
 export const mcpProbeRpc = defineRpc({
   name: "bots.library.test-mcp",
-  input: z.object({ config: McpServerConfigSchema }),
+  input: z.object({ config: McpServerConfigSchema, serverId: z.string().optional() }),
   output: z.discriminatedUnion("ok", [z.object({ ok: z.literal(true), tools: z.array(McpToolSchema) }), z.object({ ok: z.literal(false), error: z.string() })]),
 });
 
