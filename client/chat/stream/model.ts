@@ -474,6 +474,12 @@ export function retainLayout(previous: StreamLayout | null, next: StreamLayout):
   return { items: changed ? items : previous.items, auxiliaryFooter };
 }
 
+/** Web treats programmatic scrolling as a drag, so dismissing there blurs a composing input. */
+export function chatKeyboardDismissMode(platform: "ios" | "android" | "web"): "none" | "on-drag" | "interactive" {
+  if (platform === "web") return "none";
+  return platform === "ios" ? "interactive" : "on-drag";
+}
+
 // ---------------------------------------------------------------- timeline merge
 
 export interface MergeableEntry {

@@ -25,7 +25,7 @@ import { ui } from "../typography";
 import type { ChatState } from "../useChat";
 import { PermissionCard } from "./Permission";
 import { FindBar } from "./FindBar";
-import { buildRows, findRows, groupToolRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
+import { buildRows, chatKeyboardDismissMode, findRows, groupToolRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
 import { tooltip } from "../ui/Tooltip";
@@ -371,7 +371,7 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
           scrollRetry.current.timer = setTimeout(() => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }), 100);
         }}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={platform === "ios" ? "interactive" : "on-drag"}
+        keyboardDismissMode={chatKeyboardDismissMode(platform)}
         showsVerticalScrollIndicator
       />
       <ScrollToBottomButton colors={colors} visible={!nearBottom && data.length > 0} onPress={() => scrollToBottom(true)} />

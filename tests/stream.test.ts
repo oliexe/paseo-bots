@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, deriveTurnTiming, findRows, gapBetween, layoutStream, mergeEntries, retainLayout, type StreamEntry, type StreamRow } from "../client/chat/stream/model";
+import { buildRows, chatKeyboardDismissMode, deriveTurnTiming, findRows, gapBetween, layoutStream, mergeEntries, retainLayout, type StreamEntry, type StreamRow } from "../client/chat/stream/model";
 import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
@@ -298,5 +298,16 @@ describe("find in chat", () => {
     const matched = findRows(items, "invoice").map((index) => items[index]!.row.kind);
     expect(matched).toEqual(["user", "assistant"]);
     expect(findRows(items, "")).toEqual([]);
+  });
+});
+
+describe("chat keyboard dismissal", () => {
+  it("keeps the composer focused when web chat scrolls itself", () => {
+    expect(chatKeyboardDismissMode("web")).toBe("none");
+  });
+
+  it("preserves native keyboard gestures", () => {
+    expect(chatKeyboardDismissMode("ios")).toBe("interactive");
+    expect(chatKeyboardDismissMode("android")).toBe("on-drag");
   });
 });
