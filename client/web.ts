@@ -132,6 +132,111 @@ export function watchWebListSize(list: WebList, changed: () => void): () => void
   return () => { disposed = true; observer.disconnect(); };
 }
 
+interface SidebarNode extends SurfaceElement {
+  scrollTop: number;
+  scrollHeight: number;
+  firstElementChild: unknown;
+  getBoundingClientRect(): { top: number; bottom: number };
+  querySelectorAll(selector: string): ArrayLike<SidebarNode>;
+  querySelector(selector: string): unknown;
+  scroll(options: { top: number; behavior: "instant" }): void;
+  addEventListener(type: string, callback: () => void): void;
+  removeEventListener(type: string, callback: () => void): void;
+}
+type SidebarAnchor = { y: number; row: string | null; inset: number };
+// Per plugin client/window, never shared across hosts, teams or list contexts.
+const sidebarPositions = new Map<string, SidebarAnchor>();
+
+let sidebarPositionsLoaded = false;
+declare const sessionStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void } | undefined;
+const SIDEBAR_POSITION_STORAGE = "paseo-bots:sidebar-positions:v1";
+function loadSidebarPositions() {
+  if (sidebarPositionsLoaded) return;
+  sidebarPositionsLoaded = true;
+  try {
+    const entries: unknown = JSON.parse(typeof sessionStorage === "undefined" ? "[]" : sessionStorage.getItem(SIDEBAR_POSITION_STORAGE) ?? "[]");
+    if (!Array.isArray(entries)) return;
+    for (const entry of entries.slice(-80)) {
+      if (!Array.isArray(entry) || entry.length !== 2) continue;
+      const [scope, anchor] = entry;
+      if (typeof scope === "string" && anchor && Number.isFinite(anchor.y) && anchor.y >= 0 &&
+          (anchor.row === null || typeof anchor.row === "string") && Number.isFinite(anchor.inset)) sidebarPositions.set(scope, anchor);
+    }
+  } catch { /* Restricted storage still permits in-memory route restoration. */ }
+}
+function saveSidebarPositions() {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(SIDEBAR_POSITION_STORAGE, JSON.stringify([...sidebarPositions]));
+  } catch { /* Private/restricted windows can keep using in-memory anchors. */ }
+}
+
+/** Preserve a measured row through host-owned route mounts and cached-screen Back/Forward.
+ * Native has no DOM; its existing ScrollView/navigation behavior is left intact.
+ */
+export function trackSidebarPosition(list: WebList, scope: string): { capture(): void; dispose(): void } {
+  const noop = { capture() {}, dispose() {} };
+  if (!web || !list) return noop;
+  const node = list.getScrollableNode() as SidebarNode | null;
+  if (!node) return noop;
+  loadSidebarPositions();
+  let pending = sidebarPositions.get(scope);
+  let visible = false;
+  let disposed = false;
+  const rows = () => Array.from(node.querySelectorAll('[data-testid^="bot-group-"], [data-testid^="bot-chat-"]'));
+  const capture = () => {
+    if (disposed || pending || !surfaceIsVisible(node)) return;
+    const top = node.getBoundingClientRect().top;
+    // The latest row start above the viewport is the innermost visible anchor.
+    const candidates = rows().filter(row => row.getBoundingClientRect().bottom > top);
+    const row = candidates.filter(row => row.getBoundingClientRect().top <= top + 1).at(-1) ?? candidates[0];
+    sidebarPositions.delete(scope);
+    sidebarPositions.set(scope, { y: node.scrollTop, row: row?.getAttribute?.("data-testid") ?? null,
+      inset: row ? row.getBoundingClientRect().top - top : 0 });
+    if (sidebarPositions.size > 80) sidebarPositions.delete(sidebarPositions.keys().next().value!);
+    saveSidebarPositions();
+  };
+  const sync = () => {
+    if (disposed) return;
+    if (!surfaceIsVisible(node)) { visible = false; return; }
+    if (!visible) { pending = sidebarPositions.get(scope); visible = true; }
+    if (pending) {
+      // Other Bot groups can still change the anchor's absolute position while
+      // their initial queries replace skeletons. Never record those clamped offsets.
+      if (node.querySelector('[aria-label="Loading chats"]')) return;
+      const row = rows().find(row => row.getAttribute?.("data-testid") === pending!.row);
+      const y = row ? node.scrollTop + row.getBoundingClientRect().top - node.getBoundingClientRect().top - pending.inset : pending.y;
+      const target = Math.max(0, Math.min(y, node.scrollHeight - node.clientHeight));
+      if (Math.abs(node.scrollTop - target) > 0.5) node.scroll({ top: target, behavior: "instant" });
+      pending = undefined;
+    }
+    capture();
+  };
+  const changed = () => {
+    // Background title/message updates may reorder rows or alter their measured height.
+    if (visible && !pending) pending = sidebarPositions.get(scope);
+    sync();
+  };
+  const stopVisibility = observeSurfaceVisibility(node, () => {
+    if (surfaceIsVisible(node) !== visible) sync();
+  });
+  const resize = ResizeObserverCtor ? new ResizeObserverCtor(changed) : null;
+  if (node.firstElementChild) resize?.observe(node.firstElementChild);
+  const Mutation = (globalThis as { MutationObserver?: new (callback: () => void) => {
+    observe(target: unknown, options: { childList: boolean; subtree: boolean }): void; disconnect(): void;
+  } }).MutationObserver;
+  const mutation = Mutation ? new Mutation(changed) : null;
+  mutation?.observe(node, { childList: true, subtree: true });
+  node.addEventListener("scroll", capture);
+  const userInput = () => { pending = undefined; capture(); };
+  node.addEventListener("wheel", userInput);
+  node.addEventListener("pointerdown", userInput);
+  node.addEventListener("keydown", userInput);
+  sync();
+  return { capture, dispose() { capture(); disposed = true; node.removeEventListener("scroll", capture);
+    node.removeEventListener("wheel", userInput); node.removeEventListener("pointerdown", userInput); node.removeEventListener("keydown", userInput);
+    stopVisibility(); resize?.disconnect(); mutation?.disconnect(); } };
+}
+
 export interface PickedFile {
   name: string;
   mimeType: string;
