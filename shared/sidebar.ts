@@ -86,15 +86,21 @@ export interface OrderableChat {
   id: string;
   createdAt: string;
   updatedAt: string;
+  lastUserMessageAt?: string | null;
+  /** Client-derived message/turn activity, independent of viewing metadata. */
+  activityAt?: string;
 }
 
 /**
  * Chat order within a bot. "manual" starts from newest-created first and
  * applies the stored order, so rows don't jump when a chat gets a reply;
- * "activity" is most recently updated first.
+ * "activity" is most recent conversation activity first, not metadata edits.
  */
 export function orderChats<T extends OrderableChat>(chats: readonly T[], sort: ChatSort, storedOrder: readonly string[] = []): T[] {
-  if (sort === "activity") return [...chats].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  if (sort === "activity") {
+    const at = (chat: T) => Date.parse(chat.activityAt ?? chat.lastUserMessageAt ?? chat.createdAt) || 0;
+    return [...chats].sort((a, b) => at(b) - at(a) || Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id));
+  }
   const base = [...chats].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   return applyStoredOrdering(base, storedOrder, (chat) => chat.id);
 }

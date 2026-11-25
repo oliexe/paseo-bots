@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { listBotChats } from "../client/chat-directory";
+vi.mock("react-native", () => ({ Platform: { OS: "web" } }));
 
 const agent = (id: string, updatedAt: string, archivedAt: string | null = null) => ({ agent: { id, updatedAt, archivedAt } });
 describe("bot chat directory", () => {

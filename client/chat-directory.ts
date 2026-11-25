@@ -1,8 +1,12 @@
 import { BOT_LABEL } from "../shared/bot";
 import type { PaseoAgent, PaseoApi } from "./paseo";
+import { observeChatActivity } from "./chat-activity";
+import { orderChats } from "../shared/sidebar";
+
+export type BotChat = PaseoAgent & { activityAt: string };
 
 /** Read every page: the host's default list window is not a bot's entire chat history. */
-export async function listBotChats(api: PaseoApi, botId: string, signal?: AbortSignal): Promise<PaseoAgent[]> {
+export async function listBotChats(api: PaseoApi, botId: string, signal?: AbortSignal, host = "local"): Promise<BotChat[]> {
   const agents = new Map<string, PaseoAgent>();
   const cursors = new Set<string>();
   let cursor: string | null = null;
@@ -22,5 +26,6 @@ export async function listBotChats(api: PaseoApi, botId: string, signal?: AbortS
     if (result.pageInfo?.hasMore && (!cursor || cursors.has(cursor))) throw new Error("Paseo could not load the next page of chats. Retry the chat list.");
     if (cursor) cursors.add(cursor);
   } while (cursor);
-  return [...agents.values()].filter((agent) => !agent.archivedAt).sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
+  return orderChats([...agents.values()].filter((agent) => !agent.archivedAt)
+    .map((agent) => ({ ...agent, activityAt: observeChatActivity(host, agent) })), "activity");
 }

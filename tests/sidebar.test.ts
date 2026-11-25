@@ -47,7 +47,7 @@ describe("applyStoredOrdering", () => {
 });
 
 describe("orderChats", () => {
-  const chat = (id: string, createdAt: string, updatedAt: string) => ({ id, createdAt, updatedAt });
+  const chat = (id: string, createdAt: string, activityAt: string) => ({ id, createdAt, updatedAt: activityAt, activityAt });
   const chats = [chat("old", "2026-01-01T00:00:00Z", "2026-03-01T00:00:00Z"), chat("new", "2026-02-01T00:00:00Z", "2026-02-02T00:00:00Z")];
 
   it("sorts manual order newest-created first so replies don't reshuffle rows", () => {
@@ -153,5 +153,15 @@ describe("isTouchLayout", () => {
   it("treats phones and native apps as touch", () => {
     expect(isTouchLayout({ compact: true, platform: "web" }, false)).toBe(true);
     expect(isTouchLayout({ compact: false, platform: "ios" }, false)).toBe(true);
+  });
+});
+
+
+describe("activity ignores viewing metadata", () => {
+  it("does not promote an older conversation when opening it updates updatedAt", () => {
+    const old = { id: "viewed", createdAt: "2026-01-01", lastUserMessageAt: "2026-01-03", updatedAt: "2026-01-04" };
+    const recent = { id: "recent", createdAt: "2026-01-02", lastUserMessageAt: "2026-01-10", updatedAt: "2026-01-11" };
+    expect(orderChats([old, recent], "activity").map(x => x.id)).toEqual(["recent", "viewed"]);
+    expect(orderChats([{ ...old, updatedAt: "2026-02-01" }, recent], "activity").map(x => x.id)).toEqual(["recent", "viewed"]);
   });
 });

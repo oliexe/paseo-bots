@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { BOT_LABEL } from "../shared/bot";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
-import { listBotChats } from "./chat-directory";
+import { listBotChats, type BotChat } from "./chat-directory";
+import { observeChatActivity } from "./chat-activity";
 
 export interface LocalHost {
   id: string;
@@ -99,7 +100,7 @@ export function useBotChats(host: BotHost, botId: string) {
     enabled: !!host.api,
     // The local host pushes agent updates (useChatInvalidation); other hosts are polled.
     refetchInterval: host.isLocal ? false : 15_000,
-    queryFn: ({ signal }): Promise<PaseoAgent[]> => listBotChats(host.api!, botId, signal),
+    queryFn: ({ signal }): Promise<BotChat[]> => listBotChats(host.api!, botId, signal, host.key),
   });
 }
 
@@ -111,7 +112,8 @@ export function useChatInvalidation() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
     let subscription: { release(): Promise<void> } | null = null;
-    const unsubscribe = paseo.agents.subscribe(() => {
+    const unsubscribe = paseo.agents.subscribe((update) => {
+      if (update.kind === "upsert") observeChatActivity(paseo.agents.ref(update.agent).address.serverId, update.agent);
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
