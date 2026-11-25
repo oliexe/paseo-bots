@@ -1,8 +1,8 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent } from "./paseo";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/ui";
-import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Animated, Easing, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Animated, Easing, Platform, Pressable, Text, View, type LayoutRectangle, type ScrollView as NativeScrollView } from "react-native";
 import type { Bot, BotGroup, BotListUi } from "../shared/bot";
 import { displayTitle } from "../shared/chat";
 import type { TeamTab } from "../shared/groups";
@@ -16,6 +16,7 @@ import { ui } from "./typography";
 import { SearchField } from "./panel/controls";
 import { contextMenuProps, measureAnchor } from "./ui/Menu";
 import { tooltip } from "./ui/Tooltip";
+import { trackSidebarPosition } from "./web";
 
 // Paseo's sidebar, reproduced from components/left-sidebar.tsx, sidebar-workspace-list.tsx
 // and components/sidebar/*: bot rows are project rows, chat rows are workspace rows.
@@ -76,6 +77,19 @@ export function BotSidebar(props: BotSidebarProps) {
   const { colors, bots, openTab, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onTeamMap, onEditTeam } = props;
   const tokens = nativeTokens(colors);
   const [query, setQuery] = useState("");
+  const listRef = useRef<NativeScrollView>(null);
+  const capturePosition = useRef(() => {});
+  // A Chat route gets a fresh list. Only lists with the same host, team and
+  // filtering/order preferences share an anchor; Chat identity is deliberately absent.
+  const positionKey = JSON.stringify([props.localHost.id, openTab?.id ?? null, query,
+    listUi.chatSort, listUi.showArchived, listUi.collapsed, listUi.pinnedCollapsed,
+    listUi.pinnedChats, listUi.chatOrder]);
+  useLayoutEffect(() => {
+    const tracking = trackSidebarPosition(listRef.current, positionKey);
+    capturePosition.current = tracking.capture;
+    return () => { capturePosition.current = () => {}; tracking.dispose(); };
+  }, [positionKey]);
+  const rowProps = { ...props, onSelect: (next: Selection) => { capturePosition.current(); props.onSelect(next); } };
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const available = openTab?.bots ?? bots;
   const shown = available.filter((bot) => {
@@ -98,15 +112,17 @@ export function BotSidebar(props: BotSidebarProps) {
     <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
       {available.length || query ? <View style={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: 6 }}><SearchField colors={colors} value={query} onChangeText={setQuery} placeholder="Find bots…" /></View> : null}
       <ScrollView
+        ref={listRef}
+        testID="bots-chat-list"
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 8, paddingTop: 2, paddingBottom: 16 }}
       >
-        {pins.length > 0 ? <PinnedSection {...props} pins={pins} botById={listedBots} tokens={tokens} /> : null}
+        {pins.length > 0 ? <PinnedSection {...rowProps} pins={pins} botById={listedBots} tokens={tokens} /> : null}
         {available.length > 0 || hiddenArchivedCount > 0 ? <SectionHeader colors={colors} onDisplayMenu={props.onDisplayMenu} /> : null}
         {shown.map((bot) => (
-          <BotGroup key={bot.id} {...props} tokens={tokens} bot={bot} lead={bot.id === leadId} pinnedIds={pinnedIds} />
+          <BotGroup key={bot.id} {...rowProps} tokens={tokens} bot={bot} lead={bot.id === leadId} pinnedIds={pinnedIds} />
         ))}
         {terms.length > 0 && shown.length === 0 ? <EmptyState colors={colors} title="No matching bots" description="Search by name, role or description." action={{ icon: "X", label: "Clear search", onPress: () => setQuery("") }} /> : openTab?.group && shown.length === 0 ? (
           <EmptyState colors={colors} title="No bots on this team" description="Add bots to it in the team's settings." action={{ icon: "Pencil", label: "Edit team", onPress: () => onEditTeam(openTab.group!) }} />
@@ -354,7 +370,7 @@ function BotGroup(props: GroupProps) {
   }
 
   return (
-    <View role="group" accessibilityLabel={bot.name} style={{ paddingBottom: children ? 12 : 0 }}>
+    <View testID={`bot-group-${bot.id}`} role="group" accessibilityLabel={bot.name} style={{ paddingBottom: children ? 12 : 0 }}>
       <BotRow {...props} isOpen={isOpen} aggregate={aggregate} hostLabel={host.online ? null : host.label} />
       {children}
     </View>
@@ -477,6 +493,7 @@ const ChatRow = memo(function ChatRow({ colors, tokens, chat, bot, selected, tou
   // kebab press can't also select the chat.
   return (
     <View
+      testID={`bot-chat-${chat.id}`}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       style={[
