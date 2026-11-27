@@ -166,6 +166,8 @@ export const BotSchema = z.object({
   thinkingOptionId: z.string().nullable().default(null),
   /** Standing instructions, placed right after the persona in the system prompt. */
   soul: z.string().default(""),
+  /** Whether chats get MEMORY.md and recent work in the system prompt. Off for bots that keep their memory elsewhere. */
+  memory: z.boolean().default(true),
   /** Library MCP servers this bot gets. */
   mcpServerIds: z.array(z.string()).default([]),
   /** Exact MCP tool grants ("server/tool") the bot may use without asking. */

@@ -1,5 +1,5 @@
 import { useRpc } from "@getpaseo/plugin/client";
-import { copyText, Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection, useToast } from "@getpaseo/plugin/client/ui";
+import { copyText, Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwitch, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
@@ -105,7 +105,7 @@ const TOPIC_NAME = /^[A-Za-z0-9 ._-]+$/;
 const MEMORY_LINES = 200;
 const MEMORY_BYTES = 24_000;
 
-export function MemorySection({ colors, bot, localHost }: PanelProps) {
+export function MemorySection({ colors, bot, localHost, onPatch }: PanelProps) {
   const host = useBotHost(bot.hostId, localHost);
   const list = useRpc(memoryListRpc);
   const queryClient = useQueryClient();
@@ -128,6 +128,11 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
     <>
       {!host.isLocal ? <LocalOnly colors={colors} what="Memory files" /> : null}
       {files.error ? <Alert colors={colors} variant="error" title="Could not load memory" description={errorText(files.error)} actionLabel="Retry" onAction={() => void files.refetch()} /> : null}
+      <SettingsSection title="Prompt" info="Turn this off when the bot keeps its memory elsewhere, for example in an MCP server. The files below stay; chats just don't load them.">
+        <SettingsCard>
+          <SettingsSwitch label="Load memory into chats" hint="MEMORY.md, the memory instructions and recent work go into every chat's system prompt" value={bot.memory} onValueChange={(memory) => onPatch({ memory })} />
+        </SettingsCard>
+      </SettingsSection>
       <SettingsSection
         title="Files"
         info="The bot updates these itself as it learns; edit them to correct or add facts. MEMORY.md is loaded into every chat, topic files are read on demand."

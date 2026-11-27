@@ -22,6 +22,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     modeId: null,
     thinkingOptionId: null,
     soul: "",
+    memory: true,
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],

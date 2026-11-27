@@ -73,6 +73,7 @@ export function newBot(provider: string, template?: BotTemplate): Bot {
     modeId: null,
     thinkingOptionId: null,
     soul: template?.soul ?? "",
+    memory: true,
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],

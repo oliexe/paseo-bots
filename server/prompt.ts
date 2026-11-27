@@ -54,10 +54,11 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     bot.id,
     skills.map((skill) => skill.id),
   );
+  // A bot with memory off keeps its memory elsewhere, so its chats get no memory section.
   return {
-    memory: await injectedMemory(bot.id),
-    memoryPath: join(memoryFolder(bot.id), MAIN_MEMORY),
-    recentWork: recentWork(await recentLogEntries(bot.id, 3), new Date()),
+    memory: bot.memory ? await injectedMemory(bot.id) : "",
+    memoryPath: bot.memory ? join(memoryFolder(bot.id), MAIN_MEMORY) : null,
+    recentWork: bot.memory ? recentWork(await recentLogEntries(bot.id, 3), new Date()) : [],
     playbooks,
     team,
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),

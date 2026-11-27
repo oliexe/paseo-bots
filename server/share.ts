@@ -212,6 +212,7 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     voice: { name: null, readReplies: false },
     // Contact with other bots starts at asking, as on a new bot.
     contactBots: "ask",
+    memory: true,
     routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, resultsChatId: null, createdAt: now })),
     pinned: false,
     archived: false,

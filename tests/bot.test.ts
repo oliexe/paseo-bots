@@ -17,6 +17,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     modeId: null,
     thinkingOptionId: null,
     soul: "Be brief.",
+    memory: true,
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],
