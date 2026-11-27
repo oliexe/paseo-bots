@@ -15,6 +15,9 @@ describe("tool names and grants", () => {
     expect(botToolName("mcp__bots__ask_bot")).toBe("ask_bot");
     expect(botToolName("bots.propose_skill")).toBe("propose_skill");
     expect(botToolName("bots_list_bots")).toBe("list_bots");
+    // OMP bridges MCP tools and names the timeline call "<server> / <tool>".
+    expect(botToolName("bots / propose_routine")).toBe("propose_routine");
+    expect(botToolName("other / propose_routine")).toBeNull();
     expect(botToolName("mcp__other__ask_bot")).toBeNull();
     expect(botToolName("bots.unknown")).toBeNull();
   });
@@ -45,6 +48,7 @@ describe("tool names and grants", () => {
     const output = [{ type: "text", text: "Proposal p-0123456789: the user sees..." }];
     expect(proposalIdOf({ name: "mcp__bots__propose_skill", status: "completed", detail: { type: "unknown", input: {}, output } })).toBe("p-0123456789");
     expect(proposalIdOf({ name: "bots.propose_skill", status: "completed", detail: { type: "unknown", input: {}, output: "Proposal p-abcdefabcd: x" } })).toBe("p-abcdefabcd");
+    expect(proposalIdOf({ name: "bots / propose_routine", status: "completed", detail: { type: "unknown", input: {}, output: { content: [{ type: "text", text: "Proposal p-abcdefabcd: x" }] } } })).toBe("p-abcdefabcd");
     expect(proposalIdOf({ name: "mcp__bots__propose_skill", status: "running", detail: { type: "unknown", input: {}, output: null } })).toBeNull();
     expect(proposalIdOf({ name: "mcp__bots__list_bots", status: "completed", detail: { type: "unknown", input: {}, output } })).toBeNull();
   });

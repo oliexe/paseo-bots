@@ -199,7 +199,7 @@ function composioResults(value: unknown, depth = 0): Record<string, unknown> | n
  * output: `{data: {results: {notion: {redirect_url, accounts: [{id, alias}]}}}}`.
  */
 export function appSignIns(call: { name: string; status: string; detail: unknown }): AppSignIn[] {
-  if (call.status !== "completed" || !/^(?:mcp__)?composio(?:__|\.|_)COMPOSIO_MANAGE_CONNECTIONS$/.test(call.name.trim())) return [];
+  if (call.status !== "completed" || !/^(?:mcp__)?composio(?:__|\.|_| \/ )COMPOSIO_MANAGE_CONNECTIONS$/.test(call.name.trim())) return [];
   const results = composioResults((call.detail as { output?: unknown } | null)?.output) ?? {};
   const signIns: AppSignIn[] = [];
   for (const [slug, value] of Object.entries(results)) {

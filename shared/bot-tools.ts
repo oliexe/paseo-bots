@@ -16,10 +16,11 @@ export const QUIET_TOOLS: readonly BotToolName[] = ["list_bots", "check_chat", "
 
 /**
  * The bot tool a timeline tool call is, whatever the provider calls it:
- * Claude `mcp__bots__ask_bot`, Codex `bots.ask_bot`, others `bots_ask_bot`.
+ * Claude `mcp__bots__ask_bot`, Codex `bots.ask_bot`, OMP `bots / ask_bot`,
+ * others `bots_ask_bot`.
  */
 export function botToolName(name: string): BotToolName | null {
-  const match = /^(?:mcp__)?bots(?:__|\.|_)([a-z_]+)$/.exec(name.trim());
+  const match = /^(?:mcp__)?bots(?:__|\.|_| \/ )([a-z_]+)$/.exec(name.trim());
   const tool = match?.[1];
   return tool && (BOT_TOOL_NAMES as readonly string[]).includes(tool) ? (tool as BotToolName) : null;
 }
