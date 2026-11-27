@@ -105,6 +105,7 @@ describe("tool to app", () => {
     // Paseo's projection wraps the parsed answer; Codex names the tool differently and may keep MCP content blocks.
     expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: { output: JSON.parse(output) } })).toEqual(expected);
     expect(call("composio.COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: [{ type: "text", text: output }] })).toEqual(expected);
+    expect(call("composio / COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output: [{ type: "text", text: output }] })).toEqual(expected);
     expect(call("mcp__composio__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output }, "running")).toEqual([]);
     expect(call("mcp__other__COMPOSIO_MANAGE_CONNECTIONS", { type: "unknown", input: {}, output })).toEqual([]);
     // Only Composio's own sign-in pages.
