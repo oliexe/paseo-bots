@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
-import { mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EMPTY_LIBRARY, parseMcpJson, type Bot, type BotMcpServer, type Library } from "../shared/bot";
 import { addMcpServers, forgetItem, matchesQuery, mcpServerTested, mcpTarget, renameGrants, setBotUses, upsertSkills } from "../shared/library";
@@ -21,6 +21,7 @@ function bot(id: string, patch: Partial<Bot> = {}): Bot {
     modeId: null,
     thinkingOptionId: null,
     soul: "",
+    memory: true,
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],
@@ -151,6 +152,22 @@ describe("server library", () => {
     expect(await names(undefined)).toEqual(["gated"]);
     expect(await names(null)).toEqual([]);
     expect(await names(sha256("something else"))).toEqual([]);
+  });
+
+  it("leaves memory and recent work out of the prompt when the bot's memory is off", async () => {
+    const { promptContext } = await import("../server/prompt");
+    const { memoryFilePath } = await import("../server/memory");
+    // Memory paths depend on PASEO_HOME, set in beforeAll.
+    const file = memoryFilePath("memory-bot", "MEMORY.md");
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, "likes tea");
+    const on = await promptContext(bot("memory-bot"), true, { skills: [], mcpServers: [] }, false);
+    expect(on.memoryPath).not.toBeNull();
+    expect(on.memory).toContain("likes tea");
+    const off = await promptContext(bot("memory-bot", { memory: false }), true, { skills: [], mcpServers: [] }, false);
+    expect(off.memoryPath).toBeNull();
+    expect(off.memory).toBe("");
+    expect(off.recentWork).toEqual([]);
   });
 
   it("writes, reads and deletes library skills", async () => {
